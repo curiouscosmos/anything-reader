@@ -682,7 +682,7 @@ struct ReaderCardMenuPopoverView: View {
         // Keep the menu actions grouped and visually balanced.
         VStack(alignment: .leading, spacing: 10) {
             menuButton(title: "Play now", systemImage: "play.fill", action: onPlay)
-            menuButton(title: "View file", systemImage: "doc.text.magnifyingglass", action: onView)
+            menuButton(title: "View text", systemImage: "doc.text.magnifyingglass", action: onView)
             menuButton(title: "Open file location", systemImage: "folder", action: onRevealLocation)
 
             Divider()

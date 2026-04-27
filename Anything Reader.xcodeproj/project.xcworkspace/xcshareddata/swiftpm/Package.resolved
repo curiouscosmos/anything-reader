@@ -1,6 +1,15 @@
 {
-  "originHash" : "39ef902946f5fd1def9692c4f1373419dc60184ad3fb68255dcce50b1585ce7f",
+  "originHash" : "241aeba065368e8f8097474e1d84d53c610ecba080408fc61493d01d3871d826",
   "pins" : [
+    {
+      "identity" : "coretextswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/krzyzanowskim/CoreTextSwift",
+      "state" : {
+        "revision" : "833177201d6421e6322296f39fce6ff6ae52618a",
+        "version" : "0.2.0"
+      }
+    },
     {
       "identity" : "kokoro-ios",
       "kind" : "remoteSourceControl",
@@ -35,6 +44,24 @@
       "state" : {
         "revision" : "41f6cfd5d68b65aa3c65a34efe3b71c371ed915b",
         "version" : "0.0.6"
+      }
+    },
+    {
+      "identity" : "sttextkitplus",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/krzyzanowskim/STTextKitPlus",
+      "state" : {
+        "revision" : "2ee74906f4d753458eeaa9a2f6d4538aacb86a1d",
+        "version" : "0.3.0"
+      }
+    },
+    {
+      "identity" : "sttextview",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/krzyzanowskim/STTextView.git",
+      "state" : {
+        "revision" : "c36bf60f098f05d82d16dd4a7fe5135ef0678706",
+        "version" : "2.3.9"
       }
     },
     {

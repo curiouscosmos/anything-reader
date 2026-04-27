@@ -41,6 +41,8 @@ struct ContentView: View {
     @State private var pendingImportContext: PendingImportContext?
     @State private var playbackState = PlaybackState()
     @State private var activeEntry: LibraryEntry?
+    @State private var viewerEntry: LibraryEntry?
+    @State private var viewerAlertMessage: String?
     @State private var playbackTask: Task<Void, Never>?
     @State private var playbackWarmupTask: Task<Void, Never>?
     @State private var playbackChunks: [String] = []
@@ -207,6 +209,19 @@ struct ContentView: View {
         } message: {
             Text(importFailureMessage ?? "The file could not be normalized.")
         }
+        .alert(
+            "Viewer Unavailable",
+            isPresented: Binding(
+                get: { viewerAlertMessage != nil },
+                set: { if !$0 { viewerAlertMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                viewerAlertMessage = nil
+            }
+        } message: {
+            Text(viewerAlertMessage ?? "The normalized TXT file could not be opened.")
+        }
         .preferredColorScheme(preferredMode.colorScheme)
         .tint(.green)
         .overlay {
@@ -360,89 +375,108 @@ struct ContentView: View {
         let entries = filteredEntries
         let sortedByDateAdded = entries.sorted { $0.createdAt > $1.createdAt }
         let sortedByRecentlyPlayed = entries.sorted { $0.lastOpened > $1.lastOpened }
+        let isPresentingViewer = Binding(
+            get: { viewerEntry != nil },
+            set: { newValue in
+                if !newValue {
+                    viewerEntry = nil
+                }
+            }
+        )
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                ReaderTopBarView(
-                    searchText: $searchText,
-                    onHome: { selection = .home },
-                    onPasteText: { isShowingPasteSheet = true },
-                    onUploadFile: { isShowingFileImporter = true },
-                    onSettings: { isShowingSettings = true },
-                    tint: ReaderStyle.accentColor(named: "emerald"),
-                    preferredMode: preferredMode
-                )
-
-                switch selection {
-                case .home:
-                    ReaderHeroView(
-                        featured: sortedByDateAdded.first,
-                        preferredMode: preferredMode,
-                        kokoroModelStatus: kokoroModelStore.status,
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    ReaderTopBarView(
+                        searchText: $searchText,
+                        onHome: { selection = .home },
                         onPasteText: { isShowingPasteSheet = true },
-                        onOpenLibrary: { selection = .recent },
-                        onDownloadKokoro: openKokoroDownloadModal
+                        onUploadFile: { isShowingFileImporter = true },
+                        onSettings: { isShowingSettings = true },
+                        tint: ReaderStyle.accentColor(named: "emerald"),
+                        preferredMode: preferredMode
                     )
 
-                    ReaderLibrarySectionView(
-                        title: "Library",
-                        subtitle: "Everything you have imported or pasted",
-                        entries: sortedByDateAdded,
-                        categories: categories,
-                        coverArtGenerationKeys: coverArtGenerationKeys,
-                        preferredMode: preferredMode,
-                        isEntryPlaying: isEntryPlaying(_:),
-                        onPrimaryAction: handlePrimaryCardAction(for:),
-                        onPlay: startPlayback(for:),
-                        onView: openLibraryEntry,
-                        onRevealLocation: revealLibraryEntryLocation,
-                        onClearCategory: { assign($0, to: nil) },
-                        onAssignCategory: { assign($0, to: $1) },
-                        onDelete: deleteEntry
-                    )
+                    switch selection {
+                    case .home:
+                        ReaderHeroView(
+                            featured: sortedByDateAdded.first,
+                            preferredMode: preferredMode,
+                            kokoroModelStatus: kokoroModelStore.status,
+                            onPasteText: { isShowingPasteSheet = true },
+                            onOpenLibrary: { selection = .recent },
+                            onDownloadKokoro: openKokoroDownloadModal
+                        )
 
-                case .recent:
-                    ReaderLibrarySectionView(
-                        title: "Recently Played",
-                        subtitle: "Your last opened books and pasted text",
-                        entries: sortedByRecentlyPlayed,
-                        categories: categories,
-                        coverArtGenerationKeys: coverArtGenerationKeys,
-                        preferredMode: preferredMode,
-                        isEntryPlaying: isEntryPlaying(_:),
-                        onPrimaryAction: handlePrimaryCardAction(for:),
-                        onPlay: startPlayback(for:),
-                        onView: openLibraryEntry,
-                        onRevealLocation: revealLibraryEntryLocation,
-                        onClearCategory: { assign($0, to: nil) },
-                        onAssignCategory: { assign($0, to: $1) },
-                        onDelete: deleteEntry
-                    )
+                        ReaderLibrarySectionView(
+                            title: "Library",
+                            subtitle: "Everything you have imported or pasted",
+                            entries: sortedByDateAdded,
+                            categories: categories,
+                            coverArtGenerationKeys: coverArtGenerationKeys,
+                            preferredMode: preferredMode,
+                            isEntryPlaying: isEntryPlaying(_:),
+                            onPrimaryAction: handlePrimaryCardAction(for:),
+                            onPlay: startPlayback(for:),
+                            onView: openNormalizedTextViewer,
+                            onRevealLocation: revealLibraryEntryLocation,
+                            onClearCategory: { assign($0, to: nil) },
+                            onAssignCategory: { assign($0, to: $1) },
+                            onDelete: deleteEntry
+                        )
 
-                case .category(let categoryName):
-                    ReaderLibrarySectionView(
-                        title: categoryName,
-                        subtitle: "All books filed into this category",
-                        entries: sortedByDateAdded,
-                        categories: categories,
-                        coverArtGenerationKeys: coverArtGenerationKeys,
+                    case .recent:
+                        ReaderLibrarySectionView(
+                            title: "Recently Played",
+                            subtitle: "Your last opened books and pasted text",
+                            entries: sortedByRecentlyPlayed,
+                            categories: categories,
+                            coverArtGenerationKeys: coverArtGenerationKeys,
+                            preferredMode: preferredMode,
+                            isEntryPlaying: isEntryPlaying(_:),
+                            onPrimaryAction: handlePrimaryCardAction(for:),
+                            onPlay: startPlayback(for:),
+                            onView: openNormalizedTextViewer,
+                            onRevealLocation: revealLibraryEntryLocation,
+                            onClearCategory: { assign($0, to: nil) },
+                            onAssignCategory: { assign($0, to: $1) },
+                            onDelete: deleteEntry
+                        )
+
+                    case .category(let categoryName):
+                        ReaderLibrarySectionView(
+                            title: categoryName,
+                            subtitle: "All books filed into this category",
+                            entries: sortedByDateAdded,
+                            categories: categories,
+                            coverArtGenerationKeys: coverArtGenerationKeys,
+                            preferredMode: preferredMode,
+                            isEntryPlaying: isEntryPlaying(_:),
+                            onPrimaryAction: handlePrimaryCardAction(for:),
+                            onPlay: startPlayback(for:),
+                            onView: openNormalizedTextViewer,
+                            onRevealLocation: revealLibraryEntryLocation,
+                            onClearCategory: { assign($0, to: nil) },
+                            onAssignCategory: { assign($0, to: $1) },
+                            onDelete: deleteEntry
+                        )
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 110)
+            }
+            .scrollContentBackground(.hidden)
+            .navigationDestination(isPresented: isPresentingViewer) {
+                if let viewerEntry {
+                    NormalizedTextViewerScreen(
+                        entry: viewerEntry,
                         preferredMode: preferredMode,
-                        isEntryPlaying: isEntryPlaying(_:),
-                        onPrimaryAction: handlePrimaryCardAction(for:),
-                        onPlay: startPlayback(for:),
-                        onView: openLibraryEntry,
-                        onRevealLocation: revealLibraryEntryLocation,
-                        onClearCategory: { assign($0, to: nil) },
-                        onAssignCategory: { assign($0, to: $1) },
-                        onDelete: deleteEntry
+                        onRevealLocation: revealLibraryEntryLocation
                     )
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            .padding(.bottom, 110)
         }
-        .scrollContentBackground(.hidden)
     }
 
     private var filteredEntries: [LibraryEntry] {
@@ -551,6 +585,10 @@ struct ContentView: View {
             playbackChunkIndex = 0
         }
 
+        if viewerEntry?.persistentModelID == entry.persistentModelID {
+            viewerEntry = nil
+        }
+
         removeAssociatedFiles(for: entry)
 
         Task {
@@ -563,21 +601,21 @@ struct ContentView: View {
 
     // MARK: - File Viewing
 
-    private func openLibraryEntry(_ entry: LibraryEntry) {
-        guard let storedPath = entry.storedFilePath else {
-            uploadAlertMessage = "This item does not have a stored file path."
+    private func openNormalizedTextViewer(_ entry: LibraryEntry) {
+        guard let storedPath = entry.normalizedTextFilePath else {
+            viewerAlertMessage = "This item does not have a normalized TXT file."
             return
         }
 
         let fileURL = URL(fileURLWithPath: storedPath)
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            uploadAlertMessage = "The stored file could not be found on disk."
+            viewerAlertMessage = "The normalized TXT file could not be found on disk."
             return
         }
 
-        if !NSWorkspace.shared.open(fileURL) {
-            uploadAlertMessage = "The file could not be opened."
-        }
+        entry.lastOpened = .now
+        try? modelContext.save()
+        viewerEntry = entry
     }
 
     private func revealLibraryEntryLocation(_ entry: LibraryEntry) {
