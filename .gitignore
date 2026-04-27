@@ -1,0 +1,41 @@
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xccheckout
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.moved-aside
+
+# Swift Package Manager
+.build/
+Package.resolved
+.swiftpm/
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# App artifacts
+*.app
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Logs
+*.log
+
+# Temporary files
+*.swp
+*.tmp
+*.temp
+
+# Anything Reader local generated data
+Assets/kokoro-v1.0.fp16.onnx
+Anything Reader/Generated/
+Anything Reader/Cache/
+Anything Reader/Exports/
+Anything Reader/Phoneme Cache/
+Anything Reader/Cover Art Cache/
+Anything Reader/Audio Cache/

@@ -1,0 +1,993 @@
+//
+//  ReaderComponents.swift
+//  Anything Reader
+//
+//  Reusable SwiftUI building blocks for the main reader experience.
+//
+
+import AppKit
+import SwiftData
+import SwiftUI
+
+// MARK: - Sidebar
+// Primary navigation for the app shell, including user-created categories.
+struct ReaderSidebarView: View {
+    let categories: [ReaderCategory]
+    @Binding var selection: SidebarSelection
+    let onAddCategory: () -> Void
+
+    var body: some View {
+        List(selection: $selection) {
+            // Core navigation shortcuts.
+            Section {
+                Label("Home", systemImage: "house.fill")
+                    .tag(SidebarSelection.home)
+
+                Label("Recently Played", systemImage: "clock.arrow.circlepath")
+                    .tag(SidebarSelection.recent)
+            }
+
+            // User-generated categories.
+            Section("Your Categories") {
+                if categories.isEmpty {
+                    Text("Create a category to organize books")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(categories) { category in
+                        Label(category.name, systemImage: "folder.fill")
+                            .tag(SidebarSelection.category(category.name))
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .navigationTitle("Anything Reader")
+        .toolbar {
+            ToolbarItem {
+                Button(action: onAddCategory) {
+                    Label("New Category", systemImage: "plus")
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Top Bar
+// Global actions and search entry point shown above the library content.
+struct ReaderTopBarView: View {
+    @Binding var searchText: String
+    let onHome: () -> Void
+    let onPasteText: () -> Void
+    let onUploadFile: () -> Void
+    let onSettings: () -> Void
+    let tint: Color
+    let preferredMode: AppearanceMode
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Button(action: onHome) {
+                Label("Home", systemImage: "house.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.headline)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .foregroundStyle(primaryTextColor)
+                    .background(elevatedBackground, in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            searchField
+
+            Button(action: onPasteText) {
+                Label("Paste Text", systemImage: "doc.on.clipboard.fill")
+                    .font(.headline)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .foregroundStyle(primaryTextColor)
+                    .background(tint.opacity(preferredMode == .light ? 0.14 : 0.20), in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onUploadFile) {
+                Label("Upload", systemImage: "arrow.up.doc.fill")
+                    .font(.headline)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .foregroundStyle(primaryTextColor)
+                    .background(tint.opacity(preferredMode == .light ? 0.14 : 0.20), in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onSettings) {
+                Image(systemName: "gearshape.fill")
+                    .font(.headline)
+                    .padding(12)
+                    .foregroundStyle(primaryTextColor)
+                    .background(elevatedBackground, in: Circle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Search books, text, categories", text: $searchText)
+                .textFieldStyle(.plain)
+                .disableAutocorrection(true)
+        }
+        .padding(.horizontal, 14)
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(elevatedBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var elevatedBackground: Color {
+        switch preferredMode {
+        case .light:
+            return Color.black.opacity(0.05)
+        case .dark, .system:
+            return Color.white.opacity(0.08)
+        }
+    }
+
+    private var primaryTextColor: Color {
+        switch preferredMode {
+        case .light:
+            return .black
+        case .dark, .system:
+            return .white
+        }
+    }
+}
+
+// MARK: - Hero
+// High-visibility home section that promotes the currently featured item.
+struct ReaderHeroView: View {
+    let featured: LibraryEntry?
+    let preferredMode: AppearanceMode
+    let onPasteText: () -> Void
+    let onOpenLibrary: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(colors: heroGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Listen to anything.")
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .foregroundStyle(heroPrimaryTextColor)
+
+                Text("PDFs, ePubs, text files, or pasted notes flow into a Spotify-style reader with a persistent player and local library.")
+                    .font(.headline)
+                    .foregroundStyle(heroSecondaryTextColor)
+                    .frame(maxWidth: 560, alignment: .leading)
+
+                HStack(spacing: 12) {
+                    Button(action: onPasteText) {
+                        Label("Paste Text", systemImage: "doc.on.clipboard")
+                            .font(.headline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(heroPrimaryTextColor)
+                            .background(heroButtonBackground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onOpenLibrary) {
+                        Label("Open Library", systemImage: "books.vertical.fill")
+                            .font(.headline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(heroPrimaryTextColor)
+                            .background(heroButtonBackground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(28)
+
+            if let featured {
+                HStack {
+                    Spacer()
+                    VStack(alignment: .leading, spacing: 12) {
+                        ReaderAvatarView(symbolName: featured.avatarSymbolName, accentName: featured.accentName, preferredMode: preferredMode)
+                        Text(featured.title)
+                            .font(.headline)
+                            .foregroundStyle(heroPrimaryTextColor)
+                            .lineLimit(1)
+                        Text(featured.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(heroSecondaryTextColor)
+                            .lineLimit(2)
+                    }
+                    .padding(18)
+                    .frame(width: 260, alignment: .leading)
+                    .background(heroFeatureCardBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .padding(20)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 240, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .strokeBorder(heroBorderColor, lineWidth: 1)
+        )
+    }
+
+    private var heroGradientColors: [Color] {
+        switch preferredMode {
+        case .light:
+            return [
+                Color(red: 0.90, green: 0.98, blue: 0.92),
+                Color(red: 0.82, green: 0.95, blue: 0.87),
+                Color(red: 0.76, green: 0.91, blue: 0.84)
+            ]
+        case .dark, .system:
+            return [
+                Color(red: 0.10, green: 0.42, blue: 0.24),
+                Color(red: 0.06, green: 0.19, blue: 0.12),
+                Color(red: 0.04, green: 0.18, blue: 0.25)
+            ]
+        }
+    }
+
+    private var heroPrimaryTextColor: Color {
+        preferredMode == .light ? .black : .white
+    }
+
+    private var heroSecondaryTextColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.72) : Color.white.opacity(0.82)
+    }
+
+    private var heroButtonBackground: Color {
+        preferredMode == .light ? Color.white.opacity(0.88) : Color.black.opacity(0.25)
+    }
+
+    private var heroFeatureCardBackground: Color {
+        preferredMode == .light ? Color.white.opacity(0.64) : Color.black.opacity(0.18)
+    }
+
+    private var heroBorderColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.10) : Color.white.opacity(0.12)
+    }
+}
+
+// MARK: - Library Section
+// Shared wrapper that renders a titled section and adaptive grid of cards.
+struct ReaderLibrarySectionView: View {
+    let title: String
+    let subtitle: String
+    let entries: [LibraryEntry]
+    let categories: [ReaderCategory]
+    let coverArtGenerationKeys: Set<String>
+    let preferredMode: AppearanceMode
+    let onPlay: (LibraryEntry) -> Void
+    let onView: (LibraryEntry) -> Void
+    let onRevealLocation: (LibraryEntry) -> Void
+    let onClearCategory: (LibraryEntry) -> Void
+    let onAssignCategory: (LibraryEntry, String) -> Void
+    let onDelete: (LibraryEntry) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.title2.weight(.bold))
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            if entries.isEmpty {
+                emptyStateCard
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 16)], spacing: 16) {
+                    ForEach(entries) { entry in
+                        ReaderLibraryCardView(
+                            entry: entry,
+                            categories: categories,
+                            isCoverArtLoading: coverArtGenerationKeys.contains(entry.cacheIdentity),
+                            preferredMode: preferredMode,
+                            onPlay: { onPlay(entry) },
+                            onView: { onView(entry) },
+                            onRevealLocation: { onRevealLocation(entry) },
+                            onClearCategory: { onClearCategory(entry) },
+                            onAssignCategory: { categoryName in
+                                onAssignCategory(entry, categoryName)
+                            },
+                            onDelete: { onDelete(entry) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyStateCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("No items yet")
+                .font(.headline)
+            Text("Use Paste Text, import a document, or create a category to start building your listening library.")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(panelBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var panelBackground: Color {
+        switch preferredMode {
+        case .light:
+            return Color(red: 0.985, green: 0.986, blue: 0.982)
+        case .dark, .system:
+            return Color(red: 0.08, green: 0.09, blue: 0.08)
+        }
+    }
+}
+
+// MARK: - Library Card
+// Full-bleed card used for each book, file, or pasted note in the grid.
+struct ReaderLibraryCardView: View {
+    let entry: LibraryEntry
+    let categories: [ReaderCategory]
+    let isCoverArtLoading: Bool
+    let preferredMode: AppearanceMode
+    let onPlay: () -> Void
+    let onView: () -> Void
+    let onRevealLocation: () -> Void
+    let onClearCategory: () -> Void
+    let onAssignCategory: (String) -> Void
+    let onDelete: () -> Void
+
+    @State private var isShowingDeleteConfirmation = false
+    @State private var isShowingCardMenu = false
+
+    var body: some View {
+
+        ZStack(alignment: .topTrailing) {
+            ReaderCardArtworkView(
+                coverImagePath: entry.coverImageFilePath,
+                symbolName: entry.avatarSymbolName,
+                accentName: entry.accentName,
+                preferredMode: preferredMode,
+                isLoading: isCoverArtLoading
+            )
+            .frame(maxWidth: .infinity, minHeight: 320)
+            .clipped()
+
+            // Darken the lower half so footer content stays readable over artwork.
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.black.opacity(preferredMode == .light ? 0.22 : 0.30),
+                    Color.black.opacity(preferredMode == .light ? 0.72 : 0.82)
+                ],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+
+            VStack(alignment: .leading, spacing: 10) {
+                Spacer(minLength: 0)
+
+                // Footer block for title, metadata chips, progress, and actions.
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(entry.title)
+                            .font(.headline.weight(.bold))
+                            .lineLimit(1)
+                            .foregroundStyle(.white)
+
+                        Text(entry.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.82))
+                            .lineLimit(2)
+                    }
+
+                    HStack(spacing: 8) {
+                        Label(entry.sourceKind.displayName, systemImage: entry.sourceKind.systemImage)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.18), in: Capsule())
+
+                        if let categoryName = entry.categoryName {
+                            Text(categoryName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.12), in: Capsule())
+                        }
+
+                        Spacer()
+
+                        Text(entry.createdAt, format: .dateTime.day().month(.abbreviated).year())
+                            .font(.caption2)
+                            .italic()
+                            .foregroundStyle(.white.opacity(0.68))
+                    }
+
+                    ProgressView(value: entry.progress)
+                        .tint(.white)
+
+                    HStack {
+                        Button(action: onPlay) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.black)
+                                .frame(width: 44, height: 44)
+                                .background(.white, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: onView) {
+                            Text("View")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.16), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer()
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(TopRoundedRectangle(radius: 16).fill(metaBackground))
+            }
+            .padding(.vertical, 20)
+
+            // Overflow actions live outside the footer so they remain reachable.
+            Button {
+                isShowingCardMenu.toggle()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.headline)
+                    .padding(8)
+                    .foregroundStyle(.white)
+                    .background(Color.black.opacity(0.82), in: Circle())
+                    .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+            }
+            .padding(12)
+            .popover(isPresented: $isShowingCardMenu, arrowEdge: .top) {
+                ReaderCardMenuPopoverView(
+                    categories: categories,
+                    preferredMode: preferredMode,
+                    onPlay: onPlay,
+                    onView: onView,
+                    onRevealLocation: onRevealLocation,
+                    onClearCategory: onClearCategory,
+                    onAssignCategory: onAssignCategory,
+                    onDelete: {
+                        isShowingDeleteConfirmation = true
+                    }
+                )
+                .frame(width: 240)
+                .padding(12)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 320, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.14 : 0.10), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(preferredMode == .light ? 0.10 : 0.22), radius: 14, y: 8)
+        .background(panelBackground, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .confirmationDialog(
+            "Delete \"\(entry.title)\"?",
+            isPresented: $isShowingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                onDelete()
+            }
+
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will permanently remove the book/text from the local database.")
+        }
+    }
+    
+    struct TopRoundedRectangle: Shape {
+        var radius: CGFloat = 16
+
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+
+            let r = min(radius, rect.width / 2, rect.height / 2)
+
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY)) // bottom-left
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+
+            // top-left curve
+            path.addQuadCurve(
+                to: CGPoint(x: rect.minX + r, y: rect.minY),
+                control: CGPoint(x: rect.minX, y: rect.minY)
+            )
+
+            path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+
+            // top-right curve
+            path.addQuadCurve(
+                to: CGPoint(x: rect.maxX, y: rect.minY + r),
+                control: CGPoint(x: rect.maxX, y: rect.minY)
+            )
+
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY)) // bottom-right
+            path.closeSubpath()
+
+            return path
+        }
+    }
+
+    // Base surface color behind the entire card chrome.
+    private var panelBackground: Color {
+        preferredMode == .light ? Color.white.opacity(0.82) : Color.white.opacity(0.12)
+    }
+
+    // Secondary elevated tint used for subtle UI containers and chips.
+    private var elevatedBackground: Color {
+        preferredMode == .light ? Color.black.opacity(0.05) : Color.white.opacity(0.08)
+    }
+
+    // Full-width footer tint behind the metadata block.
+    private var metaBackground: Color {
+        switch preferredMode {
+        case .light:
+            return Color.white.opacity(0.34)
+        case .dark, .system:
+            return Color.black.opacity(0.42)
+        }
+    }
+
+    private var secondaryTextColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.72)
+    }
+
+    private var primaryTextColor: Color {
+        preferredMode == .light ? .black : .white
+    }
+}
+
+// MARK: - Card Menu
+// Custom popover that replaces the default menu so the action surface can be styled.
+struct ReaderCardMenuPopoverView: View {
+    let categories: [ReaderCategory]
+    let preferredMode: AppearanceMode
+    let onPlay: () -> Void
+    let onView: () -> Void
+    let onRevealLocation: () -> Void
+    let onClearCategory: () -> Void
+    let onAssignCategory: (String) -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        // Keep the menu actions grouped and visually balanced.
+        VStack(alignment: .leading, spacing: 10) {
+            menuButton(title: "Play now", systemImage: "play.fill", action: onPlay)
+            menuButton(title: "View file", systemImage: "doc.text.magnifyingglass", action: onView)
+            menuButton(title: "Open file location", systemImage: "folder", action: onRevealLocation)
+
+            Divider()
+
+            menuButton(title: "Clear category", systemImage: "tag.slash", action: onClearCategory)
+            menuButton(title: "Delete", systemImage: "trash", role: .destructive, action: onDelete)
+
+            if !categories.isEmpty {
+                Divider()
+
+                Text("Move to")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+
+                ForEach(categories) { category in
+                    menuButton(title: category.name, systemImage: "folder.fill", action: {
+                        onAssignCategory(category.name)
+                    })
+                }
+            }
+        }
+        .padding(.vertical, 12)
+        .background(menuBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(menuBorderColor, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(preferredMode == .light ? 0.14 : 0.26), radius: 16, y: 8)
+    }
+
+    // Reusable row button used for every menu action.
+    @ViewBuilder
+    private func menuButton(
+        title: String,
+        systemImage: String,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 18)
+
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(role == .destructive ? .red : primaryTextColor)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(menuButtonBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Menu surface tint that adapts to the selected appearance mode.
+    private var menuBackground: Color {
+        preferredMode == .light ? Color.white.opacity(0.72) : Color.black.opacity(0.72)
+    }
+
+    // Button row background inside the popover.
+    private var menuButtonBackground: Color {
+        preferredMode == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.06)
+    }
+
+    // Thin border to separate the menu from the background artwork.
+    private var menuBorderColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.10)
+    }
+
+    private var primaryTextColor: Color {
+        preferredMode == .light ? .black : .white
+    }
+}
+
+// MARK: - Card Artwork
+// Artwork loader that prefers saved cover art and falls back to a generated badge.
+struct ReaderCardArtworkView: View {
+    let coverImagePath: String?
+    let symbolName: String
+    let accentName: String
+    let preferredMode: AppearanceMode
+    let isLoading: Bool
+
+    var body: some View {
+        if let coverImagePath, let image = NSImage(contentsOf: URL(fileURLWithPath: coverImagePath)) {
+            coverImage(image)
+        } else {
+            placeholderCover
+        }
+    }
+
+    // Real cover art rendering path.
+    @ViewBuilder
+    private func coverImage(_ image: NSImage) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .scaledToFit() // preserve full cover
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.gray.opacity(preferredMode == .light ? 0.08 : 0.2))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.28 : 0.14), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(preferredMode == .light ? 0.12 : 0.24), radius: 10, y: 5)
+
+    }
+
+    // Placeholder art shown while cover extraction is still running.
+    private var placeholderCover: some View {
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: placeholderGradientColors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.30 : 0.14), lineWidth: 1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(preferredMode == .light ? 0.20 : 0.12))
+                    .frame(width: 46, height: 46)
+
+                Image(systemName: symbolName)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(primarySymbolColor)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if isLoading {
+                Text("Preparing")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(primarySymbolColor.opacity(0.85))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(preferredMode == .light ? 0.08 : 0.18), in: Capsule())
+                    .padding(8)
+            }
+        }
+        .shadow(color: .black.opacity(preferredMode == .light ? 0.11 : 0.22), radius: 10, y: 5)
+    }
+
+    private var placeholderGradientColors: [Color] {
+        let accent = ReaderStyle.accentColor(named: accentName)
+        switch preferredMode {
+        case .light:
+            return [
+                accent.opacity(0.95),
+                accent.opacity(0.65),
+                Color.white.opacity(0.86)
+            ]
+        case .dark, .system:
+            return [
+                accent.opacity(0.98),
+                accent.opacity(0.55),
+                Color.black.opacity(0.26)
+            ]
+        }
+    }
+
+    private var primarySymbolColor: Color {
+        preferredMode == .light ? .black : .white
+    }
+}
+
+// MARK: - Avatar Badge
+// Shared badge view used across cards, player chrome, and hero surfaces.
+struct ReaderAvatarView: View {
+    let symbolName: String
+    let accentName: String
+    let preferredMode: AppearanceMode
+
+    var body: some View {
+        let accent = ReaderStyle.accentColor(named: accentName)
+
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [accent.opacity(0.95), accent.opacity(0.45)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 50, height: 50)
+
+            Image(systemName: symbolName)
+                .font(.headline)
+                .foregroundStyle(preferredMode == .light ? .black : .white)
+        }
+    }
+}
+
+// MARK: - Player Bar
+// Persistent transport controls that stay pinned across the app shell.
+struct ReaderPlayerBarView: View {
+    @Binding var playbackState: PlaybackState
+    let preferredMode: AppearanceMode
+    let onToggleRepeat: () -> Void
+    let onRewind: () -> Void
+    let onTogglePlayPause: () -> Void
+    let onFastForward: () -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            horizontalLayout
+            verticalLayout
+        }
+        .padding(16)
+        .background(panelBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(elevatedBackground, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(preferredMode == .light ? 0.12 : 0.35), radius: 20, y: 8)
+    }
+
+    // Wide layout optimized for roomy windows.
+    private var horizontalLayout: some View {
+        HStack(spacing: 16) {
+            mediaInfo
+            Spacer()
+            controls
+        }
+    }
+
+    // Compact fallback for narrow windows.
+    private var verticalLayout: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            mediaInfo
+            controls
+        }
+    }
+
+    // Current item title, subtitle, and visual identity.
+    private var mediaInfo: some View {
+        HStack(spacing: 16) {
+            ReaderAvatarView(symbolName: playbackState.avatarSymbol, accentName: playbackState.accentName, preferredMode: preferredMode)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(playbackState.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .foregroundStyle(primaryTextColor)
+
+                Text(playbackState.subtitle)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .foregroundStyle(secondaryTextColor)
+
+                HStack(spacing: 10) {
+                    seekBar
+                        .frame(maxWidth: 520)
+
+                    Text(playbackTimeText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(secondaryTextColor)
+                        .frame(minWidth: 84, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    // Playback transport cluster plus seek information.
+    private var controls: some View {
+        HStack(spacing: 12) {
+            roundControlButton(icon: "repeat", isActive: playbackState.isRepeating, isProminent: false) {
+                onToggleRepeat()
+            }
+
+            roundControlButton(icon: "backward.fill") {
+                onRewind()
+            }
+
+            roundControlButton(icon: playbackState.isPlaying ? "pause.fill" : "play.fill", isProminent: true) {
+                onTogglePlayPause()
+            }
+
+            roundControlButton(icon: "forward.fill") {
+                onFastForward()
+            }
+        }
+    }
+
+    // Seek bar with elapsed and total time labels.
+    private var seekBar: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(seekTrackColor)
+                Capsule()
+                    .fill(ReaderStyle.accentColor(named: playbackState.accentName))
+                    .frame(width: max(10, geometry.size.width * playbackState.progress))
+            }
+        }
+        .frame(height: 8)
+    }
+
+    private var playbackTimeText: String {
+        "\(ReaderStyle.formattedTime(playbackState.elapsedSeconds)) / \(ReaderStyle.formattedTime(playbackState.durationSeconds))"
+    }
+
+    private func roundControlButton(
+        icon: String,
+        isActive: Bool = false,
+        isProminent: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: isProminent ? 18 : 15, weight: .semibold))
+                .foregroundStyle(isActive || isProminent ? Color.white : primaryTextColor)
+                .frame(width: isProminent ? 50 : 40, height: isProminent ? 50 : 40)
+                .background(
+                    Circle()
+                        .fill(
+                            isProminent
+                                ? ReaderStyle.accentColor(named: playbackState.accentName)
+                                : elevatedBackground
+                        )
+                )
+                .overlay(
+                    Circle()
+                        .strokeBorder(isActive ? ReaderStyle.accentColor(named: playbackState.accentName) : Color.clear, lineWidth: 1.5)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Base surface for the player chrome.
+    private var panelBackground: Color {
+        preferredMode == .light ? Color.white.opacity(0.72) : Color.white.opacity(0.05)
+    }
+
+    // Border tint for the player chrome.
+    private var elevatedBackground: Color {
+        preferredMode == .light ? Color.black.opacity(0.05) : Color.white.opacity(0.08)
+    }
+
+    private var seekTrackColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.14) : Color.white.opacity(0.18)
+    }
+
+    private var secondaryTextColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.72)
+    }
+
+    private var primaryTextColor: Color {
+        preferredMode == .light ? .black : .white
+    }
+}
+
+// MARK: - Processing Overlay
+// Full-screen overlay shown while an import is being normalized.
+struct ReaderProcessingOverlayView: View {
+    let message: String
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.30)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                ProgressView()
+                    .controlSize(.extraLarge)
+
+                Text(message)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .frame(maxWidth: 320)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
+        }
+    }
+}
+
+// MARK: - Toast
+// Lightweight success banner displayed when a file is ready.
+struct ReaderToastView: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(
+            Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+    }
+}
