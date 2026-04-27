@@ -149,8 +149,10 @@ struct ReaderTopBarView: View {
 struct ReaderHeroView: View {
     let featured: LibraryEntry?
     let preferredMode: AppearanceMode
+    let kokoroModelStatus: KokoroModelStore.Status
     let onPasteText: () -> Void
     let onOpenLibrary: () -> Void
+    let onDownloadKokoro: () -> Void
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -177,6 +179,17 @@ struct ReaderHeroView: View {
                     }
                     .buttonStyle(.plain)
 
+                    Button(action: onDownloadKokoro) {
+                        Label(kokoroButtonTitle, systemImage: kokoroButtonIcon)
+                            .font(.headline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(heroPrimaryTextColor)
+                            .background(kokoroButtonBackground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(kokoroButtonDisabled)
+
                     Button(action: onOpenLibrary) {
                         Label("Open Library", systemImage: "books.vertical.fill")
                             .font(.headline)
@@ -187,6 +200,10 @@ struct ReaderHeroView: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                Text(kokoroStatusMessage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(heroSecondaryTextColor)
             }
             .padding(28)
 
@@ -246,6 +263,70 @@ struct ReaderHeroView: View {
 
     private var heroButtonBackground: Color {
         preferredMode == .light ? Color.white.opacity(0.88) : Color.black.opacity(0.25)
+    }
+
+    private var kokoroButtonBackground: Color {
+        switch kokoroModelStatus {
+        case .installed:
+            return Color.green.opacity(preferredMode == .light ? 0.22 : 0.30)
+        case .downloading:
+            return Color.orange.opacity(preferredMode == .light ? 0.22 : 0.30)
+        case .failed:
+            return Color.red.opacity(preferredMode == .light ? 0.20 : 0.28)
+        case .checking, .notInstalled:
+            return heroButtonBackground
+        }
+    }
+
+    private var kokoroButtonTitle: String {
+        switch kokoroModelStatus {
+        case .checking:
+            return "Checking Kokoro"
+        case .notInstalled:
+            return "Download Kokoro"
+        case .downloading:
+            return "Downloading..."
+        case .installed:
+            return "Kokoro Ready"
+        case .failed:
+            return "Retry Kokoro"
+        }
+    }
+
+    private var kokoroButtonIcon: String {
+        switch kokoroModelStatus {
+        case .checking:
+            return "clock"
+        case .notInstalled:
+            return "arrow.down.circle.fill"
+        case .downloading:
+            return "arrow.down.circle"
+        case .installed:
+            return "checkmark.seal.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var kokoroButtonDisabled: Bool {
+        if case .checking = kokoroModelStatus { return true }
+        if case .downloading = kokoroModelStatus { return true }
+        return false
+    }
+
+    private var kokoroStatusMessage: String {
+        switch kokoroModelStatus {
+        case .checking:
+            return "Checking whether Kokoro is already downloaded."
+        case .notInstalled:
+            return "Download Kokoro once to unlock real offline voices."
+        case .downloading:
+            return "Kokoro is downloading in the background."
+        case .installed:
+            return "Kokoro is ready for offline voice playback."
+        case .failed(let message):
+            return "Kokoro download failed: \(message)"
+        }
     }
 
     private var heroFeatureCardBackground: Color {

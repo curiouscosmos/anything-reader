@@ -201,13 +201,7 @@ final class KokoroSpeechService {
     }
 
     private static func locateModelDirectory() -> URL? {
-        let fileManager = FileManager.default
-        let candidates: [URL] = [
-            Bundle.main.resourceURL?.appendingPathComponent("KokoroModel"),
-            fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("KokoroModel")
-        ].compactMap { $0 }
-
-        return candidates.first(where: { fileManager.fileExists(atPath: $0.path) })
+        KokoroModelStore.shared.modelURL()
     }
 
     private static func locateVoiceArchive() -> URL? {

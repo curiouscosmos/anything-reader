@@ -44,6 +44,7 @@ struct ContentView: View {
     @State private var didCleanupGeneratedContent = false
     @State private var coverArtGenerationKeys: Set<String> = []
     @State private var didBackfillMissingCoverArt = false
+    @StateObject private var kokoroModelStore = KokoroModelStore.shared
 
     private static let fallbackAvatars = [
         "waveform",
@@ -196,6 +197,17 @@ struct ContentView: View {
             cleanupGeneratedDemoContentIfNeeded()
             backfillMissingCoverArtIfNeeded()
             validateSelectedKokoroVoice()
+            kokoroModelStore.refreshInstallationStatus()
+        }
+        .onChange(of: kokoroModelStore.status) { _, newStatus in
+            switch newStatus {
+            case .installed:
+                successToastMessage = "Kokoro downloaded and ready"
+            case .failed(let message):
+                successToastMessage = "Kokoro download failed: \(message)"
+            default:
+                break
+            }
         }
     }
 
@@ -245,6 +257,16 @@ struct ContentView: View {
         successToastMessage = "Playing \(voice.displayName) sample"
     }
 
+    private func downloadKokoroModel() {
+        switch kokoroModelStore.status {
+        case .checking, .downloading, .installed:
+            return
+        case .notInstalled, .failed:
+            kokoroModelStore.downloadModel()
+            successToastMessage = "Downloading Kokoro in the background"
+        }
+    }
+
     // MARK: - Detail Content
 
     @ViewBuilder
@@ -269,8 +291,10 @@ struct ContentView: View {
                     ReaderHeroView(
                         featured: sortedRecent.first,
                         preferredMode: preferredMode,
+                        kokoroModelStatus: kokoroModelStore.status,
                         onPasteText: { isShowingPasteSheet = true },
-                        onOpenLibrary: { selection = .recent }
+                        onOpenLibrary: { selection = .recent },
+                        onDownloadKokoro: downloadKokoroModel
                     )
 
                     ReaderLibrarySectionView(
