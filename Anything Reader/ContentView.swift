@@ -325,7 +325,8 @@ struct ContentView: View {
     @ViewBuilder
     private var detailContent: some View {
         let entries = filteredEntries
-        let sortedRecent = entries.sorted { $0.lastOpened > $1.lastOpened }
+        let sortedByDateAdded = entries.sorted { $0.createdAt > $1.createdAt }
+        let sortedByRecentlyPlayed = entries.sorted { $0.lastOpened > $1.lastOpened }
 
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -342,7 +343,7 @@ struct ContentView: View {
                 switch selection {
                 case .home:
                     ReaderHeroView(
-                        featured: sortedRecent.first,
+                        featured: sortedByDateAdded.first,
                         preferredMode: preferredMode,
                         kokoroModelStatus: kokoroModelStore.status,
                         onPasteText: { isShowingPasteSheet = true },
@@ -351,26 +352,9 @@ struct ContentView: View {
                     )
 
                     ReaderLibrarySectionView(
-                        title: "Recently Played",
-                        subtitle: "Jump back into what you were listening to",
-                        entries: Array(sortedRecent.prefix(8)),
-                        categories: categories,
-                        coverArtGenerationKeys: coverArtGenerationKeys,
-                        preferredMode: preferredMode,
-                        isEntryPlaying: isEntryPlaying(_:),
-                        onPrimaryAction: handlePrimaryCardAction(for:),
-                        onPlay: startPlayback(for:),
-                        onView: openLibraryEntry,
-                        onRevealLocation: revealLibraryEntryLocation,
-                        onClearCategory: { assign($0, to: nil) },
-                        onAssignCategory: { assign($0, to: $1) },
-                        onDelete: deleteEntry
-                    )
-
-                    ReaderLibrarySectionView(
                         title: "Library",
                         subtitle: "Everything you have imported or pasted",
-                        entries: sortedRecent,
+                        entries: sortedByDateAdded,
                         categories: categories,
                         coverArtGenerationKeys: coverArtGenerationKeys,
                         preferredMode: preferredMode,
@@ -388,7 +372,7 @@ struct ContentView: View {
                     ReaderLibrarySectionView(
                         title: "Recently Played",
                         subtitle: "Your last opened books and pasted text",
-                        entries: sortedRecent,
+                        entries: sortedByRecentlyPlayed,
                         categories: categories,
                         coverArtGenerationKeys: coverArtGenerationKeys,
                         preferredMode: preferredMode,
@@ -406,7 +390,7 @@ struct ContentView: View {
                     ReaderLibrarySectionView(
                         title: categoryName,
                         subtitle: "All books filed into this category",
-                        entries: sortedRecent,
+                        entries: sortedByDateAdded,
                         categories: categories,
                         coverArtGenerationKeys: coverArtGenerationKeys,
                         preferredMode: preferredMode,
