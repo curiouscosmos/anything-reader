@@ -11,7 +11,7 @@ import SwiftData
 
 struct ReaderPlaybackChunkService {
     static let preferredChunkLength = 420
-    static let prefetchChunkCount = 2
+    static let prefetchChunkCount = 3
 
     static func normalizedText(for entry: LibraryEntry) -> String? {
         if let path = entry.normalizedTextFilePath {

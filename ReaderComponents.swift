@@ -895,15 +895,22 @@ struct ReaderAvatarView: View {
 struct ReaderPlayerBarView: View {
     @Binding var playbackState: PlaybackState
     let preferredMode: AppearanceMode
+    let isLoadingFirstChunk: Bool
     let onToggleRepeat: () -> Void
     let onRewind: () -> Void
     let onTogglePlayPause: () -> Void
     let onFastForward: () -> Void
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            horizontalLayout
-            verticalLayout
+        ZStack {
+            ViewThatFits(in: .horizontal) {
+                horizontalLayout
+                verticalLayout
+            }
+
+            if isLoadingFirstChunk {
+                firstChunkLoadingOverlay
+            }
         }
         .padding(16)
         .background(panelBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -979,6 +986,29 @@ struct ReaderPlayerBarView: View {
                 onFastForward()
             }
         }
+    }
+
+    // Centered loader shown while the first chunk is still being prepared.
+    private var firstChunkLoadingOverlay: some View {
+        ZStack {
+            Color.black.opacity(preferredMode == .light ? 0.08 : 0.18)
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.extraLarge)
+
+                Text("Please wait")
+                    .font(.headline)
+                    .foregroundStyle(primaryTextColor)
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.16), radius: 12, y: 5)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
     }
 
     // Seek bar with elapsed and total time labels.
@@ -1070,6 +1100,32 @@ struct ReaderProcessingOverlayView: View {
             .frame(maxWidth: 320)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
+        }
+    }
+}
+
+// Centered loader shown while the first playback chunk is being prepared.
+struct ReaderPlaybackLoadingOverlayView: View {
+    let message: String
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.28)
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.extraLarge)
+
+                Text(message)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: .black.opacity(0.20), radius: 16, y: 6)
         }
     }
 }

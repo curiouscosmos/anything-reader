@@ -45,6 +45,7 @@ struct ContentView: View {
     @State private var playbackWarmupTask: Task<Void, Never>?
     @State private var playbackChunks: [String] = []
     @State private var playbackChunkIndex: Int = 0
+    @State private var playbackSessionToken = UUID()
     @State private var didCleanupGeneratedContent = false
     @State private var coverArtGenerationKeys: Set<String> = []
     @State private var didBackfillMissingCoverArt = false
@@ -118,16 +119,19 @@ struct ContentView: View {
             .navigationSplitViewStyle(.balanced)
         }
         .safeAreaInset(edge: .bottom) {
-            ReaderPlayerBarView(
-                playbackState: $playbackState,
-                preferredMode: preferredMode,
-                onToggleRepeat: toggleRepeat,
-                onRewind: rewindPlayback,
-                onTogglePlayPause: togglePlayback,
-                onFastForward: fastForwardPlayback
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            if shouldShowPlayerBar {
+                ReaderPlayerBarView(
+                    playbackState: $playbackState,
+                    preferredMode: preferredMode,
+                    isLoadingFirstChunk: readerPlaybackService.isBufferingFirstChunk,
+                    onToggleRepeat: toggleRepeat,
+                    onRewind: rewindPlayback,
+                    onTogglePlayPause: togglePlayback,
+                    onFastForward: fastForwardPlayback
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
         }
         .sheet(isPresented: $isShowingPasteSheet) {
             ReaderPasteTextSheet(
@@ -205,6 +209,11 @@ struct ContentView: View {
                 ReaderProcessingOverlayView(message: processingImportMessage)
             }
         }
+        .overlay {
+            if readerPlaybackService.isBufferingFirstChunk {
+                ReaderPlaybackLoadingOverlayView(message: "Preparing first chunk")
+            }
+        }
         .overlay(alignment: .top) {
             if let successToastMessage {
                 ReaderToastView(message: successToastMessage)
@@ -271,6 +280,10 @@ struct ContentView: View {
         if !availableNames.contains(kokoroVoiceName) {
             kokoroVoiceName = KokoroVoiceCatalog.defaultVoiceName
         }
+    }
+
+    private var shouldShowPlayerBar: Bool {
+        activeEntry != nil && !readerPlaybackService.isBufferingFirstChunk
     }
 
     private func playKokoroVoiceSample(_ voice: KokoroVoiceOption) {
@@ -965,6 +978,9 @@ struct ContentView: View {
 
     @MainActor
     private func startPlayback(for entry: LibraryEntry) {
+        playbackSessionToken = UUID()
+        let sessionToken = playbackSessionToken
+
         readerPlaybackService.stop()
         stopPlaybackTask()
         stopPlaybackWarmupTask()
@@ -1001,9 +1017,11 @@ struct ContentView: View {
             voice: voice,
             startingProgress: entry.progress,
             onProgress: { update in
+                guard self.playbackSessionToken == sessionToken else { return }
                 self.applyPlaybackUpdate(update, to: entry)
             },
             onFinished: {
+                guard self.playbackSessionToken == sessionToken else { return }
                 if self.playbackState.isRepeating {
                     self.playbackState.progress = 0
                     self.playbackState.elapsedSeconds = 0
@@ -1015,6 +1033,7 @@ struct ContentView: View {
                 }
             },
             onFailure: { message in
+                guard self.playbackSessionToken == sessionToken else { return }
                 self.playbackState.isPlaying = false
                 self.uploadAlertMessage = message
             }
@@ -1023,18 +1042,17 @@ struct ContentView: View {
 
     @MainActor
     private func togglePlayback() {
-        playbackState.isPlaying.toggle()
-
         if playbackState.isPlaying {
+            playbackState.isPlaying = false
+            readerPlaybackService.stop()
+            stopPlaybackTask()
+            stopPlaybackWarmupTask()
+        } else {
             if let entry = activeEntry {
                 startPlayback(for: entry)
             } else {
                 playbackState.isPlaying = false
             }
-        } else {
-            readerPlaybackService.stop()
-            stopPlaybackTask()
-            stopPlaybackWarmupTask()
         }
 
         persistPlayerProgress()
@@ -1080,10 +1098,11 @@ struct ContentView: View {
 
     @MainActor
     private func applyPlaybackUpdate(_ update: ReaderPlaybackUpdate, to entry: LibraryEntry) {
+        guard playbackState.isPlaying else { return }
         playbackState.elapsedSeconds = update.elapsedSeconds
         playbackState.durationSeconds = update.durationSeconds
         playbackState.progress = update.progress
-        playbackState.isPlaying = update.isPlaying && readerPlaybackService.isPlaying
+        playbackState.isPlaying = update.isPlaying
         entry.progress = update.progress
         entry.lastOpened = .now
         try? modelContext.save()
@@ -1094,7 +1113,6 @@ struct ContentView: View {
         guard let activeEntry else { return false }
         return activeEntry.persistentModelID == entry.persistentModelID
             && playbackState.isPlaying
-            && readerPlaybackService.isPlaying
     }
 
     @MainActor

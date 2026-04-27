@@ -26,6 +26,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     static let shared = ReaderPlaybackService()
 
     @Published private(set) var isPlaying = false
+    @Published private(set) var isBufferingFirstChunk = false
+    @Published private(set) var activePlaybackIdentity: String?
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
@@ -35,6 +37,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private var didConfigureEngine = false
     private var synthesizedAudioURLs: [Int: URL] = [:]
     private var synthesisTasks: [Int: Task<URL, Error>] = [:]
+    private var playbackSessionID = UUID()
 
     private override init() {
         super.init()
@@ -42,6 +45,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
     func stop() {
         stopRequested = true
+        playbackSessionID = UUID()
         playbackTask?.cancel()
         progressTask?.cancel()
         playbackTask = nil
@@ -59,6 +63,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         }
 
         isPlaying = false
+        isBufferingFirstChunk = false
+        activePlaybackIdentity = nil
     }
 
     func play(
@@ -71,7 +77,11 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     ) {
         stop()
         stopRequested = false
+        playbackSessionID = UUID()
+        let sessionID = playbackSessionID
         isPlaying = true
+        isBufferingFirstChunk = true
+        activePlaybackIdentity = entry.cacheIdentity
 
         playbackTask = Task { [weak self] in
             guard let self else { return }
@@ -79,7 +89,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             let chunks = ReaderPlaybackChunkService.chunks(for: entry)
             guard !chunks.isEmpty else {
                 await MainActor.run {
+                    guard self.playbackSessionID == sessionID else { return }
                     self.isPlaying = false
+                    self.isBufferingFirstChunk = false
+                    self.activePlaybackIdentity = nil
                     onFailure("No readable text was found in this file.")
                 }
                 return
@@ -90,6 +103,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             let initialElapsed = Self.elapsedEstimate(for: chunks, upTo: startIndex)
 
             await MainActor.run {
+                guard self.playbackSessionID == sessionID else { return }
                 onProgress(
                     ReaderPlaybackUpdate(
                         elapsedSeconds: initialElapsed,
@@ -101,6 +115,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             }
 
             await MainActor.run {
+                guard self.playbackSessionID == sessionID else { return }
                 self.configureEngineIfNeeded()
                 self.playerNode.reset()
             }
@@ -109,7 +124,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 try engine.start()
             } catch {
                 await MainActor.run {
+                    guard self.playbackSessionID == sessionID else { return }
                     self.isPlaying = false
+                    self.isBufferingFirstChunk = false
+                    self.activePlaybackIdentity = nil
                     onFailure(error.localizedDescription)
                 }
                 return
@@ -122,12 +140,14 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 onFailure: onFailure
             )
 
-            await primeAudioPrefetch(for: entry, chunks: chunks, voice: voice, startingAt: startIndex)
-
             var scheduledChunkCount = 0
 
             for chunkIndex in startIndex..<chunks.count {
                 if stopRequested || Task.isCancelled {
+                    break
+                }
+                let isStaleSession = await MainActor.run { self.playbackSessionID != sessionID }
+                if isStaleSession {
                     break
                 }
 
@@ -147,17 +167,22 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                         for: chunkIndex,
                         entry: entry,
                         voice: voice,
-                        text: chunkText
+                        text: chunkText,
+                        sessionID: sessionID
                     )
                 } catch {
                     await MainActor.run {
+                        guard self.playbackSessionID == sessionID else { return }
                         self.isPlaying = false
+                        self.isBufferingFirstChunk = false
+                        self.activePlaybackIdentity = nil
                         onFailure(error.localizedDescription)
                     }
                     return
                 }
 
                 await MainActor.run {
+                    guard self.playbackSessionID == sessionID else { return }
                     self.scheduleAudioFile(audioURL)
                     if !self.playerNode.isPlaying {
                         self.playerNode.play()
@@ -166,14 +191,24 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
                 scheduledChunkCount += 1
 
+                if scheduledChunkCount == 1 {
+                    await MainActor.run {
+                        guard self.playbackSessionID == sessionID else { return }
+                        self.isBufferingFirstChunk = false
+                    }
+                }
+
                 // Keep a rolling audio queue warm so the next chunk is already being
                 // synthesized while the current chunk is playing.
-                await primeAudioPrefetch(for: entry, chunks: chunks, voice: voice, startingAt: chunkIndex + 1)
+                await primeAudioPrefetch(for: entry, chunks: chunks, voice: voice, startingAt: chunkIndex + 1, sessionID: sessionID)
             }
 
             guard scheduledChunkCount > 0 else {
                 await MainActor.run {
+                    guard self.playbackSessionID == sessionID else { return }
                     self.isPlaying = false
+                    self.isBufferingFirstChunk = false
+                    self.activePlaybackIdentity = nil
                     onFailure("No readable audio could be generated for this file.")
                 }
                 return
@@ -192,7 +227,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             }
 
             await MainActor.run {
+                guard self.playbackSessionID == sessionID else { return }
                 self.isPlaying = false
+                self.isBufferingFirstChunk = false
+                self.activePlaybackIdentity = nil
                 onFinished()
             }
         }
@@ -216,9 +254,12 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         for entry: LibraryEntry,
         chunks: [String],
         voice: KokoroVoiceOption,
-        startingAt index: Int
+        startingAt index: Int,
+        sessionID: UUID
     ) async {
         guard !chunks.isEmpty else { return }
+        let isCurrentSession = await MainActor.run { self.playbackSessionID == sessionID }
+        guard isCurrentSession else { return }
 
         let startIndex = min(max(index, 0), chunks.count - 1)
         let upperBound = min(chunks.count - 1, startIndex + ReaderPlaybackChunkService.prefetchChunkCount)
@@ -227,6 +268,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             guard chunkIndex < chunks.count else { continue }
             guard synthesizedAudioURLs[chunkIndex] == nil else { continue }
             guard synthesisTasks[chunkIndex] == nil else { continue }
+            let stillCurrentSession = await MainActor.run { self.playbackSessionID == sessionID }
+            guard stillCurrentSession else { return }
 
             let chunkText = chunks[chunkIndex].trimmingCharacters(in: .whitespacesAndNewlines)
             guard !chunkText.isEmpty else { continue }
@@ -247,11 +290,13 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 do {
                     let url = try await task.value
                     _ = await MainActor.run {
+                        guard self.playbackSessionID == sessionID else { return }
                         synthesizedAudioURLs[chunkIndex] = url
                         synthesisTasks.removeValue(forKey: chunkIndex)
                     }
                 } catch {
                     _ = await MainActor.run {
+                        guard self.playbackSessionID == sessionID else { return }
                         synthesisTasks.removeValue(forKey: chunkIndex)
                     }
                 }
@@ -272,8 +317,14 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         for chunkIndex: Int,
         entry: LibraryEntry,
         voice: KokoroVoiceOption,
-        text: String
+        text: String,
+        sessionID: UUID
     ) async throws -> URL {
+        let isActiveSession = await MainActor.run { self.playbackSessionID == sessionID }
+        guard isActiveSession else {
+            throw CancellationError()
+        }
+
         if let cached = synthesizedAudioURLs[chunkIndex] {
             return cached
         }
@@ -293,11 +344,17 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
         do {
             let url = try await task.value
-            synthesizedAudioURLs[chunkIndex] = url
-            synthesisTasks.removeValue(forKey: chunkIndex)
+            let isStillActive = await MainActor.run { self.playbackSessionID == sessionID }
+            if isStillActive {
+                synthesizedAudioURLs[chunkIndex] = url
+                synthesisTasks.removeValue(forKey: chunkIndex)
+            }
             return url
         } catch {
-            synthesisTasks.removeValue(forKey: chunkIndex)
+            let isStillActive = await MainActor.run { self.playbackSessionID == sessionID }
+            if isStillActive {
+                synthesisTasks.removeValue(forKey: chunkIndex)
+            }
             throw error
         }
     }
