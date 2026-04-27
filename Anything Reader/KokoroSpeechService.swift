@@ -2,12 +2,15 @@
 //  KokoroSpeechService.swift
 //  Anything Reader
 //
-//  Lightweight fallback voice service used when the Kokoro runtime is not
-//  active in the app bundle.
+//  Kokoro-backed speech service that loads the selected model and voice style
+//  from the local app sandbox and plays the synthesized result.
 //
 
 import AVFoundation
 import Foundation
+import KokoroSwift
+import MLX
+import ZIPFoundation
 
 // Describes a single Kokoro voice available in the UI.
 struct KokoroVoiceOption: Identifiable, Hashable {
@@ -95,23 +98,162 @@ enum KokoroVoiceCatalog {
     }
 }
 
-// Fallback preview so the Settings surface still works without the Kokoro runtime.
+// Kokoro speech service that generates and plays local model output.
 final class KokoroSpeechService {
     static let shared = KokoroSpeechService()
 
-    private let synthesizer = AVSpeechSynthesizer()
+    private let runtime = RuntimeBackend()
+    private var audioPlayer: AVAudioPlayer?
 
     private init() {}
 
     func playSample(for voice: KokoroVoiceOption) {
-        let utterance = AVSpeechUtterance(string: voice.sampleText)
-        utterance.voice = AVSpeechSynthesisVoice(language: voice.previewLanguageCode)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
-        utterance.pitchMultiplier = 1.0
-        utterance.preUtteranceDelay = 0.05
-        utterance.postUtteranceDelay = 0.05
+        Task {
+            do {
+                let outputURL = try await runtime.synthesizeSample(for: voice)
+                try await MainActor.run {
+                    try playAudioFile(at: outputURL)
+                }
+            } catch {
+                NSLog("Kokoro sample playback failed: %@", error.localizedDescription)
+            }
+        }
+    }
 
-        synthesizer.stopSpeaking(at: .immediate)
-        synthesizer.speak(utterance)
+    private func playAudioFile(at url: URL) throws {
+        audioPlayer?.stop()
+        audioPlayer = try AVAudioPlayer(contentsOf: url)
+        audioPlayer?.prepareToPlay()
+        audioPlayer?.play()
+    }
+}
+
+// MARK: - Runtime backend
+
+private actor RuntimeBackend {
+    private var engineCache: [URL: KokoroTTS] = [:]
+    private var voiceCache: [String: MLXArray] = [:]
+    private let sampleRate: Double = 24_000
+
+    func synthesizeSample(for voice: KokoroVoiceOption) async throws -> URL {
+        guard let modelURL = await MainActor.run(body: { KokoroModelStore.shared.modelURL() }) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let engine = try engine(for: modelURL)
+        let voiceEmbedding = try await voiceEmbedding(for: voice.voiceName)
+        let language = language(for: voice)
+        let (audioSamples, _) = try engine.generateAudio(
+            voice: voiceEmbedding,
+            language: language,
+            text: voice.sampleText,
+            speed: 1.0
+        )
+
+        return try writeWaveFile(samples: audioSamples)
+    }
+
+    private func engine(for modelURL: URL) throws -> KokoroTTS {
+        if let cached = engineCache[modelURL] {
+            return cached
+        }
+
+        let engine = KokoroTTS(modelPath: modelURL, g2p: .misaki)
+        engineCache[modelURL] = engine
+        return engine
+    }
+
+    private func voiceEmbedding(for voiceName: String) async throws -> MLXArray {
+        if let cached = voiceCache[voiceName] {
+            return cached
+        }
+
+        let archiveURL = try voiceArchiveURL()
+        let extractedURL = try extractVoiceFile(named: "\(voiceName).npy", from: archiveURL)
+        let voiceArray = try loadVoiceArray(from: extractedURL)
+        voiceCache[voiceName] = voiceArray
+        return voiceArray
+    }
+
+    private func voiceArchiveURL() throws -> URL {
+        if let bundleURL = Bundle.main.url(forResource: "voices-v1.0", withExtension: "bin") {
+            return bundleURL
+        }
+
+        if let bundleURL = Bundle.main.url(forResource: "voices-v1.0", withExtension: nil) {
+            return bundleURL
+        }
+
+        throw CocoaError(.fileNoSuchFile)
+    }
+
+    private func extractVoiceFile(named entryName: String, from archiveURL: URL) throws -> URL {
+        let destinationDirectory = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("Anything Reader", isDirectory: true)
+            .appendingPathComponent("Kokoro Voices", isDirectory: true)
+
+        guard let destinationDirectory else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        let destinationURL = destinationDirectory.appendingPathComponent(entryName)
+
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            return destinationURL
+        }
+
+        let archive = try Archive(url: archiveURL, accessMode: .read)
+
+        guard let entry = archive[entryName] else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        _ = try archive.extract(entry, to: destinationURL)
+        return destinationURL
+    }
+
+    private func loadVoiceArray(from url: URL) throws -> MLXArray {
+        try loadArray(url: url)
+    }
+
+    private func language(for voice: KokoroVoiceOption) -> Language {
+        switch String(voice.voiceName.prefix(2)) {
+        case "bf", "bm":
+            return .enGB
+        default:
+            return .enUS
+        }
+    }
+
+    private func writeWaveFile(samples: [Float]) throws -> URL {
+        let tempDirectory = FileManager.default.temporaryDirectory
+        let tempURL = tempDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        )!
+        let frameCount = AVAudioFrameCount(samples.count)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        buffer.frameLength = frameCount
+        samples.withUnsafeBufferPointer { samplePointer in
+            guard let source = samplePointer.baseAddress,
+                  let channelData = buffer.floatChannelData?[0] else {
+                return
+            }
+
+            channelData.update(from: source, count: samples.count)
+        }
+
+        let audioFile = try AVAudioFile(forWriting: tempURL, settings: format.settings)
+        try audioFile.write(from: buffer)
+        return tempURL
     }
 }

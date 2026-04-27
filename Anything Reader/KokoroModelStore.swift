@@ -81,11 +81,13 @@ final class KokoroModelStore: ObservableObject {
     static let shared = KokoroModelStore()
 
     @Published private(set) var status: Status = .checking
+    @Published private(set) var activeModelFileName: String?
 
     private let selectedModelStorageKey = "kokoroSelectedModelFileName"
     private var downloadTask: Task<Void, Never>?
 
     private init() {
+        activeModelFileName = UserDefaults.standard.string(forKey: selectedModelStorageKey)
         refreshInstallationStatus()
     }
 
@@ -100,38 +102,44 @@ final class KokoroModelStore: ObservableObject {
         KokoroDownloadCatalog.allOptions.filter { isOptionDownloaded($0) }
     }
 
+    var runtimeCompatibleInstalledOptions: [KokoroDownloadOption] {
+        installedOptions.filter { isRuntimeCompatibleModel(at: localModelURL(for: $0)) }
+    }
+
     var selectedOption: KokoroDownloadOption? {
-        if let storedName = UserDefaults.standard.string(forKey: selectedModelStorageKey) {
-            return KokoroDownloadCatalog.allOptions.first(where: { $0.localFileName == storedName }) ?? installedOptions.first
+        if let activeFileName = activeModelFileName,
+           let activeOption = KokoroDownloadCatalog.allOptions.first(where: { $0.localFileName == activeFileName }),
+           isOptionDownloaded(activeOption) {
+            return activeOption
         }
 
-        switch status {
-        case .installed(let option), .downloading(let option):
-            return option
-        default:
-            return installedOptions.first
-        }
+        return installedOptions.first
     }
 
     func refreshInstallationStatus() {
-        purgeInvalidRuntimeCompatibleModels()
+        purgeInvalidDownloadedModels()
 
         if let active = selectedOption, isOptionDownloaded(active) {
+            activeModelFileName = active.localFileName
             storeSelectedOption(active)
             status = .installed(active)
             return
         }
 
         if let firstInstalled = installedOptions.first {
+            activeModelFileName = firstInstalled.localFileName
             storeSelectedOption(firstInstalled)
             status = .installed(firstInstalled)
         } else {
+            activeModelFileName = nil
+            UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
             status = .notInstalled
         }
     }
 
     func activateDownloadedModel(_ option: KokoroDownloadOption) {
         guard isOptionDownloaded(option) else { return }
+        activeModelFileName = option.localFileName
         storeSelectedOption(option)
         status = .installed(option)
     }
@@ -141,9 +149,11 @@ final class KokoroModelStore: ObservableObject {
 
         let remainingOptions = installedOptions.filter { $0.localFileName != option.localFileName }
         if let nextOption = remainingOptions.first {
+            activeModelFileName = nextOption.localFileName
             storeSelectedOption(nextOption)
             status = .installed(nextOption)
         } else {
+            activeModelFileName = nil
             UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
             status = .notInstalled
         }
@@ -156,13 +166,15 @@ final class KokoroModelStore: ObservableObject {
         try? fileManager().removeItem(at: fileURL)
 
         if selectedOption?.localFileName == option.localFileName {
+            activeModelFileName = nil
             UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
 
             if let fallback = installedOptions.first {
+                activeModelFileName = fallback.localFileName
                 storeSelectedOption(fallback)
                 status = .installed(fallback)
             } else {
-                status = installedOptions.isEmpty ? .notInstalled : .failed("No runtime-compatible Kokoro model is installed. Download the recommended model to continue.")
+                status = .notInstalled
             }
         } else {
             refreshInstallationStatus()
@@ -189,6 +201,7 @@ final class KokoroModelStore: ObservableObject {
             do {
                 try await downloadAndInstallModel(option: option)
                 await MainActor.run {
+                    self.activeModelFileName = option.localFileName
                     self.storeSelectedOption(option)
                     self.status = .installed(option)
                 }
@@ -250,8 +263,17 @@ final class KokoroModelStore: ObservableObject {
         UserDefaults.standard.set(option.localFileName, forKey: selectedModelStorageKey)
     }
 
-    private func purgeInvalidRuntimeCompatibleModels() {
-        // No-op for now; Kokoro model selection is handled by the active row toggle.
+    private func purgeInvalidDownloadedModels() {
+        if let active = selectedOption, isOptionDownloaded(active) {
+            activeModelFileName = active.localFileName
+            storeSelectedOption(active)
+        } else if let firstInstalled = installedOptions.first {
+            activeModelFileName = firstInstalled.localFileName
+            storeSelectedOption(firstInstalled)
+        } else {
+            activeModelFileName = nil
+            UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
+        }
     }
 
     private func isRuntimeCompatibleModel(at url: URL) -> Bool {

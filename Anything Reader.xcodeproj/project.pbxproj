@@ -159,6 +159,9 @@
 			);
 			name = "Anything Reader";
 			packageProductDependencies = (
+				D18511652F9F2B01008E9FF8 /* KokoroSwift */,
+				D18511662F9F2B01008E9FF8 /* MLX */,
+				D18511672F9F2B01008E9FF8 /* ZIPFoundation */,
 			);
 			productName = "Anything Reader";
 			productReference = D1850FC62F9C1990008E9FF8 /* Anything Reader.app */;
@@ -659,6 +662,23 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+/* Begin XCSwiftPackageProductDependency section */
+		D18511652F9F2B01008E9FF8 /* KokoroSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D18510622F9F2000008E9FF8 /* XCRemoteSwiftPackageReference "kokoro-ios" */;
+			productName = KokoroSwift;
+		};
+		D18511662F9F2B01008E9FF8 /* MLX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D18511592F9EC5D1008E9FF8 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLX;
+		};
+		D18511672F9F2B01008E9FF8 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D18510522F9F1000008E9FF8 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D1850FBE2F9C1990008E9FF8 /* Project object */;
 }

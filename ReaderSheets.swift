@@ -188,7 +188,7 @@ struct ReaderKokoroDownloadSheet: View {
             }
             return false
         }()
-        let isActive = modelStore.selectedOption?.localFileName == option.localFileName && isInstalled
+        let isActive = modelStore.activeModelFileName == option.localFileName && isInstalled
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
