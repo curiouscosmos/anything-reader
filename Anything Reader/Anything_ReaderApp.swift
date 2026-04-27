@@ -48,7 +48,7 @@ struct Anything_ReaderApp: App {
         }
 
         // Version the store URL so schema changes do not crash launch against an older SQLite file.
-        let storeURL = appDirectory.appendingPathComponent("AnythingReader-v2.sqlite")
+        let storeURL = appDirectory.appendingPathComponent("AnythingReader-v3.sqlite")
         return ModelConfiguration(schema: schema, url: storeURL, allowsSave: true)
     }
 }

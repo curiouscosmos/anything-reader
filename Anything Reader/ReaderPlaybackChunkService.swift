@@ -153,7 +153,10 @@ struct ReaderPlaybackChunkService {
     static func progress(for chunkIndex: Int, chunkCount: Int) -> Double {
         guard chunkCount > 0 else { return 0 }
         let boundedIndex = min(max(chunkIndex, 0), chunkCount - 1)
-        return Double(boundedIndex) / Double(chunkCount)
+        // Anchor the value inside the target bucket so a later chunkIndex(for:)
+        // call resolves back to the same page/chapter instead of the previous one.
+        let centeredIndex = Double(boundedIndex) + 0.5
+        return min(centeredIndex / Double(chunkCount), 0.999_999)
     }
 
     private static func pdfPageChunks(for entry: LibraryEntry) -> [String]? {

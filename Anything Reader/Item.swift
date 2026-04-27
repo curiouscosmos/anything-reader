@@ -78,6 +78,8 @@ final class LibraryEntry {
     var pageCount: Int
     var chapterCount: Int
     var readingJumpTargetsData: Data?
+    var currentReadingPositionIndex: Int?
+    var currentReadingPositionTotalCount: Int?
     var progress: Double
     var lastOpened: Date
     var createdAt: Date
@@ -102,6 +104,8 @@ final class LibraryEntry {
         pageCount: Int = 0,
         chapterCount: Int = 0,
         readingJumpTargets: [ReaderJumpTarget] = [],
+        currentReadingPositionIndex: Int? = nil,
+        currentReadingPositionTotalCount: Int? = nil,
         progress: Double = 0.0,
         lastOpened: Date = .now,
         createdAt: Date = .now
@@ -125,6 +129,8 @@ final class LibraryEntry {
         self.pageCount = pageCount
         self.chapterCount = chapterCount
         self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
+        self.currentReadingPositionIndex = currentReadingPositionIndex
+        self.currentReadingPositionTotalCount = currentReadingPositionTotalCount
         self.progress = progress
         self.lastOpened = lastOpened
         self.createdAt = createdAt
@@ -167,6 +173,84 @@ final class LibraryEntry {
         set {
             readingJumpTargetsData = Self.encodeJumpTargets(newValue)
         }
+    }
+
+    var currentReadingProgressFraction: Double {
+        guard
+            let currentReadingPositionIndex,
+            let currentReadingPositionTotalCount,
+            currentReadingPositionTotalCount > 0
+        else {
+            return progress
+        }
+
+        let boundedIndex = min(max(currentReadingPositionIndex, 0), currentReadingPositionTotalCount - 1)
+        return Double(boundedIndex + 1) / Double(currentReadingPositionTotalCount)
+    }
+
+    var currentReadingPositionDisplayText: String? {
+        guard
+            let currentReadingPositionIndex,
+            let currentReadingPositionTotalCount,
+            currentReadingPositionTotalCount > 0,
+            !readingJumpTargets.isEmpty
+        else {
+            return nil
+        }
+
+        let boundedIndex = min(max(currentReadingPositionIndex, 0), readingJumpTargets.count - 1)
+        let target = readingJumpTargets[boundedIndex]
+        let label = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let total = currentReadingPositionTotalCount
+        let position = boundedIndex + 1
+
+        switch readingStructureKind {
+        case .page:
+            if label.isEmpty {
+                return "Page \(position)/\(total)"
+            }
+            return "Page \(position)/\(total) · \(label)"
+        case .chapter:
+            if label.isEmpty {
+                return "Chapter \(position)/\(total)"
+            }
+            return "Chapter \(position)/\(total) · \(label)"
+        case .none:
+            return label.isEmpty ? "Item \(position)/\(total)" : "\(label)"
+        }
+    }
+
+    var currentReadingProgressSummaryText: String? {
+        guard
+            let currentReadingPositionIndex,
+            let currentReadingPositionTotalCount,
+            currentReadingPositionTotalCount > 0,
+            !readingJumpTargets.isEmpty
+        else {
+            return nil
+        }
+
+        let boundedIndex = min(max(currentReadingPositionIndex, 0), readingJumpTargets.count - 1)
+        let target = readingJumpTargets[boundedIndex]
+        let label = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let position = boundedIndex + 1
+        let total = currentReadingPositionTotalCount
+
+        let unitLabel: String
+        switch readingStructureKind {
+        case .page:
+            unitLabel = "Pages"
+        case .chapter:
+            unitLabel = "Chapters"
+        case .none:
+            unitLabel = "Items"
+        }
+
+        var summary = "Progress \(position)/\(total) \(unitLabel)"
+        if !label.isEmpty {
+            summary += " · \(label)"
+        }
+        return summary
     }
 
     private static func encodeJumpTargets(_ targets: [ReaderJumpTarget]) -> Data? {

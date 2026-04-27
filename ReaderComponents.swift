@@ -522,8 +522,17 @@ struct ReaderLibraryCardView: View {
                             .foregroundStyle(.white.opacity(0.68))
                     }
 
-                    ProgressView(value: entry.progress)
-                        .tint(.white)
+                    VStack(alignment: .leading, spacing: 6) {
+                        ProgressView(value: entry.currentReadingProgressFraction)
+                            .tint(.white)
+
+                        if let currentReadingProgress = entry.currentReadingProgressSummaryText ?? entry.currentReadingPositionDisplayText {
+                            Text(currentReadingProgress)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.88))
+                                .lineLimit(1)
+                        }
+                    }
 
                     HStack {
                         Button(action: onPrimaryAction) {
