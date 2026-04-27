@@ -11,6 +11,7 @@ import Foundation
 import KokoroSwift
 import MLX
 import ZIPFoundation
+import Combine
 
 // Describes a single Kokoro voice available in the UI.
 struct KokoroVoiceOption: Identifiable, Hashable {
@@ -36,76 +37,96 @@ enum KokoroVoiceCatalog {
     static let defaultVoiceName = "af_bella"
 
     static let allVoices: [KokoroVoiceOption] = [
-        .init(voiceName: "af_alloy", displayName: "Alloy", languageLabel: "American English · Female", sampleText: sampleText(for: "Alloy")),
-        .init(voiceName: "af_aoede", displayName: "Aoede", languageLabel: "American English · Female", sampleText: sampleText(for: "Aoede")),
-        .init(voiceName: "af_bella", displayName: "Bella", languageLabel: "American English · Female", sampleText: sampleText(for: "Bella")),
-        .init(voiceName: "af_heart", displayName: "Heart", languageLabel: "American English · Female", sampleText: sampleText(for: "Heart")),
-        .init(voiceName: "af_jessica", displayName: "Jessica", languageLabel: "American English · Female", sampleText: sampleText(for: "Jessica")),
-        .init(voiceName: "af_kore", displayName: "Kore", languageLabel: "American English · Female", sampleText: sampleText(for: "Kore")),
-        .init(voiceName: "af_nicole", displayName: "Nicole", languageLabel: "American English · Female", sampleText: sampleText(for: "Nicole")),
-        .init(voiceName: "af_nova", displayName: "Nova", languageLabel: "American English · Female", sampleText: sampleText(for: "Nova")),
-        .init(voiceName: "af_river", displayName: "River", languageLabel: "American English · Female", sampleText: sampleText(for: "River")),
-        .init(voiceName: "af_sarah", displayName: "Sarah", languageLabel: "American English · Female", sampleText: sampleText(for: "Sarah")),
-        .init(voiceName: "af_sky", displayName: "Sky", languageLabel: "American English · Female", sampleText: sampleText(for: "Sky")),
+        .init(voiceName: "af_alloy", displayName: "Alloy", languageLabel: "American English · Female", sampleText: sampleText(for: "af_alloy", displayName: "Alloy")),
+        .init(voiceName: "af_aoede", displayName: "Aoede", languageLabel: "American English · Female", sampleText: sampleText(for: "af_aoede", displayName: "Aoede")),
+        .init(voiceName: "af_bella", displayName: "Bella", languageLabel: "American English · Female", sampleText: sampleText(for: "af_bella", displayName: "Bella")),
+        .init(voiceName: "af_heart", displayName: "Heart", languageLabel: "American English · Female", sampleText: sampleText(for: "af_heart", displayName: "Heart")),
+        .init(voiceName: "af_jessica", displayName: "Jessica", languageLabel: "American English · Female", sampleText: sampleText(for: "af_jessica", displayName: "Jessica")),
+        .init(voiceName: "af_kore", displayName: "Kore", languageLabel: "American English · Female", sampleText: sampleText(for: "af_kore", displayName: "Kore")),
+        .init(voiceName: "af_nicole", displayName: "Nicole", languageLabel: "American English · Female", sampleText: sampleText(for: "af_nicole", displayName: "Nicole")),
+        .init(voiceName: "af_nova", displayName: "Nova", languageLabel: "American English · Female", sampleText: sampleText(for: "af_nova", displayName: "Nova")),
+        .init(voiceName: "af_river", displayName: "River", languageLabel: "American English · Female", sampleText: sampleText(for: "af_river", displayName: "River")),
+        .init(voiceName: "af_sarah", displayName: "Sarah", languageLabel: "American English · Female", sampleText: sampleText(for: "af_sarah", displayName: "Sarah")),
+        .init(voiceName: "af_sky", displayName: "Sky", languageLabel: "American English · Female", sampleText: sampleText(for: "af_sky", displayName: "Sky")),
 
-        .init(voiceName: "am_adam", displayName: "Adam", languageLabel: "American English · Male", sampleText: sampleText(for: "Adam")),
-        .init(voiceName: "am_echo", displayName: "Echo", languageLabel: "American English · Male", sampleText: sampleText(for: "Echo")),
-        .init(voiceName: "am_eric", displayName: "Eric", languageLabel: "American English · Male", sampleText: sampleText(for: "Eric")),
-        .init(voiceName: "am_fenrir", displayName: "Fenrir", languageLabel: "American English · Male", sampleText: sampleText(for: "Fenrir")),
-        .init(voiceName: "am_liam", displayName: "Liam", languageLabel: "American English · Male", sampleText: sampleText(for: "Liam")),
-        .init(voiceName: "am_michael", displayName: "Michael", languageLabel: "American English · Male", sampleText: sampleText(for: "Michael")),
-        .init(voiceName: "am_onyx", displayName: "Onyx", languageLabel: "American English · Male", sampleText: sampleText(for: "Onyx")),
-        .init(voiceName: "am_puck", displayName: "Puck", languageLabel: "American English · Male", sampleText: sampleText(for: "Puck")),
+        .init(voiceName: "am_adam", displayName: "Adam", languageLabel: "American English · Male", sampleText: sampleText(for: "am_adam", displayName: "Adam")),
+        .init(voiceName: "am_echo", displayName: "Echo", languageLabel: "American English · Male", sampleText: sampleText(for: "am_echo", displayName: "Echo")),
+        .init(voiceName: "am_eric", displayName: "Eric", languageLabel: "American English · Male", sampleText: sampleText(for: "am_eric", displayName: "Eric")),
+        .init(voiceName: "am_fenrir", displayName: "Fenrir", languageLabel: "American English · Male", sampleText: sampleText(for: "am_fenrir", displayName: "Fenrir")),
+        .init(voiceName: "am_liam", displayName: "Liam", languageLabel: "American English · Male", sampleText: sampleText(for: "am_liam", displayName: "Liam")),
+        .init(voiceName: "am_michael", displayName: "Michael", languageLabel: "American English · Male", sampleText: sampleText(for: "am_michael", displayName: "Michael")),
+        .init(voiceName: "am_onyx", displayName: "Onyx", languageLabel: "American English · Male", sampleText: sampleText(for: "am_onyx", displayName: "Onyx")),
+        .init(voiceName: "am_puck", displayName: "Puck", languageLabel: "American English · Male", sampleText: sampleText(for: "am_puck", displayName: "Puck")),
 
-        .init(voiceName: "bf_alice", displayName: "Alice", languageLabel: "British English · Female", sampleText: sampleText(for: "Alice")),
-        .init(voiceName: "bf_emma", displayName: "Emma", languageLabel: "British English · Female", sampleText: sampleText(for: "Emma")),
-        .init(voiceName: "bf_isabella", displayName: "Isabella", languageLabel: "British English · Female", sampleText: sampleText(for: "Isabella")),
-        .init(voiceName: "bf_lily", displayName: "Lily", languageLabel: "British English · Female", sampleText: sampleText(for: "Lily")),
+        .init(voiceName: "bf_alice", displayName: "Alice", languageLabel: "British English · Female", sampleText: sampleText(for: "bf_alice", displayName: "Alice")),
+        .init(voiceName: "bf_emma", displayName: "Emma", languageLabel: "British English · Female", sampleText: sampleText(for: "bf_emma", displayName: "Emma")),
+        .init(voiceName: "bf_isabella", displayName: "Isabella", languageLabel: "British English · Female", sampleText: sampleText(for: "bf_isabella", displayName: "Isabella")),
+        .init(voiceName: "bf_lily", displayName: "Lily", languageLabel: "British English · Female", sampleText: sampleText(for: "bf_lily", displayName: "Lily")),
 
-        .init(voiceName: "bm_daniel", displayName: "Daniel", languageLabel: "British English · Male", sampleText: sampleText(for: "Daniel")),
-        .init(voiceName: "bm_fable", displayName: "Fable", languageLabel: "British English · Male", sampleText: sampleText(for: "Fable")),
-        .init(voiceName: "bm_george", displayName: "George", languageLabel: "British English · Male", sampleText: sampleText(for: "George")),
-        .init(voiceName: "bm_lewis", displayName: "Lewis", languageLabel: "British English · Male", sampleText: sampleText(for: "Lewis")),
+        .init(voiceName: "bm_daniel", displayName: "Daniel", languageLabel: "British English · Male", sampleText: sampleText(for: "bm_daniel", displayName: "Daniel")),
+        .init(voiceName: "bm_fable", displayName: "Fable", languageLabel: "British English · Male", sampleText: sampleText(for: "bm_fable", displayName: "Fable")),
+        .init(voiceName: "bm_george", displayName: "George", languageLabel: "British English · Male", sampleText: sampleText(for: "bm_george", displayName: "George")),
+        .init(voiceName: "bm_lewis", displayName: "Lewis", languageLabel: "British English · Male", sampleText: sampleText(for: "bm_lewis", displayName: "Lewis")),
 
-        .init(voiceName: "ef_dora", displayName: "Dora", languageLabel: "Spanish · Female", sampleText: sampleText(for: "Dora")),
-        .init(voiceName: "ff_siwis", displayName: "Siwis", languageLabel: "French · Female", sampleText: sampleText(for: "Siwis")),
-        .init(voiceName: "if_sara", displayName: "Sara", languageLabel: "Italian · Female", sampleText: sampleText(for: "Sara")),
-        .init(voiceName: "im_nicola", displayName: "Nicola", languageLabel: "Italian · Male", sampleText: sampleText(for: "Nicola")),
+        .init(voiceName: "ef_dora", displayName: "Dora", languageLabel: "Spanish · Female", sampleText: sampleText(for: "ef_dora", displayName: "Dora")),
+        .init(voiceName: "ff_siwis", displayName: "Siwis", languageLabel: "French · Female", sampleText: sampleText(for: "ff_siwis", displayName: "Siwis")),
+        .init(voiceName: "if_sara", displayName: "Sara", languageLabel: "Italian · Female", sampleText: sampleText(for: "if_sara", displayName: "Sara")),
+        .init(voiceName: "im_nicola", displayName: "Nicola", languageLabel: "Italian · Male", sampleText: sampleText(for: "im_nicola", displayName: "Nicola")),
 
-        .init(voiceName: "jf_alpha", displayName: "Alpha", languageLabel: "Japanese · Female", sampleText: sampleText(for: "Alpha")),
-        .init(voiceName: "jf_gongitsune", displayName: "Gongitsune", languageLabel: "Japanese · Female", sampleText: sampleText(for: "Gongitsune")),
-        .init(voiceName: "jf_nezumi", displayName: "Nezumi", languageLabel: "Japanese · Female", sampleText: sampleText(for: "Nezumi")),
-        .init(voiceName: "jf_tebukuro", displayName: "Tebukuro", languageLabel: "Japanese · Female", sampleText: sampleText(for: "Tebukuro")),
-        .init(voiceName: "jm_kumo", displayName: "Kumo", languageLabel: "Japanese · Male", sampleText: sampleText(for: "Kumo")),
+        .init(voiceName: "jf_alpha", displayName: "Alpha", languageLabel: "Japanese · Female", sampleText: sampleText(for: "jf_alpha", displayName: "Alpha")),
+        .init(voiceName: "jf_gongitsune", displayName: "Gongitsune", languageLabel: "Japanese · Female", sampleText: sampleText(for: "jf_gongitsune", displayName: "Gongitsune")),
+        .init(voiceName: "jf_nezumi", displayName: "Nezumi", languageLabel: "Japanese · Female", sampleText: sampleText(for: "jf_nezumi", displayName: "Nezumi")),
+        .init(voiceName: "jf_tebukuro", displayName: "Tebukuro", languageLabel: "Japanese · Female", sampleText: sampleText(for: "jf_tebukuro", displayName: "Tebukuro")),
+        .init(voiceName: "jm_kumo", displayName: "Kumo", languageLabel: "Japanese · Male", sampleText: sampleText(for: "jm_kumo", displayName: "Kumo")),
 
-        .init(voiceName: "pf_dora", displayName: "Dora", languageLabel: "Portuguese · Female", sampleText: sampleText(for: "Dora")),
-        .init(voiceName: "zf_xiaobei", displayName: "Xiaobei", languageLabel: "Chinese · Female", sampleText: sampleText(for: "Xiaobei")),
-        .init(voiceName: "zf_xiaoni", displayName: "Xiaoni", languageLabel: "Chinese · Female", sampleText: sampleText(for: "Xiaoni")),
-        .init(voiceName: "zf_xiaoxiao", displayName: "Xiaoxiao", languageLabel: "Chinese · Female", sampleText: sampleText(for: "Xiaoxiao")),
-        .init(voiceName: "zf_xiaoyi", displayName: "Xiaoyi", languageLabel: "Chinese · Female", sampleText: sampleText(for: "Xiaoyi")),
-        .init(voiceName: "zm_yunjian", displayName: "Yunjian", languageLabel: "Chinese · Male", sampleText: sampleText(for: "Yunjian")),
-        .init(voiceName: "zm_yunxi", displayName: "Yunxi", languageLabel: "Chinese · Male", sampleText: sampleText(for: "Yunxi")),
-        .init(voiceName: "zm_yunxia", displayName: "Yunxia", languageLabel: "Chinese · Male", sampleText: sampleText(for: "Yunxia")),
-        .init(voiceName: "zm_yunyang", displayName: "Yunyang", languageLabel: "Chinese · Male", sampleText: sampleText(for: "Yunyang"))
+        .init(voiceName: "pf_dora", displayName: "Dora", languageLabel: "Portuguese · Female", sampleText: sampleText(for: "pf_dora", displayName: "Dora")),
+        .init(voiceName: "zf_xiaobei", displayName: "Xiaobei", languageLabel: "Chinese · Female", sampleText: sampleText(for: "zf_xiaobei", displayName: "Xiaobei")),
+        .init(voiceName: "zf_xiaoni", displayName: "Xiaoni", languageLabel: "Chinese · Female", sampleText: sampleText(for: "zf_xiaoni", displayName: "Xiaoni")),
+        .init(voiceName: "zf_xiaoxiao", displayName: "Xiaoxiao", languageLabel: "Chinese · Female", sampleText: sampleText(for: "zf_xiaoxiao", displayName: "Xiaoxiao")),
+        .init(voiceName: "zf_xiaoyi", displayName: "Xiaoyi", languageLabel: "Chinese · Female", sampleText: sampleText(for: "zf_xiaoyi", displayName: "Xiaoyi")),
+        .init(voiceName: "zm_yunjian", displayName: "Yunjian", languageLabel: "Chinese · Male", sampleText: sampleText(for: "zm_yunjian", displayName: "Yunjian")),
+        .init(voiceName: "zm_yunxi", displayName: "Yunxi", languageLabel: "Chinese · Male", sampleText: sampleText(for: "zm_yunxi", displayName: "Yunxi")),
+        .init(voiceName: "zm_yunxia", displayName: "Yunxia", languageLabel: "Chinese · Male", sampleText: sampleText(for: "zm_yunxia", displayName: "Yunxia")),
+        .init(voiceName: "zm_yunyang", displayName: "Yunyang", languageLabel: "Chinese · Male", sampleText: sampleText(for: "zm_yunyang", displayName: "Yunyang"))
     ]
 
     static func voice(named name: String) -> KokoroVoiceOption {
         allVoices.first(where: { $0.voiceName == name }) ?? allVoices[0]
     }
 
-    private static func sampleText(for voiceDisplayName: String) -> String {
-        "Hello. This is the \(voiceDisplayName) voice preview for Anything Reader."
+    private static func sampleText(for voiceName: String, displayName: String) -> String {
+        switch String(voiceName.prefix(2)) {
+        case "ef":
+            return "Hola. Esta es la vista previa de la voz \(displayName) para Anything Reader."
+        case "ff":
+            return "Bonjour. Ceci est l'aperçu de la voix \(displayName) pour Anything Reader."
+        case "if", "im":
+            return "Ciao. Questa è l'anteprima della voce \(displayName) per Anything Reader."
+        case "jf", "jm":
+            return "こんにちは。これは Anything Reader の \(displayName) 音声プレビューです。"
+        case "pf":
+            return "Olá. Esta é a prévia da voz \(displayName) para Anything Reader."
+        case "zf", "zm":
+            return "你好，这是 Anything Reader 的 \(displayName) 语音预览。"
+        default:
+            return "Hello. This is the \(displayName) voice preview for Anything Reader."
+        }
     }
 }
 
 // Kokoro speech service that generates and plays local model output.
-final class KokoroSpeechService {
+final class KokoroSpeechService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = KokoroSpeechService()
 
     private let runtime = RuntimeBackend()
     private var audioPlayer: AVAudioPlayer?
+    @Published private(set) var isPlaying = false
 
-    private init() {}
+    override private init() {}
+
+    func prepareForPlayback() {
+        isPlaying = true
+    }
 
     func playSample(for voice: KokoroVoiceOption) {
         Task {
@@ -115,6 +136,9 @@ final class KokoroSpeechService {
                     try playAudioFile(at: outputURL)
                 }
             } catch {
+                await MainActor.run {
+                    self.isPlaying = false
+                }
                 NSLog("Kokoro sample playback failed: %@", error.localizedDescription)
             }
         }
@@ -123,8 +147,18 @@ final class KokoroSpeechService {
     private func playAudioFile(at url: URL) throws {
         audioPlayer?.stop()
         audioPlayer = try AVAudioPlayer(contentsOf: url)
+        audioPlayer?.delegate = self
         audioPlayer?.prepareToPlay()
+        isPlaying = true
         audioPlayer?.play()
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        isPlaying = false
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        isPlaying = false
     }
 }
 

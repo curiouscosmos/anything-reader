@@ -47,6 +47,7 @@ struct ContentView: View {
     @State private var didBackfillMissingCoverArt = false
     @State private var didPresentKokoroDownloadGate = false
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
+    @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
 
     private static let fallbackAvatars = [
         "waveform",
@@ -136,6 +137,7 @@ struct ContentView: View {
                 appearanceModeRawValue: $appearanceModeRawValue,
                 selectedVoiceName: $kokoroVoiceName,
                 voiceOptions: KokoroVoiceCatalog.allVoices,
+                isPlaying: kokoroSpeechService.isPlaying,
                 onPlaySample: playKokoroVoiceSample
             )
         }
@@ -268,7 +270,8 @@ struct ContentView: View {
     }
 
     private func playKokoroVoiceSample(_ voice: KokoroVoiceOption) {
-        KokoroSpeechService.shared.playSample(for: voice)
+        kokoroSpeechService.prepareForPlayback()
+        kokoroSpeechService.playSample(for: voice)
         successToastMessage = "Playing \(voice.displayName) sample"
     }
 

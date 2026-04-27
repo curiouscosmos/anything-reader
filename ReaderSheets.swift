@@ -12,6 +12,7 @@ struct ReaderSettingsSheet: View {
     @Binding var appearanceModeRawValue: String
     @Binding var selectedVoiceName: String
     let voiceOptions: [KokoroVoiceOption]
+    let isPlaying: Bool
     let onPlaySample: (KokoroVoiceOption) -> Void
 
     var body: some View {
@@ -27,45 +28,30 @@ struct ReaderSettingsSheet: View {
                     }
 
                     settingSection(title: "Kokoro Voice") {
-                        Picker("Default Voice", selection: $selectedVoiceName) {
-                            ForEach(voiceOptions) { voice in
-                                Text(voice.displayName).tag(voice.voiceName)
-                            }
-                        }
-                        .pickerStyle(.menu)
-
-                        Text("Kokoro voice selection is local and will use the offline runtime when the model directory is available.")
-                            .foregroundStyle(.secondary)
-                    }
-
-                    settingSection(title: "Voice Samples") {
-                        ForEach(voiceOptions) { voice in
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack(alignment: .top, spacing: 12) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(voice.displayName)
-                                            .font(.headline)
-
-                                        Text(voice.languageLabel)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .center, spacing: 12) {
+                                Picker("Default Voice", selection: $selectedVoiceName) {
+                                    ForEach(voiceOptions) { voice in
+                                        Text(voice.displayName).tag(voice.voiceName)
                                     }
-
-                                    Spacer(minLength: 8)
-
-                                    Button {
-                                        onPlaySample(voice)
-                                    } label: {
-                                        Label("Play Sample", systemImage: "play.circle.fill")
-                                    }
-                                    .buttonStyle(.borderedProminent)
                                 }
+                                .pickerStyle(.menu)
 
-                                Text(voice.sampleText)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
+                                Button {
+                                    onPlaySample(currentVoice)
+                                } label: {
+                                    Label(isPlaying ? "Playing..." : "Play", systemImage: "play.circle.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(isPlaying)
                             }
-                            .padding(.vertical, 4)
+
+                            Text("Kokoro voice selection is local and will use the offline runtime when the model directory is available.")
+                                .foregroundStyle(.secondary)
+
+                            Text(currentVoice.sampleText)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -82,6 +68,10 @@ struct ReaderSettingsSheet: View {
     }
 
     @Environment(\.dismiss) private var dismiss
+
+    private var currentVoice: KokoroVoiceOption {
+        voiceOptions.first(where: { $0.voiceName == selectedVoiceName }) ?? voiceOptions[0]
+    }
 
     @ViewBuilder
     private func settingSection<Content: View>(
