@@ -239,6 +239,9 @@ struct ContentView: View {
                 break
             }
         }
+        .onChange(of: kokoroVoiceName) { _, _ in
+            restartPlaybackForSelectedVoiceIfNeeded()
+        }
     }
 
     // MARK: - Theme
@@ -290,6 +293,18 @@ struct ContentView: View {
         kokoroSpeechService.prepareForPlayback()
         kokoroSpeechService.playSample(for: voice)
         successToastMessage = "Playing \(voice.displayName) sample"
+    }
+
+    @MainActor
+    private func restartPlaybackForSelectedVoiceIfNeeded() {
+        guard let entry = activeEntry else { return }
+        guard playbackState.isPlaying || readerPlaybackService.isPlaying || readerPlaybackService.isBufferingFirstChunk else { return }
+
+        readerPlaybackService.stop()
+        stopPlaybackTask()
+        stopPlaybackWarmupTask()
+        playbackState.isPlaying = true
+        startPlayback(for: entry)
     }
 
     private func promptForKokoroDownloadIfNeeded() {
