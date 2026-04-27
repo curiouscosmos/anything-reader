@@ -366,6 +366,8 @@ struct ReaderLibrarySectionView: View {
     let categories: [ReaderCategory]
     let coverArtGenerationKeys: Set<String>
     let preferredMode: AppearanceMode
+    let isEntryPlaying: (LibraryEntry) -> Bool
+    let onPrimaryAction: (LibraryEntry) -> Void
     let onPlay: (LibraryEntry) -> Void
     let onView: (LibraryEntry) -> Void
     let onRevealLocation: (LibraryEntry) -> Void
@@ -396,6 +398,8 @@ struct ReaderLibrarySectionView: View {
                             categories: categories,
                             isCoverArtLoading: coverArtGenerationKeys.contains(entry.cacheIdentity),
                             preferredMode: preferredMode,
+                            isPlaying: isEntryPlaying(entry),
+                            onPrimaryAction: { onPrimaryAction(entry) },
                             onPlay: { onPlay(entry) },
                             onView: { onView(entry) },
                             onRevealLocation: { onRevealLocation(entry) },
@@ -440,6 +444,8 @@ struct ReaderLibraryCardView: View {
     let categories: [ReaderCategory]
     let isCoverArtLoading: Bool
     let preferredMode: AppearanceMode
+    let isPlaying: Bool
+    let onPrimaryAction: () -> Void
     let onPlay: () -> Void
     let onView: () -> Void
     let onRevealLocation: () -> Void
@@ -520,8 +526,8 @@ struct ReaderLibraryCardView: View {
                         .tint(.white)
 
                     HStack {
-                        Button(action: onPlay) {
-                            Image(systemName: "play.fill")
+                        Button(action: onPrimaryAction) {
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(.black)
                                 .frame(width: 44, height: 44)

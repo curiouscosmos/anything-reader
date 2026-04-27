@@ -12,6 +12,9 @@
 		D18510362F9C2812008E9FF8 /* ReaderSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18510352F9C2812008E9FF8 /* ReaderSheets.swift */; };
 		D185103D2F9D67F9008E9FF8 /* voices-v1.0.bin in Resources */ = {isa = PBXBuildFile; fileRef = D185103C2F9D67F9008E9FF8 /* voices-v1.0.bin */; };
 		D185104D2F9D7065008E9FF8 /* KokoroG2PService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D185104C2F9D7065008E9FF8 /* KokoroG2PService.swift */; };
+		D18512302F9F3453008E9FF8 /* KokoroSwift in Frameworks */ = {isa = PBXBuildFile; productRef = D18511652F9F2B01008E9FF8 /* KokoroSwift */; };
+		D18512312F9F3453008E9FF8 /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = D18511662F9F2B01008E9FF8 /* MLX */; };
+		D18512322F9F3453008E9FF8 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = D18511672F9F2B01008E9FF8 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,6 +80,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D18512322F9F3453008E9FF8 /* ZIPFoundation in Frameworks */,
+				D18512312F9F3453008E9FF8 /* MLX in Frameworks */,
+				D18512302F9F3453008E9FF8 /* KokoroSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -662,6 +668,7 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		D18511652F9F2B01008E9FF8 /* KokoroSwift */ = {
 			isa = XCSwiftPackageProductDependency;

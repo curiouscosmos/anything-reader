@@ -42,12 +42,16 @@ struct ContentView: View {
     @State private var playbackState = PlaybackState()
     @State private var activeEntry: LibraryEntry?
     @State private var playbackTask: Task<Void, Never>?
+    @State private var playbackWarmupTask: Task<Void, Never>?
+    @State private var playbackChunks: [String] = []
+    @State private var playbackChunkIndex: Int = 0
     @State private var didCleanupGeneratedContent = false
     @State private var coverArtGenerationKeys: Set<String> = []
     @State private var didBackfillMissingCoverArt = false
     @State private var didPresentKokoroDownloadGate = false
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
+    @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
 
     private static let fallbackAvatars = [
         "waveform",
@@ -340,6 +344,8 @@ struct ContentView: View {
                         categories: categories,
                         coverArtGenerationKeys: coverArtGenerationKeys,
                         preferredMode: preferredMode,
+                        isEntryPlaying: isEntryPlaying(_:),
+                        onPrimaryAction: handlePrimaryCardAction(for:),
                         onPlay: startPlayback(for:),
                         onView: openLibraryEntry,
                         onRevealLocation: revealLibraryEntryLocation,
@@ -355,6 +361,8 @@ struct ContentView: View {
                         categories: categories,
                         coverArtGenerationKeys: coverArtGenerationKeys,
                         preferredMode: preferredMode,
+                        isEntryPlaying: isEntryPlaying(_:),
+                        onPrimaryAction: handlePrimaryCardAction(for:),
                         onPlay: startPlayback(for:),
                         onView: openLibraryEntry,
                         onRevealLocation: revealLibraryEntryLocation,
@@ -371,6 +379,8 @@ struct ContentView: View {
                         categories: categories,
                         coverArtGenerationKeys: coverArtGenerationKeys,
                         preferredMode: preferredMode,
+                        isEntryPlaying: isEntryPlaying(_:),
+                        onPrimaryAction: handlePrimaryCardAction(for:),
                         onPlay: startPlayback(for:),
                         onView: openLibraryEntry,
                         onRevealLocation: revealLibraryEntryLocation,
@@ -387,6 +397,8 @@ struct ContentView: View {
                         categories: categories,
                         coverArtGenerationKeys: coverArtGenerationKeys,
                         preferredMode: preferredMode,
+                        isEntryPlaying: isEntryPlaying(_:),
+                        onPrimaryAction: handlePrimaryCardAction(for:),
                         onPlay: startPlayback(for:),
                         onView: openLibraryEntry,
                         onRevealLocation: revealLibraryEntryLocation,
@@ -502,9 +514,11 @@ struct ContentView: View {
     @MainActor
     private func deleteEntry(_ entry: LibraryEntry) {
         if activeEntry?.persistentModelID == entry.persistentModelID {
-            stopPlaybackTask()
+            readerPlaybackService.stop()
             activeEntry = nil
             playbackState = PlaybackState()
+            playbackChunks = []
+            playbackChunkIndex = 0
         }
 
         removeAssociatedFiles(for: entry)
@@ -606,7 +620,6 @@ struct ContentView: View {
 
         modelContext.insert(pastedEntry)
         try? modelContext.save()
-        cachePhonemesInBackground(for: pastedEntry, text: normalizedText)
 
         pastedTitle = ""
         pastedText = ""
@@ -704,8 +717,6 @@ struct ContentView: View {
                 clearPendingImportState(showing: "\(entry.title) is ready to play.")
                 queueCoverArtGenerationIfNeeded(for: entry)
             }
-
-            cachePhonemesInBackground(for: entry, text: ingest.normalizedText)
         } catch {
             await MainActor.run {
                 isProcessingImport = false
@@ -796,30 +807,6 @@ struct ContentView: View {
 
         try fileManager.copyItem(at: sourceURL, to: destinationURL)
         return destinationURL
-    }
-
-    private func cachePhonemesInBackground(for entry: LibraryEntry, text: String) {
-        let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedText.isEmpty else { return }
-
-        Task.detached(priority: .utility) {
-            if let cachedPhonemes = await PhonemeCacheService.shared.cachedPhonemes(for: entry),
-               !cachedPhonemes.isEmpty {
-                await MainActor.run {
-                    self.applyPhonemeCache(cachedPhonemes, to: entry)
-                }
-                return
-            }
-
-            let phonemeText = await KokoroG2PService.shared.phonemize(normalizedText)
-            guard !Task.isCancelled, !phonemeText.isEmpty else { return }
-
-            await PhonemeCacheService.shared.store(phonemeText, for: entry)
-
-            await MainActor.run {
-                self.applyPhonemeCache(phonemeText, to: entry)
-            }
-        }
     }
 
     @MainActor
@@ -978,9 +965,19 @@ struct ContentView: View {
 
     @MainActor
     private func startPlayback(for entry: LibraryEntry) {
+        readerPlaybackService.stop()
+        stopPlaybackTask()
+        stopPlaybackWarmupTask()
+
         // Store the active record so progress updates persist to SwiftData.
         activeEntry = entry
         entry.lastOpened = .now
+
+        playbackChunks = ReaderPlaybackChunkService.chunks(for: entry)
+        playbackChunkIndex = ReaderPlaybackChunkService.chunkIndex(
+            for: entry.progress,
+            chunkCount: playbackChunks.count
+        )
 
         let duration = max(600, min(10800, entry.sourceText.isEmpty ? 1800 : max(600, entry.sourceText.count / 12)))
         let elapsedSeconds = Int((Double(duration) * entry.progress).rounded())
@@ -997,7 +994,31 @@ struct ContentView: View {
         )
 
         try? modelContext.save()
-        startPlaybackTask()
+
+        let voice = KokoroVoiceCatalog.voice(named: kokoroVoiceName)
+        readerPlaybackService.play(
+            entry: entry,
+            voice: voice,
+            startingProgress: entry.progress,
+            onProgress: { update in
+                self.applyPlaybackUpdate(update, to: entry)
+            },
+            onFinished: {
+                if self.playbackState.isRepeating {
+                    self.playbackState.progress = 0
+                    self.playbackState.elapsedSeconds = 0
+                    self.playbackState.isPlaying = false
+                    self.startPlayback(for: entry)
+                } else {
+                    self.playbackState.isPlaying = false
+                    self.persistPlayerProgress()
+                }
+            },
+            onFailure: { message in
+                self.playbackState.isPlaying = false
+                self.uploadAlertMessage = message
+            }
+        )
     }
 
     @MainActor
@@ -1005,9 +1026,15 @@ struct ContentView: View {
         playbackState.isPlaying.toggle()
 
         if playbackState.isPlaying {
-            startPlaybackTask()
+            if let entry = activeEntry {
+                startPlayback(for: entry)
+            } else {
+                playbackState.isPlaying = false
+            }
         } else {
+            readerPlaybackService.stop()
             stopPlaybackTask()
+            stopPlaybackWarmupTask()
         }
 
         persistPlayerProgress()
@@ -1040,43 +1067,43 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func startPlaybackTask() {
-        stopPlaybackTask()
-
-        guard playbackState.isPlaying else { return }
-
-        playbackTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-
-                await MainActor.run {
-                    guard playbackState.isPlaying else { return }
-
-                    if playbackState.elapsedSeconds >= playbackState.durationSeconds {
-                        if playbackState.isRepeating {
-                            playbackState.elapsedSeconds = 0
-                            playbackState.progress = 0
-                        } else {
-                            playbackState.isPlaying = false
-                            stopPlaybackTask()
-                            persistPlayerProgress()
-                            return
-                        }
-                    } else {
-                        playbackState.elapsedSeconds += 1
-                        playbackState.progress = Double(playbackState.elapsedSeconds) / Double(playbackState.durationSeconds)
-                    }
-
-                    persistPlayerProgress()
-                }
-            }
-        }
-    }
-
-    @MainActor
     private func stopPlaybackTask() {
         playbackTask?.cancel()
         playbackTask = nil
+    }
+
+    @MainActor
+    private func stopPlaybackWarmupTask() {
+        playbackWarmupTask?.cancel()
+        playbackWarmupTask = nil
+    }
+
+    @MainActor
+    private func applyPlaybackUpdate(_ update: ReaderPlaybackUpdate, to entry: LibraryEntry) {
+        playbackState.elapsedSeconds = update.elapsedSeconds
+        playbackState.durationSeconds = update.durationSeconds
+        playbackState.progress = update.progress
+        playbackState.isPlaying = update.isPlaying && readerPlaybackService.isPlaying
+        entry.progress = update.progress
+        entry.lastOpened = .now
+        try? modelContext.save()
+    }
+
+    @MainActor
+    private func isEntryPlaying(_ entry: LibraryEntry) -> Bool {
+        guard let activeEntry else { return false }
+        return activeEntry.persistentModelID == entry.persistentModelID
+            && playbackState.isPlaying
+            && readerPlaybackService.isPlaying
+    }
+
+    @MainActor
+    private func handlePrimaryCardAction(for entry: LibraryEntry) {
+        if isEntryPlaying(entry) {
+            togglePlayback()
+        } else {
+            startPlayback(for: entry)
+        }
     }
 }
 

@@ -131,7 +131,7 @@ final class KokoroSpeechService: NSObject, ObservableObject, AVAudioPlayerDelega
     func playSample(for voice: KokoroVoiceOption) {
         Task {
             do {
-                let outputURL = try await runtime.synthesizeSample(for: voice)
+                let outputURL = try await runtime.synthesize(text: voice.sampleText, voice: voice)
                 try await MainActor.run {
                     try playAudioFile(at: outputURL)
                 }
@@ -142,6 +142,10 @@ final class KokoroSpeechService: NSObject, ObservableObject, AVAudioPlayerDelega
                 NSLog("Kokoro sample playback failed: %@", error.localizedDescription)
             }
         }
+    }
+
+    func synthesize(text: String, voice: KokoroVoiceOption) async throws -> URL {
+        try await runtime.synthesize(text: text, voice: voice)
     }
 
     private func playAudioFile(at url: URL) throws {
@@ -169,7 +173,7 @@ private actor RuntimeBackend {
     private var voiceCache: [String: MLXArray] = [:]
     private let sampleRate: Double = 24_000
 
-    func synthesizeSample(for voice: KokoroVoiceOption) async throws -> URL {
+    func synthesize(text: String, voice: KokoroVoiceOption) async throws -> URL {
         guard let modelURL = await MainActor.run(body: { KokoroModelStore.shared.modelURL() }) else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -180,7 +184,7 @@ private actor RuntimeBackend {
         let (audioSamples, _) = try engine.generateAudio(
             voice: voiceEmbedding,
             language: language,
-            text: voice.sampleText,
+            text: text,
             speed: 1.0
         )
 
