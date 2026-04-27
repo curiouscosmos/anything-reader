@@ -10,7 +10,6 @@
 		D18510322F9C27E9008E9FF8 /* ReaderTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18510312F9C27E9008E9FF8 /* ReaderTypes.swift */; };
 		D18510342F9C280B008E9FF8 /* ReaderComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18510332F9C280B008E9FF8 /* ReaderComponents.swift */; };
 		D18510362F9C2812008E9FF8 /* ReaderSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18510352F9C2812008E9FF8 /* ReaderSheets.swift */; };
-		D185103B2F9D67D4008E9FF8 /* kokoro-v1.0.fp16.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D185103A2F9D67D4008E9FF8 /* kokoro-v1.0.fp16.onnx */; };
 		D185103D2F9D67F9008E9FF8 /* voices-v1.0.bin in Resources */ = {isa = PBXBuildFile; fileRef = D185103C2F9D67F9008E9FF8 /* voices-v1.0.bin */; };
 		D185104D2F9D7065008E9FF8 /* KokoroG2PService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D185104C2F9D7065008E9FF8 /* KokoroG2PService.swift */; };
 		D18510512F9F1000008E9FF8 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = D18510532F9F1000008E9FF8 /* ZIPFoundation */; };
@@ -58,7 +57,6 @@
 		D18510312F9C27E9008E9FF8 /* ReaderTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTypes.swift; sourceTree = "<group>"; };
 		D18510332F9C280B008E9FF8 /* ReaderComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderComponents.swift; sourceTree = "<group>"; };
 		D18510352F9C2812008E9FF8 /* ReaderSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSheets.swift; sourceTree = "<group>"; };
-		D185103A2F9D67D4008E9FF8 /* kokoro-v1.0.fp16.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = "kokoro-v1.0.fp16.onnx"; sourceTree = "<group>"; };
 		D185103C2F9D67F9008E9FF8 /* voices-v1.0.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = "voices-v1.0.bin"; sourceTree = "<group>"; };
 		D185104C2F9D7065008E9FF8 /* KokoroG2PService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KokoroG2PService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -140,7 +138,6 @@
 		D18510392F9D67AE008E9FF8 /* Assets */ = {
 			isa = PBXGroup;
 			children = (
-				D185103A2F9D67D4008E9FF8 /* kokoro-v1.0.fp16.onnx */,
 				D185103C2F9D67F9008E9FF8 /* voices-v1.0.bin */,
 			);
 			path = Assets;
@@ -284,7 +281,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				D185103D2F9D67F9008E9FF8 /* voices-v1.0.bin in Resources */,
-				D185103B2F9D67D4008E9FF8 /* kokoro-v1.0.fp16.onnx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
