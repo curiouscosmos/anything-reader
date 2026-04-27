@@ -1057,6 +1057,8 @@ struct ContentView: View {
             subtitle: entry.subtitle,
             readingPositionText: readingPositionText(for: entry, progress: entry.progress),
             readingPositionOverrideText: readingPositionOverrideText,
+            readingPositionIndexOverride: readingPositionIndex(for: entry, progress: entry.progress),
+            readingPositionTotalCount: entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count,
             avatarSymbol: entry.avatarSymbolName,
             accentName: entry.accentName,
             progress: entry.progress,
@@ -1127,7 +1129,6 @@ struct ContentView: View {
     private func rewindPlayback() {
         playbackState.progress = max(0, playbackState.progress - 0.08)
         playbackState.elapsedSeconds = max(0, Int((Double(playbackState.durationSeconds) * playbackState.progress).rounded()))
-        playbackState.readingPositionOverrideText = nil
         if let entry = activeEntry {
             playbackState.readingPositionText = readingPositionText(for: entry, progress: playbackState.progress)
         }
@@ -1138,7 +1139,6 @@ struct ContentView: View {
     private func fastForwardPlayback() {
         playbackState.progress = min(1, playbackState.progress + 0.08)
         playbackState.elapsedSeconds = min(playbackState.durationSeconds, Int((Double(playbackState.durationSeconds) * playbackState.progress).rounded()))
-        playbackState.readingPositionOverrideText = nil
         if let entry = activeEntry {
             playbackState.readingPositionText = readingPositionText(for: entry, progress: playbackState.progress)
         }
@@ -1156,6 +1156,8 @@ struct ContentView: View {
         playbackState.elapsedSeconds = Int((Double(playbackState.durationSeconds) * newProgress).rounded())
         playbackState.readingPositionText = explicitReadingPositionText
         playbackState.readingPositionOverrideText = explicitReadingPositionText
+        playbackState.readingPositionIndexOverride = target.index
+        playbackState.readingPositionTotalCount = entry.readingJumpTargets.count
         persistPlayerProgress()
         startPlayback(for: entry, readingPositionOverrideText: explicitReadingPositionText)
     }
@@ -1187,6 +1189,8 @@ struct ContentView: View {
         playbackState.progress = update.progress
         if playbackState.readingPositionOverrideText == nil {
             playbackState.readingPositionText = readingPositionText(for: entry, progress: update.progress)
+            playbackState.readingPositionIndexOverride = readingPositionIndex(for: entry, progress: update.progress)
+            playbackState.readingPositionTotalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
         }
         playbackState.isPlaying = update.isPlaying
         entry.progress = update.progress
@@ -1256,6 +1260,12 @@ struct ContentView: View {
             }
             return "Chapter \(index + 1) of \(targets.count) · \(title)"
         }
+    }
+
+    private func readingPositionIndex(for entry: LibraryEntry, progress: Double) -> Int? {
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else { return nil }
+        return ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: targets.count)
     }
 
     private func readingProgress(for target: ReaderJumpTarget, in entry: LibraryEntry) -> Double {

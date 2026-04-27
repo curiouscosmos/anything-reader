@@ -980,7 +980,7 @@ struct ReaderPlayerBarView: View {
                 }
 
                 HStack(spacing: 10) {
-                    seekBar
+                seekBar
                         .frame(maxWidth: 520)
 
                     Text(playbackTimeText)
@@ -1110,7 +1110,7 @@ struct ReaderPlayerBarView: View {
                 Capsule().fill(seekTrackColor)
                 Capsule()
                     .fill(ReaderStyle.accentColor(named: playbackState.accentName))
-                    .frame(width: max(10, geometry.size.width * playbackState.progress))
+                    .frame(width: max(10, geometry.size.width * playbackState.displayedProgress))
             }
         }
         .frame(height: 8)

@@ -51,6 +51,8 @@ struct PlaybackState {
     var subtitle: String = "Select a PDF, ePub, text file, or paste text"
     var readingPositionText: String = ""
     var readingPositionOverrideText: String?
+    var readingPositionIndexOverride: Int?
+    var readingPositionTotalCount: Int?
     var avatarSymbol: String = "waveform"
     var accentName: String = "emerald"
     var progress: Double = 0
@@ -61,6 +63,17 @@ struct PlaybackState {
 
     var displayedReadingPositionText: String {
         readingPositionOverrideText ?? readingPositionText
+    }
+
+    var displayedProgress: Double {
+        if let readingPositionIndexOverride,
+           let readingPositionTotalCount,
+           readingPositionTotalCount > 0 {
+            let boundedIndex = min(max(readingPositionIndexOverride, 0), readingPositionTotalCount - 1)
+            return Double(boundedIndex + 1) / Double(readingPositionTotalCount)
+        }
+
+        return progress
     }
 }
 
