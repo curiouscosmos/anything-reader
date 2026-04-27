@@ -2,14 +2,14 @@
 //  ReaderPlaybackService.swift
 //  Anything Reader
 //
-//  Sequential Kokoro playback controller for library entries.
-//  It reads normalized text, chunks it, synthesizes each chunk, and updates
-//  playback progress from the actual audio time.
+//  Queued Kokoro playback controller for library entries.
+//  It synthesizes chunked audio ahead of time and schedules it on a single
+//  AVAudioPlayerNode so the handoff between chunks stays gap-free.
 //
 
 import AVFoundation
-import Foundation
 import Combine
+import Foundation
 import SwiftData
 
 // Lightweight progress payload for the player UI.
@@ -21,24 +21,43 @@ struct ReaderPlaybackUpdate {
 }
 
 // Drives one library entry at a time through Kokoro-backed chunked playback.
-final class ReaderPlaybackService: ObservableObject {
+@MainActor
+final class ReaderPlaybackService: NSObject, ObservableObject {
     static let shared = ReaderPlaybackService()
 
     @Published private(set) var isPlaying = false
 
+    private let engine = AVAudioEngine()
+    private let playerNode = AVAudioPlayerNode()
     private var playbackTask: Task<Void, Never>?
-    private var activeAudioPlayer: AVAudioPlayer?
+    private var progressTask: Task<Void, Never>?
     private var stopRequested = false
+    private var didConfigureEngine = false
+    private var synthesizedAudioURLs: [Int: URL] = [:]
+    private var synthesisTasks: [Int: Task<URL, Error>] = [:]
 
-    private init() {}
+    private override init() {
+        super.init()
+    }
 
     func stop() {
         stopRequested = true
         playbackTask?.cancel()
+        progressTask?.cancel()
         playbackTask = nil
+        progressTask = nil
 
-        activeAudioPlayer?.stop()
-        activeAudioPlayer = nil
+        synthesisTasks.values.forEach { $0.cancel() }
+        synthesisTasks.removeAll()
+        synthesizedAudioURLs.removeAll()
+
+        if playerNode.isPlaying {
+            playerNode.stop()
+        }
+        if engine.isRunning {
+            engine.stop()
+        }
+
         isPlaying = false
     }
 
@@ -54,7 +73,7 @@ final class ReaderPlaybackService: ObservableObject {
         stopRequested = false
         isPlaying = true
 
-        playbackTask = Task(priority: .userInitiated) { [weak self] in
+        playbackTask = Task { [weak self] in
             guard let self else { return }
 
             let chunks = ReaderPlaybackChunkService.chunks(for: entry)
@@ -68,12 +87,12 @@ final class ReaderPlaybackService: ObservableObject {
 
             let startIndex = ReaderPlaybackChunkService.chunkIndex(for: startingProgress, chunkCount: chunks.count)
             let estimatedTotalDuration = Self.estimatedDuration(for: chunks)
-            var elapsedSoFar = Self.elapsedEstimate(for: chunks, upTo: startIndex)
+            let initialElapsed = Self.elapsedEstimate(for: chunks, upTo: startIndex)
 
             await MainActor.run {
                 onProgress(
                     ReaderPlaybackUpdate(
-                        elapsedSeconds: elapsedSoFar,
+                        elapsedSeconds: initialElapsed,
                         durationSeconds: estimatedTotalDuration,
                         progress: ReaderPlaybackChunkService.progress(for: startIndex, chunkCount: chunks.count),
                         isPlaying: true
@@ -81,15 +100,34 @@ final class ReaderPlaybackService: ObservableObject {
                 )
             }
 
-            await PhonemeCacheService.shared.primeChunks(
-                for: entry,
-                chunks: chunks,
-                startingAt: startIndex,
-                prefetchCount: ReaderPlaybackChunkService.prefetchChunkCount
+            await MainActor.run {
+                self.configureEngineIfNeeded()
+                self.playerNode.reset()
+            }
+
+            do {
+                try engine.start()
+            } catch {
+                await MainActor.run {
+                    self.isPlaying = false
+                    onFailure(error.localizedDescription)
+                }
+                return
+            }
+
+            startProgressMonitor(
+                totalDuration: estimatedTotalDuration,
+                onProgress: onProgress,
+                onFinished: onFinished,
+                onFailure: onFailure
             )
 
+            await primeAudioPrefetch(for: entry, chunks: chunks, voice: voice, startingAt: startIndex)
+
+            var scheduledChunkCount = 0
+
             for chunkIndex in startIndex..<chunks.count {
-                if Task.isCancelled || stopRequested {
+                if stopRequested || Task.isCancelled {
                     break
                 }
 
@@ -105,25 +143,12 @@ final class ReaderPlaybackService: ObservableObject {
 
                 let audioURL: URL
                 do {
-                    audioURL = try await KokoroSpeechService.shared.synthesize(text: chunkText, voice: voice)
-                } catch {
-                    await MainActor.run {
-                        self.isPlaying = false
-                        onFailure(error.localizedDescription)
-                    }
-                    return
-                }
-
-                do {
-                    let playedDuration = try await self.playChunk(
-                        at: audioURL,
-                        baseElapsedSeconds: elapsedSoFar,
-                        estimatedTotalDuration: estimatedTotalDuration,
-                        chunkIndex: chunkIndex,
-                        chunkCount: chunks.count,
-                        onProgress: onProgress
+                    audioURL = try await synthesizedAudioURL(
+                        for: chunkIndex,
+                        entry: entry,
+                        voice: voice,
+                        text: chunkText
                     )
-                    elapsedSoFar += Int(playedDuration.rounded())
                 } catch {
                     await MainActor.run {
                         self.isPlaying = false
@@ -132,109 +157,204 @@ final class ReaderPlaybackService: ObservableObject {
                     return
                 }
 
-                let nextChunkIndex = min(chunkIndex + 1, chunks.count - 1)
                 await MainActor.run {
-                    onProgress(
-                        ReaderPlaybackUpdate(
-                            elapsedSeconds: elapsedSoFar,
-                            durationSeconds: estimatedTotalDuration,
-                            progress: ReaderPlaybackChunkService.progress(for: nextChunkIndex, chunkCount: chunks.count),
-                            isPlaying: true
-                        )
-                    )
+                    self.scheduleAudioFile(audioURL)
+                    if !self.playerNode.isPlaying {
+                        self.playerNode.play()
+                    }
                 }
 
-                await PhonemeCacheService.shared.primeChunks(
-                    for: entry,
-                    chunks: chunks,
-                    startingAt: min(chunkIndex + 1, chunks.count - 1),
-                    prefetchCount: ReaderPlaybackChunkService.prefetchChunkCount
-                )
+                scheduledChunkCount += 1
+
+                // Keep a rolling audio queue warm so the next chunk is already being
+                // synthesized while the current chunk is playing.
+                await primeAudioPrefetch(for: entry, chunks: chunks, voice: voice, startingAt: chunkIndex + 1)
+            }
+
+            guard scheduledChunkCount > 0 else {
+                await MainActor.run {
+                    self.isPlaying = false
+                    onFailure("No readable audio could be generated for this file.")
+                }
+                return
+            }
+
+            while !stopRequested && !Task.isCancelled {
+                let isNodePlaying = await MainActor.run { self.playerNode.isPlaying }
+                if !isNodePlaying {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+
+            if stopRequested || Task.isCancelled {
+                return
             }
 
             await MainActor.run {
                 self.isPlaying = false
-                if !self.stopRequested {
-                    onFinished()
+                onFinished()
+            }
+        }
+    }
+
+    private func configureEngineIfNeeded() {
+        guard !didConfigureEngine else { return }
+
+        engine.attach(playerNode)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
+        engine.prepare()
+        didConfigureEngine = true
+    }
+
+    private func scheduleAudioFile(_ url: URL) {
+        guard let audioFile = try? AVAudioFile(forReading: url) else { return }
+        playerNode.scheduleFile(audioFile, at: nil, completionHandler: nil)
+    }
+
+    private func primeAudioPrefetch(
+        for entry: LibraryEntry,
+        chunks: [String],
+        voice: KokoroVoiceOption,
+        startingAt index: Int
+    ) async {
+        guard !chunks.isEmpty else { return }
+
+        let startIndex = min(max(index, 0), chunks.count - 1)
+        let upperBound = min(chunks.count - 1, startIndex + ReaderPlaybackChunkService.prefetchChunkCount)
+
+        for chunkIndex in startIndex...upperBound {
+            guard chunkIndex < chunks.count else { continue }
+            guard synthesizedAudioURLs[chunkIndex] == nil else { continue }
+            guard synthesisTasks[chunkIndex] == nil else { continue }
+
+            let chunkText = chunks[chunkIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !chunkText.isEmpty else { continue }
+
+            if await awaitCachedPhonemesMissing(for: entry, chunkIndex: chunkIndex, text: chunkText) {
+                let phonemes = await KokoroG2PService.shared.phonemize(chunkText)
+                if !phonemes.isEmpty {
+                    Task { await PhonemeCacheService.shared.store(phonemes, for: entry, chunkIndex: chunkIndex) }
+                }
+            }
+
+            let task = Task<URL, Error> {
+                try await KokoroSpeechService.shared.synthesize(text: chunkText, voice: voice)
+            }
+            synthesisTasks[chunkIndex] = task
+
+            Task {
+                do {
+                    let url = try await task.value
+                    _ = await MainActor.run {
+                        synthesizedAudioURLs[chunkIndex] = url
+                        synthesisTasks.removeValue(forKey: chunkIndex)
+                    }
+                } catch {
+                    _ = await MainActor.run {
+                        synthesisTasks.removeValue(forKey: chunkIndex)
+                    }
                 }
             }
         }
     }
 
-    private func playChunk(
-        at url: URL,
-        baseElapsedSeconds: Int,
-        estimatedTotalDuration: Int,
-        chunkIndex: Int,
-        chunkCount: Int,
-        onProgress: @escaping (ReaderPlaybackUpdate) -> Void
-    ) async throws -> TimeInterval {
-        try await MainActor.run {
-            activeAudioPlayer?.stop()
-            activeAudioPlayer = try AVAudioPlayer(contentsOf: url)
-            activeAudioPlayer?.prepareToPlay()
-            activeAudioPlayer?.play()
+    private func awaitCachedPhonemesMissing(for entry: LibraryEntry, chunkIndex: Int, text: String) async -> Bool {
+        if await PhonemeCacheService.shared.cachedPhonemes(for: entry, chunkIndex: chunkIndex) != nil {
+            return false
         }
 
-        defer {
-            Task { @MainActor in
-                self.activeAudioPlayer?.stop()
-                self.activeAudioPlayer = nil
-            }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return true
+    }
+
+    private func synthesizedAudioURL(
+        for chunkIndex: Int,
+        entry: LibraryEntry,
+        voice: KokoroVoiceOption,
+        text: String
+    ) async throws -> URL {
+        if let cached = synthesizedAudioURLs[chunkIndex] {
+            return cached
         }
 
-        while !Task.isCancelled && !stopRequested {
-            let state = await MainActor.run { [weak self] in
-                guard let player = self?.activeAudioPlayer else {
-                    return (false, 0.0, 0.0)
+        if let task = synthesisTasks[chunkIndex] {
+            let url = try await task.value
+            synthesizedAudioURLs[chunkIndex] = url
+            synthesisTasks.removeValue(forKey: chunkIndex)
+            return url
+        }
+
+        let task = Task<URL, Error> {
+            try await KokoroSpeechService.shared.synthesize(text: text, voice: voice)
+        }
+
+        synthesisTasks[chunkIndex] = task
+
+        do {
+            let url = try await task.value
+            synthesizedAudioURLs[chunkIndex] = url
+            synthesisTasks.removeValue(forKey: chunkIndex)
+            return url
+        } catch {
+            synthesisTasks.removeValue(forKey: chunkIndex)
+            throw error
+        }
+    }
+
+    private func startProgressMonitor(
+        totalDuration: Int,
+        onProgress: @escaping (ReaderPlaybackUpdate) -> Void,
+        onFinished: @escaping () -> Void,
+        onFailure: @escaping (String) -> Void
+    ) {
+        progressTask?.cancel()
+
+        progressTask = Task { [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled && !self.stopRequested {
+                let snapshot = await MainActor.run { () -> (Bool, Int, Double) in
+                    guard self.playerNode.isPlaying,
+                          let nodeTime = self.playerNode.lastRenderTime,
+                          let playerTime = self.playerNode.playerTime(forNodeTime: nodeTime) else {
+                        return (self.playerNode.isPlaying, 0, 0)
+                    }
+
+                    let sampleRate = playerTime.sampleRate
+                    let elapsedSeconds = sampleRate > 0
+                        ? Int((Double(playerTime.sampleTime) / sampleRate).rounded(.down))
+                        : 0
+                    let progress = totalDuration > 0
+                        ? min(1, Double(elapsedSeconds) / Double(totalDuration))
+                        : 0
+                    return (self.playerNode.isPlaying, elapsedSeconds, progress)
                 }
-                return (player.isPlaying, player.currentTime, player.duration)
+
+                if snapshot.0 {
+                    await MainActor.run {
+                        onProgress(
+                            ReaderPlaybackUpdate(
+                                elapsedSeconds: snapshot.1,
+                                durationSeconds: totalDuration,
+                                progress: snapshot.2,
+                                isPlaying: true
+                            )
+                        )
+                    }
+                }
+
+                try? await Task.sleep(nanoseconds: 250_000_000)
             }
 
-            guard state.0 else {
-                break
+            let isStoppedNaturally = await MainActor.run { !self.playerNode.isPlaying && !self.stopRequested }
+            if isStoppedNaturally {
+                await MainActor.run {
+                    self.isPlaying = false
+                    onFinished()
+                }
             }
-
-            let elapsed = baseElapsedSeconds + Int(state.1.rounded(.down))
-            let progress = estimatedTotalDuration > 0
-                ? min(1, Double(elapsed) / Double(estimatedTotalDuration))
-                : 0
-
-            await MainActor.run {
-                onProgress(
-                    ReaderPlaybackUpdate(
-                        elapsedSeconds: elapsed,
-                        durationSeconds: estimatedTotalDuration,
-                        progress: progress,
-                        isPlaying: true
-                    )
-                )
-            }
-
-            try? await Task.sleep(nanoseconds: 250_000_000)
         }
-
-        let duration = await MainActor.run { [weak self] in
-            self?.activeAudioPlayer?.duration ?? 0
-        }
-
-        let finalElapsed = baseElapsedSeconds + Int(duration.rounded())
-        let finalProgress = estimatedTotalDuration > 0
-            ? min(1, Double(finalElapsed) / Double(estimatedTotalDuration))
-            : 0
-
-        await MainActor.run {
-            onProgress(
-                ReaderPlaybackUpdate(
-                    elapsedSeconds: finalElapsed,
-                    durationSeconds: estimatedTotalDuration,
-                    progress: finalProgress,
-                    isPlaying: true
-                )
-            )
-        }
-
-        return duration
     }
 
     private static func estimatedDuration(for chunks: [String]) -> Int {
