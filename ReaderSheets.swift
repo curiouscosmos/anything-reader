@@ -31,12 +31,8 @@ struct ReaderSettingsSheet: View {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(alignment: .center, spacing: 12) {
                                 Picker("Default Voice", selection: $selectedVoiceName) {
-                                    ForEach(voiceOptions) { voice in
-                                        Label {
-                                            Text(voice.dropdownLabel)
-                                        } icon: {
-                                            Image(systemName: voice.genderIconName)
-                                        }
+                                    ForEach(voiceOptions, id: \KokoroVoiceOption.voiceName) { voice in
+                                        Text("\(voice.genderSymbol) \(voice.dropdownLabel)")
                                         .tag(voice.voiceName)
                                     }
                                 }

@@ -26,10 +26,14 @@ struct KokoroVoiceOption: Identifiable, Hashable {
 
     var dropdownLabel: String {
         if let accentLabel, !accentLabel.isEmpty {
-            return "\(displayName) - \(genderLabel) (\(languageLabel)) [\(accentLabel)]"
+            return "\(displayName) - \(languageLabel) [\(accentLabel)]"
         } else {
-            return "\(displayName) - \(genderLabel) (\(languageLabel))"
+            return "\(displayName) - \(languageLabel)"
         }
+    }
+
+    var genderSymbol: String {
+        genderLabel.lowercased().contains("female") ? "♀" : "♂"
     }
 
     var previewLanguageCode: String {

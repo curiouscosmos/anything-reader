@@ -1037,7 +1037,11 @@ struct ContentView: View {
                     self.playbackState.isPlaying = false
                     self.startPlayback(for: entry)
                 } else {
+                    self.playbackState.progress = 0
+                    self.playbackState.elapsedSeconds = 0
                     self.playbackState.isPlaying = false
+                    entry.progress = 0
+                    try? self.modelContext.save()
                     self.persistPlayerProgress()
                 }
             },

@@ -197,7 +197,12 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
                 await MainActor.run {
                     guard self.playbackSessionID == sessionID else { return }
-                    self.scheduleAudioFile(audioURL)
+                    self.scheduleAudioFile(
+                        audioURL,
+                        isFinalChunk: chunkIndex == chunks.count - 1,
+                        sessionID: sessionID,
+                        onFinished: onFinished
+                    )
                     if !self.playerNode.isPlaying {
                         self.playerNode.play()
                     }
@@ -239,14 +244,6 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             if stopRequested || Task.isCancelled {
                 return
             }
-
-            await MainActor.run {
-                guard self.playbackSessionID == sessionID else { return }
-                self.isPlaying = false
-                self.isBufferingFirstChunk = false
-                self.activePlaybackIdentity = nil
-                onFinished()
-            }
         }
     }
 
@@ -259,9 +256,39 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         didConfigureEngine = true
     }
 
-    private func scheduleAudioFile(_ url: URL) {
+    private func scheduleAudioFile(
+        _ url: URL,
+        isFinalChunk: Bool,
+        sessionID: UUID,
+        onFinished: @escaping () -> Void
+    ) {
         guard let audioFile = try? AVAudioFile(forReading: url) else { return }
-        playerNode.scheduleFile(audioFile, at: nil, completionHandler: nil)
+        playerNode.scheduleFile(audioFile, at: nil) { [weak self] in
+            guard let self else { return }
+
+            guard isFinalChunk else { return }
+
+            Task { @MainActor in
+                guard self.playbackSessionID == sessionID else { return }
+                self.finishPlayback(onFinished: onFinished)
+            }
+        }
+    }
+
+    private func finishPlayback(onFinished: @escaping () -> Void) {
+        stopRequested = true
+        isPlaying = false
+        isBufferingFirstChunk = false
+        activePlaybackIdentity = nil
+
+        if playerNode.isPlaying {
+            playerNode.stop()
+        }
+        if engine.isRunning {
+            engine.stop()
+        }
+
+        onFinished()
     }
 
     private func primeAudioPrefetch(
