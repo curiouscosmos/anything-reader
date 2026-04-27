@@ -28,6 +28,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var isBufferingFirstChunk = false
     @Published private(set) var activePlaybackIdentity: String?
+    @Published private(set) var volume: Double
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
@@ -39,8 +40,13 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private var synthesisTasks: [Int: Task<URL, Error>] = [:]
     private var playbackSessionID = UUID()
 
+    private static let volumeStorageKey = "readerPlaybackVolume"
+
     private override init() {
+        let storedVolume = UserDefaults.standard.object(forKey: Self.volumeStorageKey) as? Double
+        self.volume = storedVolume ?? 0.9
         super.init()
+        playerNode.volume = Float(volume)
     }
 
     func stop() {
@@ -67,6 +73,13 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         activePlaybackIdentity = nil
     }
 
+    func setVolume(_ newValue: Double) {
+        let clampedVolume = min(max(newValue, 0), 1)
+        volume = clampedVolume
+        playerNode.volume = Float(clampedVolume)
+        UserDefaults.standard.set(clampedVolume, forKey: Self.volumeStorageKey)
+    }
+
     func play(
         entry: LibraryEntry,
         voice: KokoroVoiceOption,
@@ -82,6 +95,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         isPlaying = true
         isBufferingFirstChunk = true
         activePlaybackIdentity = entry.cacheIdentity
+        playerNode.volume = Float(volume)
 
         playbackTask = Task { [weak self] in
             guard let self else { return }

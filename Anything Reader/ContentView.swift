@@ -122,6 +122,10 @@ struct ContentView: View {
             if shouldShowPlayerBar {
                 ReaderPlayerBarView(
                     playbackState: $playbackState,
+                    volume: Binding(
+                        get: { readerPlaybackService.volume },
+                        set: { readerPlaybackService.setVolume($0) }
+                    ),
                     preferredMode: preferredMode,
                     isLoadingFirstChunk: readerPlaybackService.isBufferingFirstChunk,
                     onToggleRepeat: toggleRepeat,

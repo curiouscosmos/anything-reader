@@ -894,6 +894,7 @@ struct ReaderAvatarView: View {
 // Persistent transport controls that stay pinned across the app shell.
 struct ReaderPlayerBarView: View {
     @Binding var playbackState: PlaybackState
+    @Binding var volume: Double
     let preferredMode: AppearanceMode
     let isLoadingFirstChunk: Bool
     let onToggleRepeat: () -> Void
@@ -926,7 +927,11 @@ struct ReaderPlayerBarView: View {
         HStack(spacing: 16) {
             mediaInfo
             Spacer()
-            controls
+            VStack(alignment: .trailing, spacing: 14) {
+                controls
+                ReaderVolumeControlView(volume: $volume, preferredMode: preferredMode)
+                    .frame(width: 240)
+            }
         }
     }
 
@@ -935,6 +940,7 @@ struct ReaderPlayerBarView: View {
         VStack(alignment: .leading, spacing: 14) {
             mediaInfo
             controls
+            ReaderVolumeControlView(volume: $volume, preferredMode: preferredMode)
         }
     }
 
