@@ -46,6 +46,7 @@ struct ContentView: View {
     @State private var playbackChunks: [String] = []
     @State private var playbackChunkIndex: Int = 0
     @State private var playbackSessionToken = UUID()
+    @State private var toastDismissTask: Task<Void, Never>?
     @State private var didCleanupGeneratedContent = false
     @State private var coverArtGenerationKeys: Set<String> = []
     @State private var didBackfillMissingCoverArt = false
@@ -245,6 +246,19 @@ struct ContentView: View {
         }
         .onChange(of: kokoroVoiceName) { _, _ in
             restartPlaybackForSelectedVoiceIfNeeded()
+        }
+        .onChange(of: successToastMessage) { _, newMessage in
+            toastDismissTask?.cancel()
+
+            guard let newMessage else { return }
+
+            let message = newMessage
+            toastDismissTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                if successToastMessage == message {
+                    successToastMessage = nil
+                }
+            }
         }
     }
 
@@ -776,14 +790,6 @@ struct ContentView: View {
 
         if let message {
             successToastMessage = message
-            Task {
-                try? await Task.sleep(nanoseconds: 2_200_000_000)
-                await MainActor.run {
-                    if successToastMessage == message {
-                        successToastMessage = nil
-                    }
-                }
-            }
         } else {
             successToastMessage = nil
         }
