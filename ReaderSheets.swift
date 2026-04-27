@@ -32,7 +32,12 @@ struct ReaderSettingsSheet: View {
                             HStack(alignment: .center, spacing: 12) {
                                 Picker("Default Voice", selection: $selectedVoiceName) {
                                     ForEach(voiceOptions) { voice in
-                                        Text(voice.displayName).tag(voice.voiceName)
+                                        Label {
+                                            Text(voice.dropdownLabel)
+                                        } icon: {
+                                            Image(systemName: voice.genderIconName)
+                                        }
+                                        .tag(voice.voiceName)
                                     }
                                 }
                                 .pickerStyle(.menu)

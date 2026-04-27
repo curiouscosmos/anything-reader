@@ -19,8 +19,18 @@ struct KokoroVoiceOption: Identifiable, Hashable {
     let displayName: String
     let languageLabel: String
     let sampleText: String
+    let genderLabel: String
+    let accentLabel: String?
 
     var id: String { voiceName }
+
+    var dropdownLabel: String {
+        if let accentLabel, !accentLabel.isEmpty {
+            return "\(displayName) - \(genderLabel) (\(languageLabel)) [\(accentLabel)]"
+        } else {
+            return "\(displayName) - \(genderLabel) (\(languageLabel))"
+        }
+    }
 
     var previewLanguageCode: String {
         switch String(voiceName.prefix(2)) {
@@ -37,57 +47,57 @@ enum KokoroVoiceCatalog {
     static let defaultVoiceName = "af_bella"
 
     static let allVoices: [KokoroVoiceOption] = [
-        .init(voiceName: "af_alloy", displayName: "Alloy", languageLabel: "American English · Female", sampleText: sampleText(for: "af_alloy", displayName: "Alloy")),
-        .init(voiceName: "af_aoede", displayName: "Aoede", languageLabel: "American English · Female", sampleText: sampleText(for: "af_aoede", displayName: "Aoede")),
-        .init(voiceName: "af_bella", displayName: "Bella", languageLabel: "American English · Female", sampleText: sampleText(for: "af_bella", displayName: "Bella")),
-        .init(voiceName: "af_heart", displayName: "Heart", languageLabel: "American English · Female", sampleText: sampleText(for: "af_heart", displayName: "Heart")),
-        .init(voiceName: "af_jessica", displayName: "Jessica", languageLabel: "American English · Female", sampleText: sampleText(for: "af_jessica", displayName: "Jessica")),
-        .init(voiceName: "af_kore", displayName: "Kore", languageLabel: "American English · Female", sampleText: sampleText(for: "af_kore", displayName: "Kore")),
-        .init(voiceName: "af_nicole", displayName: "Nicole", languageLabel: "American English · Female", sampleText: sampleText(for: "af_nicole", displayName: "Nicole")),
-        .init(voiceName: "af_nova", displayName: "Nova", languageLabel: "American English · Female", sampleText: sampleText(for: "af_nova", displayName: "Nova")),
-        .init(voiceName: "af_river", displayName: "River", languageLabel: "American English · Female", sampleText: sampleText(for: "af_river", displayName: "River")),
-        .init(voiceName: "af_sarah", displayName: "Sarah", languageLabel: "American English · Female", sampleText: sampleText(for: "af_sarah", displayName: "Sarah")),
-        .init(voiceName: "af_sky", displayName: "Sky", languageLabel: "American English · Female", sampleText: sampleText(for: "af_sky", displayName: "Sky")),
+        .init(voiceName: "af_alloy", displayName: "Alloy", languageLabel: "English", sampleText: sampleText(for: "af_alloy", displayName: "Alloy"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_aoede", displayName: "Aoede", languageLabel: "English", sampleText: sampleText(for: "af_aoede", displayName: "Aoede"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_bella", displayName: "Bella", languageLabel: "English", sampleText: sampleText(for: "af_bella", displayName: "Bella"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_heart", displayName: "Heart", languageLabel: "English", sampleText: sampleText(for: "af_heart", displayName: "Heart"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_jessica", displayName: "Jessica", languageLabel: "English", sampleText: sampleText(for: "af_jessica", displayName: "Jessica"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_kore", displayName: "Kore", languageLabel: "English", sampleText: sampleText(for: "af_kore", displayName: "Kore"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_nicole", displayName: "Nicole", languageLabel: "English", sampleText: sampleText(for: "af_nicole", displayName: "Nicole"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_nova", displayName: "Nova", languageLabel: "English", sampleText: sampleText(for: "af_nova", displayName: "Nova"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_river", displayName: "River", languageLabel: "English", sampleText: sampleText(for: "af_river", displayName: "River"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_sarah", displayName: "Sarah", languageLabel: "English", sampleText: sampleText(for: "af_sarah", displayName: "Sarah"), genderLabel: "Female", accentLabel: "American"),
+        .init(voiceName: "af_sky", displayName: "Sky", languageLabel: "English", sampleText: sampleText(for: "af_sky", displayName: "Sky"), genderLabel: "Female", accentLabel: "American"),
 
-        .init(voiceName: "am_adam", displayName: "Adam", languageLabel: "American English · Male", sampleText: sampleText(for: "am_adam", displayName: "Adam")),
-        .init(voiceName: "am_echo", displayName: "Echo", languageLabel: "American English · Male", sampleText: sampleText(for: "am_echo", displayName: "Echo")),
-        .init(voiceName: "am_eric", displayName: "Eric", languageLabel: "American English · Male", sampleText: sampleText(for: "am_eric", displayName: "Eric")),
-        .init(voiceName: "am_fenrir", displayName: "Fenrir", languageLabel: "American English · Male", sampleText: sampleText(for: "am_fenrir", displayName: "Fenrir")),
-        .init(voiceName: "am_liam", displayName: "Liam", languageLabel: "American English · Male", sampleText: sampleText(for: "am_liam", displayName: "Liam")),
-        .init(voiceName: "am_michael", displayName: "Michael", languageLabel: "American English · Male", sampleText: sampleText(for: "am_michael", displayName: "Michael")),
-        .init(voiceName: "am_onyx", displayName: "Onyx", languageLabel: "American English · Male", sampleText: sampleText(for: "am_onyx", displayName: "Onyx")),
-        .init(voiceName: "am_puck", displayName: "Puck", languageLabel: "American English · Male", sampleText: sampleText(for: "am_puck", displayName: "Puck")),
+        .init(voiceName: "am_adam", displayName: "Adam", languageLabel: "English", sampleText: sampleText(for: "am_adam", displayName: "Adam"), genderLabel: "Male", accentLabel: "American"),
+        .init(voiceName: "am_echo", displayName: "Echo", languageLabel: "English", sampleText: sampleText(for: "am_echo", displayName: "Echo"), genderLabel: "Male", accentLabel: "American"),
+        .init(voiceName: "am_eric", displayName: "Eric", languageLabel: "English", sampleText: sampleText(for: "am_eric", displayName: "Eric"), genderLabel: "Male", accentLabel: "American"),
+        .init(voiceName: "am_fenrir", displayName: "Fenrir", languageLabel: "English", sampleText: sampleText(for: "am_fenrir", displayName: "Fenrir"), genderLabel: "Male", accentLabel: "American"),
+        .init(voiceName: "am_liam", displayName: "Liam", languageLabel: "English", sampleText: sampleText(for: "am_liam", displayName: "Liam"), genderLabel: "Male", accentLabel: "American"),
+        .init(voiceName: "am_michael", displayName: "Michael", languageLabel: "English", sampleText: sampleText(for: "am_michael", displayName: "Michael"), genderLabel: "Male", accentLabel: "American"),
+        .init(voiceName: "am_onyx", displayName: "Onyx", languageLabel: "English", sampleText: sampleText(for: "am_onyx", displayName: "Onyx"), genderLabel: "Male", accentLabel: "American"),
+        .init(voiceName: "am_puck", displayName: "Puck", languageLabel: "English", sampleText: sampleText(for: "am_puck", displayName: "Puck"), genderLabel: "Male", accentLabel: "American"),
 
-        .init(voiceName: "bf_alice", displayName: "Alice", languageLabel: "British English · Female", sampleText: sampleText(for: "bf_alice", displayName: "Alice")),
-        .init(voiceName: "bf_emma", displayName: "Emma", languageLabel: "British English · Female", sampleText: sampleText(for: "bf_emma", displayName: "Emma")),
-        .init(voiceName: "bf_isabella", displayName: "Isabella", languageLabel: "British English · Female", sampleText: sampleText(for: "bf_isabella", displayName: "Isabella")),
-        .init(voiceName: "bf_lily", displayName: "Lily", languageLabel: "British English · Female", sampleText: sampleText(for: "bf_lily", displayName: "Lily")),
+        .init(voiceName: "bf_alice", displayName: "Alice", languageLabel: "English", sampleText: sampleText(for: "bf_alice", displayName: "Alice"), genderLabel: "Female", accentLabel: "British"),
+        .init(voiceName: "bf_emma", displayName: "Emma", languageLabel: "English", sampleText: sampleText(for: "bf_emma", displayName: "Emma"), genderLabel: "Female", accentLabel: "British"),
+        .init(voiceName: "bf_isabella", displayName: "Isabella", languageLabel: "English", sampleText: sampleText(for: "bf_isabella", displayName: "Isabella"), genderLabel: "Female", accentLabel: "British"),
+        .init(voiceName: "bf_lily", displayName: "Lily", languageLabel: "English", sampleText: sampleText(for: "bf_lily", displayName: "Lily"), genderLabel: "Female", accentLabel: "British"),
 
-        .init(voiceName: "bm_daniel", displayName: "Daniel", languageLabel: "British English · Male", sampleText: sampleText(for: "bm_daniel", displayName: "Daniel")),
-        .init(voiceName: "bm_fable", displayName: "Fable", languageLabel: "British English · Male", sampleText: sampleText(for: "bm_fable", displayName: "Fable")),
-        .init(voiceName: "bm_george", displayName: "George", languageLabel: "British English · Male", sampleText: sampleText(for: "bm_george", displayName: "George")),
-        .init(voiceName: "bm_lewis", displayName: "Lewis", languageLabel: "British English · Male", sampleText: sampleText(for: "bm_lewis", displayName: "Lewis")),
+        .init(voiceName: "bm_daniel", displayName: "Daniel", languageLabel: "English", sampleText: sampleText(for: "bm_daniel", displayName: "Daniel"), genderLabel: "Male", accentLabel: "British"),
+        .init(voiceName: "bm_fable", displayName: "Fable", languageLabel: "English", sampleText: sampleText(for: "bm_fable", displayName: "Fable"), genderLabel: "Male", accentLabel: "British"),
+        .init(voiceName: "bm_george", displayName: "George", languageLabel: "English", sampleText: sampleText(for: "bm_george", displayName: "George"), genderLabel: "Male", accentLabel: "British"),
+        .init(voiceName: "bm_lewis", displayName: "Lewis", languageLabel: "English", sampleText: sampleText(for: "bm_lewis", displayName: "Lewis"), genderLabel: "Male", accentLabel: "British"),
 
-        .init(voiceName: "ef_dora", displayName: "Dora", languageLabel: "Spanish · Female", sampleText: sampleText(for: "ef_dora", displayName: "Dora")),
-        .init(voiceName: "ff_siwis", displayName: "Siwis", languageLabel: "French · Female", sampleText: sampleText(for: "ff_siwis", displayName: "Siwis")),
-        .init(voiceName: "if_sara", displayName: "Sara", languageLabel: "Italian · Female", sampleText: sampleText(for: "if_sara", displayName: "Sara")),
-        .init(voiceName: "im_nicola", displayName: "Nicola", languageLabel: "Italian · Male", sampleText: sampleText(for: "im_nicola", displayName: "Nicola")),
+        .init(voiceName: "ef_dora", displayName: "Dora", languageLabel: "Spanish", sampleText: sampleText(for: "ef_dora", displayName: "Dora"), genderLabel: "Female", accentLabel: "Spanish"),
+        .init(voiceName: "ff_siwis", displayName: "Siwis", languageLabel: "French", sampleText: sampleText(for: "ff_siwis", displayName: "Siwis"), genderLabel: "Female", accentLabel: "French"),
+        .init(voiceName: "if_sara", displayName: "Sara", languageLabel: "Italian", sampleText: sampleText(for: "if_sara", displayName: "Sara"), genderLabel: "Female", accentLabel: "Italian"),
+        .init(voiceName: "im_nicola", displayName: "Nicola", languageLabel: "Italian", sampleText: sampleText(for: "im_nicola", displayName: "Nicola"), genderLabel: "Male", accentLabel: "Italian"),
 
-        .init(voiceName: "jf_alpha", displayName: "Alpha", languageLabel: "Japanese · Female", sampleText: sampleText(for: "jf_alpha", displayName: "Alpha")),
-        .init(voiceName: "jf_gongitsune", displayName: "Gongitsune", languageLabel: "Japanese · Female", sampleText: sampleText(for: "jf_gongitsune", displayName: "Gongitsune")),
-        .init(voiceName: "jf_nezumi", displayName: "Nezumi", languageLabel: "Japanese · Female", sampleText: sampleText(for: "jf_nezumi", displayName: "Nezumi")),
-        .init(voiceName: "jf_tebukuro", displayName: "Tebukuro", languageLabel: "Japanese · Female", sampleText: sampleText(for: "jf_tebukuro", displayName: "Tebukuro")),
-        .init(voiceName: "jm_kumo", displayName: "Kumo", languageLabel: "Japanese · Male", sampleText: sampleText(for: "jm_kumo", displayName: "Kumo")),
+        .init(voiceName: "jf_alpha", displayName: "Alpha", languageLabel: "Japanese", sampleText: sampleText(for: "jf_alpha", displayName: "Alpha"), genderLabel: "Female", accentLabel: "Japanese"),
+        .init(voiceName: "jf_gongitsune", displayName: "Gongitsune", languageLabel: "Japanese", sampleText: sampleText(for: "jf_gongitsune", displayName: "Gongitsune"), genderLabel: "Female", accentLabel: "Japanese"),
+        .init(voiceName: "jf_nezumi", displayName: "Nezumi", languageLabel: "Japanese", sampleText: sampleText(for: "jf_nezumi", displayName: "Nezumi"), genderLabel: "Female", accentLabel: "Japanese"),
+        .init(voiceName: "jf_tebukuro", displayName: "Tebukuro", languageLabel: "Japanese", sampleText: sampleText(for: "jf_tebukuro", displayName: "Tebukuro"), genderLabel: "Female", accentLabel: "Japanese"),
+        .init(voiceName: "jm_kumo", displayName: "Kumo", languageLabel: "Japanese", sampleText: sampleText(for: "jm_kumo", displayName: "Kumo"), genderLabel: "Male", accentLabel: "Japanese"),
 
-        .init(voiceName: "pf_dora", displayName: "Dora", languageLabel: "Portuguese · Female", sampleText: sampleText(for: "pf_dora", displayName: "Dora")),
-        .init(voiceName: "zf_xiaobei", displayName: "Xiaobei", languageLabel: "Chinese · Female", sampleText: sampleText(for: "zf_xiaobei", displayName: "Xiaobei")),
-        .init(voiceName: "zf_xiaoni", displayName: "Xiaoni", languageLabel: "Chinese · Female", sampleText: sampleText(for: "zf_xiaoni", displayName: "Xiaoni")),
-        .init(voiceName: "zf_xiaoxiao", displayName: "Xiaoxiao", languageLabel: "Chinese · Female", sampleText: sampleText(for: "zf_xiaoxiao", displayName: "Xiaoxiao")),
-        .init(voiceName: "zf_xiaoyi", displayName: "Xiaoyi", languageLabel: "Chinese · Female", sampleText: sampleText(for: "zf_xiaoyi", displayName: "Xiaoyi")),
-        .init(voiceName: "zm_yunjian", displayName: "Yunjian", languageLabel: "Chinese · Male", sampleText: sampleText(for: "zm_yunjian", displayName: "Yunjian")),
-        .init(voiceName: "zm_yunxi", displayName: "Yunxi", languageLabel: "Chinese · Male", sampleText: sampleText(for: "zm_yunxi", displayName: "Yunxi")),
-        .init(voiceName: "zm_yunxia", displayName: "Yunxia", languageLabel: "Chinese · Male", sampleText: sampleText(for: "zm_yunxia", displayName: "Yunxia")),
-        .init(voiceName: "zm_yunyang", displayName: "Yunyang", languageLabel: "Chinese · Male", sampleText: sampleText(for: "zm_yunyang", displayName: "Yunyang"))
+        .init(voiceName: "pf_dora", displayName: "Dora", languageLabel: "Portuguese", sampleText: sampleText(for: "pf_dora", displayName: "Dora"), genderLabel: "Female", accentLabel: "Portuguese"),
+        .init(voiceName: "zf_xiaobei", displayName: "Xiaobei", languageLabel: "Chinese", sampleText: sampleText(for: "zf_xiaobei", displayName: "Xiaobei"), genderLabel: "Female", accentLabel: "Mandarin"),
+        .init(voiceName: "zf_xiaoni", displayName: "Xiaoni", languageLabel: "Chinese", sampleText: sampleText(for: "zf_xiaoni", displayName: "Xiaoni"), genderLabel: "Female", accentLabel: "Mandarin"),
+        .init(voiceName: "zf_xiaoxiao", displayName: "Xiaoxiao", languageLabel: "Chinese", sampleText: sampleText(for: "zf_xiaoxiao", displayName: "Xiaoxiao"), genderLabel: "Female", accentLabel: "Mandarin"),
+        .init(voiceName: "zf_xiaoyi", displayName: "Xiaoyi", languageLabel: "Chinese", sampleText: sampleText(for: "zf_xiaoyi", displayName: "Xiaoyi"), genderLabel: "Female", accentLabel: "Mandarin"),
+        .init(voiceName: "zm_yunjian", displayName: "Yunjian", languageLabel: "Chinese", sampleText: sampleText(for: "zm_yunjian", displayName: "Yunjian"), genderLabel: "Male", accentLabel: "Mandarin"),
+        .init(voiceName: "zm_yunxi", displayName: "Yunxi", languageLabel: "Chinese", sampleText: sampleText(for: "zm_yunxi", displayName: "Yunxi"), genderLabel: "Male", accentLabel: "Mandarin"),
+        .init(voiceName: "zm_yunxia", displayName: "Yunxia", languageLabel: "Chinese", sampleText: sampleText(for: "zm_yunxia", displayName: "Yunxia"), genderLabel: "Male", accentLabel: "Mandarin"),
+        .init(voiceName: "zm_yunyang", displayName: "Yunyang", languageLabel: "Chinese", sampleText: sampleText(for: "zm_yunyang", displayName: "Yunyang"), genderLabel: "Male", accentLabel: "Mandarin")
     ]
 
     static func voice(named name: String) -> KokoroVoiceOption {
