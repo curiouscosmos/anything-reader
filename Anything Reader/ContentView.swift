@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var isShowingPasteSheet = false
     @State private var isShowingSettings = false
+    @State private var isShowingKokoroDownloadModal = false
     @State private var isShowingCategorySheet = false
     @State private var isShowingFileImporter = false
     @State private var newCategoryName = ""
@@ -44,6 +45,7 @@ struct ContentView: View {
     @State private var didCleanupGeneratedContent = false
     @State private var coverArtGenerationKeys: Set<String> = []
     @State private var didBackfillMissingCoverArt = false
+    @State private var didPresentKokoroDownloadGate = false
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
 
     private static let fallbackAvatars = [
@@ -137,6 +139,16 @@ struct ContentView: View {
                 onPlaySample: playKokoroVoiceSample
             )
         }
+        .sheet(isPresented: $isShowingKokoroDownloadModal) {
+            ReaderKokoroDownloadSheet(
+                modelStore: kokoroModelStore,
+                preferredMode: preferredMode,
+                onDownload: downloadKokoroModel(option:),
+                onClose: {
+                    isShowingKokoroDownloadModal = false
+                }
+            )
+        }
         .sheet(isPresented: $isShowingCategorySheet) {
             ReaderNewCategorySheet(
                 categoryName: $newCategoryName,
@@ -198,13 +210,16 @@ struct ContentView: View {
             backfillMissingCoverArtIfNeeded()
             validateSelectedKokoroVoice()
             kokoroModelStore.refreshInstallationStatus()
+            promptForKokoroDownloadIfNeeded()
         }
         .onChange(of: kokoroModelStore.status) { _, newStatus in
             switch newStatus {
             case .installed:
-                successToastMessage = "Kokoro downloaded and ready"
+                successToastMessage = "TTS model downloaded and ready"
+                isShowingKokoroDownloadModal = false
             case .failed(let message):
-                successToastMessage = "Kokoro download failed: \(message)"
+                successToastMessage = "TTS model download failed: \(message)"
+                isShowingKokoroDownloadModal = true
             default:
                 break
             }
@@ -257,13 +272,31 @@ struct ContentView: View {
         successToastMessage = "Playing \(voice.displayName) sample"
     }
 
-    private func downloadKokoroModel() {
+    private func promptForKokoroDownloadIfNeeded() {
+        guard !didPresentKokoroDownloadGate else { return }
+        didPresentKokoroDownloadGate = true
+
+        if !kokoroModelStore.isInstalled {
+            isShowingKokoroDownloadModal = true
+        }
+    }
+
+    private func openKokoroDownloadModal() {
+        isShowingKokoroDownloadModal = true
+    }
+
+    private func downloadKokoroModel(option: KokoroDownloadOption) {
         switch kokoroModelStore.status {
-        case .checking, .downloading, .installed:
+        case .checking, .downloading:
             return
+        case .installed:
+            if !kokoroModelStore.isOptionDownloaded(option) {
+                kokoroModelStore.downloadModel(option: option)
+                successToastMessage = "Downloading \(option.displayName)"
+            }
         case .notInstalled, .failed:
-            kokoroModelStore.downloadModel()
-            successToastMessage = "Downloading Kokoro in the background"
+            kokoroModelStore.downloadModel(option: option)
+            successToastMessage = "Downloading \(option.displayName)"
         }
     }
 
@@ -294,7 +327,7 @@ struct ContentView: View {
                         kokoroModelStatus: kokoroModelStore.status,
                         onPasteText: { isShowingPasteSheet = true },
                         onOpenLibrary: { selection = .recent },
-                        onDownloadKokoro: downloadKokoroModel
+                        onDownloadKokoro: openKokoroDownloadModal
                     )
 
                     ReaderLibrarySectionView(

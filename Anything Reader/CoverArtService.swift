@@ -8,7 +8,6 @@
 import AppKit
 import Foundation
 import PDFKit
-import ZIPFoundation
 
 actor CoverArtService {
     static let shared = CoverArtService()
@@ -27,8 +26,6 @@ actor CoverArtService {
             switch normalizedExtension {
             case "pdf":
                 imageData = try await extractPDFCoverData(from: sourceURL)
-            case "epub":
-                imageData = try await extractEPUBCoverData(from: sourceURL)
             default:
                 imageData = nil
             }
@@ -50,40 +47,6 @@ actor CoverArtService {
 
         let thumbnail = page.thumbnail(of: NSSize(width: 1024, height: 1536), for: .mediaBox)
         return await pngData(from: thumbnail)
-    }
-
-    @MainActor
-    private func extractEPUBCoverData(from url: URL) async throws -> Data? {
-        let archive = try Archive(url: url, accessMode: .read)
-        guard let containerData = try readArchiveEntryData(named: "META-INF/container.xml", from: archive) else {
-            return nil
-        }
-
-        let containerParser = EPUBContainerParser()
-        try parseXML(containerData, delegate: containerParser)
-
-        guard let opfPath = containerParser.rootFilePath,
-              let opfData = try readArchiveEntryData(named: opfPath, from: archive) else {
-            return nil
-        }
-
-        let metadataParser = EPUBMetadataParser()
-        try parseXML(opfData, delegate: metadataParser)
-
-        let basePath = (opfPath as NSString).deletingLastPathComponent
-
-        if let coverImageId = metadataParser.coverImageId,
-           let coverHref = metadataParser.manifest[coverImageId]?.href {
-            let entryPath = normalizedArchivePath(basePath: basePath, href: coverHref)
-            return try readArchiveEntryData(named: entryPath, from: archive)
-        }
-
-        if let coverEntry = metadataParser.manifest.values.first(where: { $0.properties?.contains("cover-image") == true }) {
-            let entryPath = normalizedArchivePath(basePath: basePath, href: coverEntry.href)
-            return try readArchiveEntryData(named: entryPath, from: archive)
-        }
-
-        return nil
     }
 
     @MainActor
@@ -146,87 +109,4 @@ actor CoverArtService {
             .replacingOccurrences(of: ":", with: "-")
     }
 
-    nonisolated private func readArchiveEntryData(named entryPath: String, from archive: Archive) throws -> Data? {
-        guard let entry = archive[entryPath] else {
-            return nil
-        }
-
-        var entryData = Data()
-        _ = try archive.extract(entry, consumer: { data in
-            entryData.append(data)
-        })
-        return entryData
-    }
-
-    nonisolated private func normalizedArchivePath(basePath: String, href: String) -> String {
-        let combined = (basePath as NSString).appendingPathComponent(href)
-        return combined.removingPercentEncoding ?? combined
-    }
-
-    @MainActor
-    private func parseXML<T: NSObject & XMLParserDelegate>(_ data: Data, delegate: T) throws {
-        let parser = XMLParser(data: data)
-        parser.delegate = delegate
-        guard parser.parse() else {
-            throw parser.parserError ?? DocumentIngestError.extractionFailed
-        }
-    }
-}
-
-private final class EPUBContainerParser: NSObject, XMLParserDelegate {
-    private(set) var rootFilePath: String?
-
-    func parser(
-        _ parser: XMLParser,
-        didStartElement elementName: String,
-        namespaceURI: String?,
-        qualifiedName qName: String?,
-        attributes attributeDict: [String: String] = [:]
-    ) {
-        guard localName(for: elementName) == "rootfile" else { return }
-        rootFilePath = attributeDict["full-path"]
-    }
-}
-
-private final class EPUBMetadataParser: NSObject, XMLParserDelegate {
-    private(set) var manifest: [String: EPUBManifestItem] = [:]
-    private(set) var coverImageId: String?
-
-    func parser(
-        _ parser: XMLParser,
-        didStartElement elementName: String,
-        namespaceURI: String?,
-        qualifiedName qName: String?,
-        attributes attributeDict: [String: String] = [:]
-    ) {
-        switch localName(for: elementName) {
-        case "item":
-            guard let id = attributeDict["id"],
-                  let href = attributeDict["href"] else {
-                return
-            }
-
-            manifest[id] = EPUBManifestItem(
-                href: href,
-                properties: attributeDict["properties"]
-            )
-
-        case "meta":
-            if attributeDict["name"]?.lowercased() == "cover" {
-                coverImageId = attributeDict["content"]
-            }
-
-        default:
-            break
-        }
-    }
-}
-
-private struct EPUBManifestItem {
-    let href: String
-    let properties: String?
-}
-
-private func localName(for elementName: String) -> String {
-    elementName.split(separator: ":").last.map(String.init) ?? elementName
 }

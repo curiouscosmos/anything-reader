@@ -204,6 +204,10 @@ struct ReaderHeroView: View {
                 Text(kokoroStatusMessage)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(heroSecondaryTextColor)
+
+                Text(kokoroActiveModelMessage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(heroSecondaryTextColor.opacity(0.95))
             }
             .padding(28)
 
@@ -281,15 +285,15 @@ struct ReaderHeroView: View {
     private var kokoroButtonTitle: String {
         switch kokoroModelStatus {
         case .checking:
-            return "Checking Kokoro"
+            return "Loading TTS..."
         case .notInstalled:
-            return "Download Kokoro"
+            return "Download TTS Modal"
         case .downloading:
             return "Downloading..."
         case .installed:
-            return "Kokoro Ready"
+            return "TTS Ready"
         case .failed:
-            return "Retry Kokoro"
+            return "Retry Download"
         }
     }
 
@@ -317,15 +321,30 @@ struct ReaderHeroView: View {
     private var kokoroStatusMessage: String {
         switch kokoroModelStatus {
         case .checking:
-            return "Checking whether Kokoro is already downloaded."
+            return "Checking whether a TTS model is already downloaded."
         case .notInstalled:
-            return "Download Kokoro once to unlock real offline voices."
+            return "Download one TTS model to unlock offline voice playback."
         case .downloading:
-            return "Kokoro is downloading in the background."
+            return "The selected TTS model is downloading in the background."
         case .installed:
-            return "Kokoro is ready for offline voice playback."
+            return "A TTS model is ready for offline voice playback."
         case .failed(let message):
-            return "Kokoro download failed: \(message)"
+            return "TTS model download failed: \(message)"
+        }
+    }
+
+    private var kokoroActiveModelMessage: String {
+        switch kokoroModelStatus {
+        case .checking:
+            return "Active model: checking..."
+        case .notInstalled:
+            return "Active model: none installed"
+        case .downloading(let option):
+            return "Active model: downloading \(option.displayName)"
+        case .installed(let option):
+            return "Active model: \(option.displayName)"
+        case .failed:
+            return "Active model: unavailable"
         }
     }
 
