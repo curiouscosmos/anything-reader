@@ -1,0 +1,185 @@
+//
+//  ReaderPlaybackChunkService.swift
+//  Anything Reader
+//
+//  Breaks normalized text into TTS-friendly chunks and resolves the current
+//  playback position from persisted progress.
+//
+
+import Foundation
+import SwiftData
+
+struct ReaderPlaybackChunkService {
+    static let preferredChunkLength = 420
+    static let prefetchChunkCount = 2
+
+    static func normalizedText(for entry: LibraryEntry) -> String? {
+        if let path = entry.normalizedTextFilePath {
+            let fileURL = URL(fileURLWithPath: path)
+            if let fileText = try? String(contentsOf: fileURL, encoding: .utf8) {
+                let trimmed = fileText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    return trimmed
+                }
+            }
+        }
+
+        let fallback = entry.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? nil : fallback
+    }
+
+    static func chunks(for entry: LibraryEntry) -> [String] {
+        guard let text = normalizedText(for: entry) else { return [] }
+        return chunks(from: text)
+    }
+
+    static func chunks(from text: String) -> [String] {
+        let cleaned = TextNormalizationService.normalize(text)
+        guard !cleaned.isEmpty else { return [] }
+
+        let paragraphs = cleaned
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n\n")
+
+        var chunks: [String] = []
+
+        for paragraph in paragraphs {
+            let paragraphText = paragraph
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !paragraphText.isEmpty else { continue }
+
+            let segments = splitIntoSentenceSegments(paragraphText)
+            if segments.isEmpty {
+                chunks.append(paragraphText)
+                continue
+            }
+
+            var buffer = ""
+            for segment in segments {
+                let trimmedSegment = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedSegment.isEmpty else { continue }
+
+                if trimmedSegment.count > preferredChunkLength {
+                    if !buffer.isEmpty {
+                        chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
+                        buffer = ""
+                    }
+
+                    chunks.append(contentsOf: splitLongSegment(trimmedSegment))
+                    continue
+                }
+
+                if buffer.isEmpty {
+                    buffer = trimmedSegment
+                } else if buffer.count + 1 + trimmedSegment.count <= preferredChunkLength {
+                    buffer += " "
+                    buffer += trimmedSegment
+                } else {
+                    chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
+                    buffer = trimmedSegment
+                }
+            }
+
+            if !buffer.isEmpty {
+                chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+
+        return chunks
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    static func chunkIndex(for progress: Double, chunkCount: Int) -> Int {
+        guard chunkCount > 0 else { return 0 }
+        let clampedProgress = min(max(progress, 0), 0.999_999)
+        let index = Int((clampedProgress * Double(chunkCount)).rounded(.down))
+        return min(max(index, 0), chunkCount - 1)
+    }
+
+    static func progress(for chunkIndex: Int, chunkCount: Int) -> Double {
+        guard chunkCount > 0 else { return 0 }
+        let boundedIndex = min(max(chunkIndex, 0), chunkCount - 1)
+        return Double(boundedIndex) / Double(chunkCount)
+    }
+
+    private static func splitIntoSentenceSegments(_ text: String) -> [String] {
+        let pattern = #"(?<=[.!?])\s+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return [text]
+        }
+
+        let range = NSRange(text.startIndex..., in: text)
+        var segments: [String] = []
+        var previousUpperBound = text.startIndex
+
+        regex.enumerateMatches(in: text, options: [], range: range) { match, _, _ in
+            guard let match, let splitRange = Range(match.range, in: text) else { return }
+            let segment = String(text[previousUpperBound..<splitRange.lowerBound])
+            if !segment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                segments.append(segment)
+            }
+            previousUpperBound = splitRange.upperBound
+        }
+
+        let remainder = String(text[previousUpperBound...])
+        if !remainder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            segments.append(remainder)
+        }
+
+        return segments.isEmpty ? [text] : segments
+    }
+
+    private static func splitLongSegment(_ text: String) -> [String] {
+        let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard !words.isEmpty else { return [text] }
+
+        var chunks: [String] = []
+        var buffer = ""
+
+        for word in words {
+            if word.count > preferredChunkLength {
+                if !buffer.isEmpty {
+                    chunks.append(buffer)
+                    buffer = ""
+                }
+                chunks.append(contentsOf: breakLongWord(word))
+                continue
+            }
+
+            if buffer.isEmpty {
+                buffer = word
+            } else if buffer.count + 1 + word.count <= preferredChunkLength {
+                buffer += " "
+                buffer += word
+            } else {
+                chunks.append(buffer)
+                buffer = word
+            }
+        }
+
+        if !buffer.isEmpty {
+            chunks.append(buffer)
+        }
+
+        return chunks
+    }
+
+    private static func breakLongWord(_ word: String) -> [String] {
+        guard word.count > preferredChunkLength else { return [word] }
+
+        var result: [String] = []
+        var startIndex = word.startIndex
+
+        while startIndex < word.endIndex {
+            let endIndex = word.index(startIndex, offsetBy: preferredChunkLength, limitedBy: word.endIndex) ?? word.endIndex
+            result.append(String(word[startIndex..<endIndex]))
+            startIndex = endIndex
+        }
+
+        return result
+    }
+}
