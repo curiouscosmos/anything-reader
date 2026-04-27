@@ -15,6 +15,8 @@ struct NormalizedTextViewerScreen: View {
     let onRevealLocation: (LibraryEntry) -> Void
 
     @State private var normalizedText = ""
+    @State private var viewerText = ""
+    @State private var viewerFocusRange: NSRange?
     @State private var isLoading = true
     @State private var errorMessage: String?
 
@@ -54,7 +56,7 @@ struct NormalizedTextViewerScreen: View {
         } else if let errorMessage {
             errorState(message: errorMessage)
         } else {
-            NormalizedTextDocumentView(text: normalizedText)
+            NormalizedTextDocumentView(text: viewerText, focusRange: viewerFocusRange)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(documentBackground)
                 .padding(18)
@@ -95,6 +97,24 @@ struct NormalizedTextViewerScreen: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(chipBackground, in: Capsule())
+
+                if let structureSummary = structureSummaryText {
+                    Text(structureSummary)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(chipBackground, in: Capsule())
+                }
+
+                if let currentReadingPosition = currentReadingPositionText {
+                    Text(currentReadingPosition)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(chipBackground, in: Capsule())
+                }
 
                 if let normalizedTextFileURL {
                     Text(normalizedTextFileURL.lastPathComponent)
@@ -190,6 +210,43 @@ struct NormalizedTextViewerScreen: View {
         preferredMode == .light ? Color.black.opacity(0.10) : Color.white.opacity(0.10)
     }
 
+    private var structureSummaryText: String? {
+        switch entry.readingStructureKind {
+        case .page:
+            guard entry.pageCount > 0 else { return nil }
+            return "\(entry.pageCount) pages"
+        case .chapter:
+            guard entry.chapterCount > 0 else { return nil }
+            return "\(entry.chapterCount) chapters"
+        case .none:
+            return nil
+        }
+    }
+
+    private var currentReadingPositionText: String? {
+        guard let structureKind = entry.readingStructureKind else { return nil }
+
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else { return nil }
+
+        let index = ReaderPlaybackChunkService.chunkIndex(for: entry.progress, chunkCount: targets.count)
+        let target = targets[min(index, targets.count - 1)]
+        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch structureKind {
+        case .page:
+            if title.isEmpty {
+                return "Page \(index + 1) of \(targets.count)"
+            }
+            return "Page \(index + 1) of \(targets.count) · \(title)"
+        case .chapter:
+            if title.isEmpty {
+                return "Chapter \(index + 1) of \(targets.count)"
+            }
+            return "Chapter \(index + 1) of \(targets.count) · \(title)"
+        }
+    }
+
     private static let byteCountFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
@@ -201,6 +258,8 @@ struct NormalizedTextViewerScreen: View {
         isLoading = true
         errorMessage = nil
         normalizedText = ""
+        viewerText = ""
+        viewerFocusRange = nil
         defer { isLoading = false }
 
         guard let normalizedTextFileURL else {
@@ -224,6 +283,9 @@ struct NormalizedTextViewerScreen: View {
             }.value
 
             normalizedText = loadedText
+            let renderResult = Self.viewerText(for: loadedText, entry: entry)
+            viewerText = renderResult.text
+            viewerFocusRange = renderResult.focusRange
         } catch is CancellationError {
             return
         } catch {
@@ -241,20 +303,142 @@ struct NormalizedTextViewerScreen: View {
             }
         }
     }
+
+    private static func viewerText(for normalizedText: String, entry: LibraryEntry) -> ViewerRenderResult {
+        guard let structureKind = entry.readingStructureKind else {
+            return ViewerRenderResult(text: normalizedText, focusRange: nil)
+        }
+
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else {
+            return ViewerRenderResult(text: normalizedText, focusRange: nil)
+        }
+
+        switch structureKind {
+        case .page:
+            return pageText(for: entry, normalizedText: normalizedText, progress: entry.progress)
+        case .chapter:
+            return chapterText(from: normalizedText, targets: targets, progress: entry.progress)
+        }
+    }
+
+    private static func pageText(for entry: LibraryEntry, normalizedText: String, progress: Double) -> ViewerRenderResult {
+        let chunks = ReaderPlaybackChunkService.pageChunks(for: entry)
+        let resolvedChunks = chunks.isEmpty ? ReaderPlaybackChunkService.chunks(from: normalizedText) : chunks
+        let chunksToRender = resolvedChunks.isEmpty ? [normalizedText] : resolvedChunks
+        guard !chunksToRender.isEmpty else { return ViewerRenderResult(text: normalizedText, focusRange: nil) }
+        let total = chunksToRender.count
+        let currentIndex = ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: total)
+
+        var renderedChunks: [String] = []
+        renderedChunks.reserveCapacity(total)
+        var focusRange: NSRange?
+        var currentLocation = 0
+
+        for (index, chunk) in chunksToRender.enumerated() {
+            let segment = ["Page \(index + 1) of \(total)", chunk]
+                .joined(separator: "\n\n")
+
+            if index == currentIndex {
+                focusRange = NSRange(location: currentLocation, length: 0)
+            }
+
+            renderedChunks.append(segment)
+            currentLocation += segment.count
+
+            if index < chunksToRender.count - 1 {
+                currentLocation += 3
+            }
+        }
+
+        return ViewerRenderResult(
+            text: renderedChunks.joined(separator: "\n\n\n"),
+            focusRange: focusRange
+        )
+    }
+
+    private static func chapterText(from normalizedText: String, targets: [ReaderJumpTarget], progress: Double) -> ViewerRenderResult {
+        let sections = normalizedText
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !sections.isEmpty else {
+            return ViewerRenderResult(text: normalizedText, focusRange: nil)
+        }
+
+        let sectionCount = min(sections.count, targets.count)
+        let total = max(sections.count, targets.count)
+        let currentIndex = ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: targets.count)
+        var renderedSections: [String] = []
+        renderedSections.reserveCapacity(sections.count)
+        var focusRange: NSRange?
+        var currentLocation = 0
+
+        for index in 0..<sectionCount {
+            let heading = chapterHeadingText(for: targets[index], fallbackIndex: index, total: total)
+            let segment = [heading, sections[index]].joined(separator: "\n\n")
+            if index == currentIndex {
+                focusRange = NSRange(location: currentLocation, length: 0)
+            }
+            renderedSections.append(segment)
+            currentLocation += segment.count
+            if index < sectionCount - 1 || sections.count > sectionCount {
+                currentLocation += 3
+            }
+        }
+
+        if sections.count > sectionCount {
+            for index in sectionCount..<sections.count {
+                let segment = [
+                    "Chapter \(index + 1) of \(total)",
+                    sections[index]
+                ].joined(separator: "\n\n")
+                renderedSections.append(segment)
+                currentLocation += segment.count
+                if index < sections.count - 1 {
+                    currentLocation += 3
+                }
+            }
+        }
+
+        return ViewerRenderResult(
+            text: renderedSections.joined(separator: "\n\n\n"),
+            focusRange: focusRange
+        )
+    }
+
+    private static func chapterHeadingText(for target: ReaderJumpTarget, fallbackIndex: Int, total: Int) -> String {
+        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.isEmpty {
+            return "Chapter \(fallbackIndex + 1) of \(total)"
+        }
+        return "Chapter \(fallbackIndex + 1) of \(total): \(title)"
+    }
+}
+
+private struct ViewerRenderResult {
+    let text: String
+    let focusRange: NSRange?
 }
 
 struct NormalizedTextDocumentView: NSViewRepresentable {
     let text: String
+    let focusRange: NSRange?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = STTextView.scrollableTextView()
         configure(scrollView)
-        updateText(in: scrollView)
+        updateText(in: scrollView, context: context)
         return scrollView
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
-        updateText(in: nsView)
+        updateText(in: nsView, context: context)
     }
 
     private func configure(_ scrollView: NSScrollView) {
@@ -280,10 +464,23 @@ struct NormalizedTextDocumentView: NSViewRepresentable {
         textView.textContainer.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     }
 
-    private func updateText(in scrollView: NSScrollView) {
+    private func updateText(in scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? STTextView else { return }
         if textView.text != text {
             textView.text = text
         }
+
+        guard let focusRange else { return }
+        guard context.coordinator.lastFocusLocation != focusRange.location else { return }
+        context.coordinator.lastFocusLocation = focusRange.location
+
+        DispatchQueue.main.async {
+            guard let textView = scrollView.documentView as? STTextView else { return }
+            textView.scrollRangeToVisible(focusRange)
+        }
+    }
+
+    final class Coordinator {
+        var lastFocusLocation: Int?
     }
 }

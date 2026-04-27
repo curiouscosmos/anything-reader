@@ -131,10 +131,13 @@ struct ContentView: View {
                     ),
                     preferredMode: preferredMode,
                     isLoadingFirstChunk: readerPlaybackService.isBufferingFirstChunk,
+                    readingStructureKind: activeEntry?.readingStructureKind,
+                    jumpTargets: activeEntry?.readingJumpTargets ?? [],
                     onToggleRepeat: toggleRepeat,
                     onRewind: rewindPlayback,
                     onTogglePlayPause: togglePlayback,
-                    onFastForward: fastForwardPlayback
+                    onFastForward: fastForwardPlayback,
+                    onJumpToTarget: jumpToReadingTarget
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
@@ -417,7 +420,7 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
-                            onPlay: startPlayback(for:),
+                            onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onClearCategory: { assign($0, to: nil) },
@@ -435,7 +438,7 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
-                            onPlay: startPlayback(for:),
+                            onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onClearCategory: { assign($0, to: nil) },
@@ -453,7 +456,7 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
-                            onPlay: startPlayback(for:),
+                            onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onClearCategory: { assign($0, to: nil) },
@@ -774,6 +777,10 @@ struct ContentView: View {
                 sourceText: ingest.normalizedText,
                 phonemeText: nil,
                 phonemeUpdatedAt: nil,
+                readingStructureKind: ingest.readingStructureKind,
+                pageCount: ingest.pageCount,
+                chapterCount: ingest.chapterCount,
+                readingJumpTargets: ingest.readingJumpTargets,
                 progress: 0,
                 lastOpened: .now
             )
@@ -886,7 +893,7 @@ struct ContentView: View {
 
         coverArtGenerationKeys.insert(cacheKey)
 
-        Task.detached(priority: .utility) {
+        Task(priority: .utility) {
             guard let storedPath = entry.storedFilePath else {
                 _ = await MainActor.run {
                     self.coverArtGenerationKeys.remove(cacheKey)
@@ -1024,7 +1031,7 @@ struct ContentView: View {
     // MARK: - Playback
 
     @MainActor
-    private func startPlayback(for entry: LibraryEntry) {
+    private func startPlayback(for entry: LibraryEntry, readingPositionOverrideText: String? = nil) {
         playbackSessionToken = UUID()
         let sessionToken = playbackSessionToken
 
@@ -1048,6 +1055,8 @@ struct ContentView: View {
         playbackState = PlaybackState(
             title: entry.title,
             subtitle: entry.subtitle,
+            readingPositionText: readingPositionText(for: entry, progress: entry.progress),
+            readingPositionOverrideText: readingPositionOverrideText,
             avatarSymbol: entry.avatarSymbolName,
             accentName: entry.accentName,
             progress: entry.progress,
@@ -1073,7 +1082,7 @@ struct ContentView: View {
                     self.playbackState.progress = 0
                     self.playbackState.elapsedSeconds = 0
                     self.playbackState.isPlaying = false
-                    self.startPlayback(for: entry)
+                    self.startPlayback(for: entry, readingPositionOverrideText: self.playbackState.readingPositionOverrideText)
                 } else {
                     self.playbackState.progress = 0
                     self.playbackState.elapsedSeconds = 0
@@ -1118,6 +1127,10 @@ struct ContentView: View {
     private func rewindPlayback() {
         playbackState.progress = max(0, playbackState.progress - 0.08)
         playbackState.elapsedSeconds = max(0, Int((Double(playbackState.durationSeconds) * playbackState.progress).rounded()))
+        playbackState.readingPositionOverrideText = nil
+        if let entry = activeEntry {
+            playbackState.readingPositionText = readingPositionText(for: entry, progress: playbackState.progress)
+        }
         persistPlayerProgress()
     }
 
@@ -1125,7 +1138,26 @@ struct ContentView: View {
     private func fastForwardPlayback() {
         playbackState.progress = min(1, playbackState.progress + 0.08)
         playbackState.elapsedSeconds = min(playbackState.durationSeconds, Int((Double(playbackState.durationSeconds) * playbackState.progress).rounded()))
+        playbackState.readingPositionOverrideText = nil
+        if let entry = activeEntry {
+            playbackState.readingPositionText = readingPositionText(for: entry, progress: playbackState.progress)
+        }
         persistPlayerProgress()
+    }
+
+    @MainActor
+    private func jumpToReadingTarget(_ target: ReaderJumpTarget) {
+        guard let entry = activeEntry else { return }
+
+        let newProgress = readingProgress(for: target, in: entry)
+        let explicitReadingPositionText = readingPositionText(for: entry, targetIndex: target.index)
+        entry.progress = newProgress
+        playbackState.progress = newProgress
+        playbackState.elapsedSeconds = Int((Double(playbackState.durationSeconds) * newProgress).rounded())
+        playbackState.readingPositionText = explicitReadingPositionText
+        playbackState.readingPositionOverrideText = explicitReadingPositionText
+        persistPlayerProgress()
+        startPlayback(for: entry, readingPositionOverrideText: explicitReadingPositionText)
     }
 
     @MainActor
@@ -1153,6 +1185,9 @@ struct ContentView: View {
         playbackState.elapsedSeconds = update.elapsedSeconds
         playbackState.durationSeconds = update.durationSeconds
         playbackState.progress = update.progress
+        if playbackState.readingPositionOverrideText == nil {
+            playbackState.readingPositionText = readingPositionText(for: entry, progress: update.progress)
+        }
         playbackState.isPlaying = update.isPlaying
         entry.progress = update.progress
         entry.lastOpened = .now
@@ -1173,6 +1208,60 @@ struct ContentView: View {
         } else {
             startPlayback(for: entry)
         }
+    }
+
+    private func readingPositionText(for entry: LibraryEntry, progress: Double) -> String {
+        guard let structureKind = entry.readingStructureKind else { return "" }
+
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else { return "" }
+
+        let index = ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: targets.count)
+        let target = targets[min(index, targets.count - 1)]
+        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch structureKind {
+        case .page:
+            if title.isEmpty {
+                return "Page \(index + 1) of \(targets.count)"
+            }
+            return "Page \(index + 1) of \(targets.count) · \(title)"
+        case .chapter:
+            if title.isEmpty {
+                return "Chapter \(index + 1) of \(targets.count)"
+            }
+            return "Chapter \(index + 1) of \(targets.count) · \(title)"
+        }
+    }
+
+    private func readingPositionText(for entry: LibraryEntry, targetIndex: Int) -> String {
+        guard let structureKind = entry.readingStructureKind else { return "" }
+
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else { return "" }
+
+        let index = min(max(targetIndex, 0), targets.count - 1)
+        let target = targets[index]
+        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch structureKind {
+        case .page:
+            if title.isEmpty {
+                return "Page \(index + 1) of \(targets.count)"
+            }
+            return "Page \(index + 1) of \(targets.count) · \(title)"
+        case .chapter:
+            if title.isEmpty {
+                return "Chapter \(index + 1) of \(targets.count)"
+            }
+            return "Chapter \(index + 1) of \(targets.count) · \(title)"
+        }
+    }
+
+    private func readingProgress(for target: ReaderJumpTarget, in entry: LibraryEntry) -> Double {
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else { return 0 }
+        return ReaderPlaybackChunkService.progress(for: target.index, chunkCount: targets.count)
     }
 }
 

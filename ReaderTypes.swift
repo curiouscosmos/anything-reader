@@ -49,6 +49,8 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 struct PlaybackState {
     var title: String = "Nothing playing"
     var subtitle: String = "Select a PDF, ePub, text file, or paste text"
+    var readingPositionText: String = ""
+    var readingPositionOverrideText: String?
     var avatarSymbol: String = "waveform"
     var accentName: String = "emerald"
     var progress: Double = 0
@@ -56,6 +58,10 @@ struct PlaybackState {
     var elapsedSeconds: Int = 0
     var isPlaying: Bool = false
     var isRepeating: Bool = false
+
+    var displayedReadingPositionText: String {
+        readingPositionOverrideText ?? readingPositionText
+    }
 }
 
 // Theme and formatting helpers used across multiple views.

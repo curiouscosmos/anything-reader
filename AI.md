@@ -40,6 +40,8 @@ Tests:
 
 ### 1. App Launch
 - `Anything_ReaderApp.swift` creates the SwiftData `ModelContainer`.
+- Persistent app data is stored in Application Support at `~/Library/Application Support/Anything Reader/AnythingReader-v2.sqlite`.
+- If that persistent store cannot be created, the app falls back to an in-memory SwiftData container so launch does not fail.
 - `ContentView` becomes the root app shell.
 - `ContentView` also restores persisted UI settings such as theme and selected Kokoro voice.
 
@@ -61,6 +63,8 @@ Tests:
 ### 3. Importing Content
 - `DocumentIngestService` reads PDF, TXT, and ePub files.
 - It extracts text, normalizes it, and saves a normalized `.txt` file next to the staged content in Application Support.
+- Imported files are staged under `~/Library/Application Support/Anything Reader/Uploaded Files/`.
+- `LibraryEntry` persists the staged file path, normalized text path, and derived reading metadata such as page count, chapter count, and jump targets.
 - `CoverArtService` runs cover extraction in the background for supported documents.
 - `ContentView` creates or updates the `LibraryEntry` SwiftData record after ingestion.
 
@@ -98,6 +102,10 @@ Tests:
 ### `Item.swift`
 - Defines shared data models.
 - `LibraryEntry` stores source metadata, normalized file paths, progress, and cover art paths.
+- `LibraryEntry` also stores reading structure metadata:
+  - `pageCount` for PDF and TXT sources
+  - `chapterCount` and chapter jump targets for ePub sources
+  - `readingJumpTargets` as a compact Codable payload for player/viewer navigation
 - `ReaderCategory` stores custom folders/categories.
 
 ### `ReaderTypes.swift`

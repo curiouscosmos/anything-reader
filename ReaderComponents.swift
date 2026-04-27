@@ -897,10 +897,13 @@ struct ReaderPlayerBarView: View {
     @Binding var volume: Double
     let preferredMode: AppearanceMode
     let isLoadingFirstChunk: Bool
+    let readingStructureKind: ReadingStructureKind?
+    let jumpTargets: [ReaderJumpTarget]
     let onToggleRepeat: () -> Void
     let onRewind: () -> Void
     let onTogglePlayPause: () -> Void
     let onFastForward: () -> Void
+    let onJumpToTarget: (ReaderJumpTarget) -> Void
 
     var body: some View {
         ZStack {
@@ -960,6 +963,22 @@ struct ReaderPlayerBarView: View {
                     .lineLimit(1)
                     .foregroundStyle(secondaryTextColor)
 
+                if !playbackState.displayedReadingPositionText.isEmpty || !jumpTargets.isEmpty {
+                    HStack(spacing: 10) {
+                        if !playbackState.displayedReadingPositionText.isEmpty {
+                            Text(playbackState.displayedReadingPositionText)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(secondaryTextColor)
+                                .lineLimit(1)
+                        }
+
+                        if !jumpTargets.isEmpty {
+                            jumpMenu
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+
                 HStack(spacing: 10) {
                     seekBar
                         .frame(maxWidth: 520)
@@ -991,6 +1010,73 @@ struct ReaderPlayerBarView: View {
             roundControlButton(icon: "forward.fill") {
                 onFastForward()
             }
+        }
+    }
+
+    private var jumpMenu: some View {
+        Menu {
+            ForEach(jumpTargets) { target in
+                Button {
+                    onJumpToTarget(target)
+                } label: {
+                    if target.index == currentJumpTargetIndex {
+                        Label(jumpTargetLabel(for: target), systemImage: "checkmark")
+                    } else {
+                        Text(jumpTargetLabel(for: target))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.turn.down.right")
+                Text(jumpMenuLabel)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(primaryTextColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(elevatedBackground, in: Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var currentJumpTargetIndex: Int? {
+        guard !jumpTargets.isEmpty else { return nil }
+        return ReaderPlaybackChunkService.chunkIndex(
+            for: playbackState.progress,
+            chunkCount: jumpTargets.count
+        )
+    }
+
+    private func jumpTargetLabel(for target: ReaderJumpTarget) -> String {
+        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayIndex = target.index + 1
+
+        switch readingStructureKind {
+        case .page:
+            if title.isEmpty {
+                return "Page \(displayIndex)"
+            }
+            return "Page \(displayIndex) - \(title)"
+        case .chapter:
+            if title.isEmpty {
+                return "Chapter \(displayIndex)"
+            }
+            return "Chapter \(displayIndex) - \(title)"
+        case .none:
+            return title.isEmpty ? "Item \(displayIndex)" : title
+        }
+    }
+
+    private var jumpMenuLabel: String {
+        switch readingStructureKind {
+        case .page:
+            return "Jump Page"
+        case .chapter:
+            return "Jump Chapter"
+        case .none:
+            return "Jump"
         }
     }
 

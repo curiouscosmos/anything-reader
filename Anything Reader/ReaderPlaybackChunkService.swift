@@ -7,11 +7,13 @@
 //
 
 import Foundation
+import PDFKit
 import SwiftData
 
 struct ReaderPlaybackChunkService {
     static let preferredChunkLength = 420
     static let prefetchChunkCount = 3
+    static let pdfPageBreakMarker = "[[PDF_PAGE_BREAK]]"
 
     static func normalizedText(for entry: LibraryEntry) -> String? {
         if let path = entry.normalizedTextFilePath {
@@ -30,12 +32,41 @@ struct ReaderPlaybackChunkService {
 
     static func chunks(for entry: LibraryEntry) -> [String] {
         guard let text = normalizedText(for: entry) else { return [] }
+
+        if entry.sourceKind == .pdf {
+            let pdfPages: [String]
+
+            if text.contains(pdfPageBreakMarker) {
+                pdfPages = text
+                    .components(separatedBy: pdfPageBreakMarker)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            } else if let extractedPages = pdfPageChunks(for: entry), !extractedPages.isEmpty {
+                pdfPages = extractedPages
+            } else {
+                pdfPages = []
+            }
+
+            if !pdfPages.isEmpty {
+                // Keep page navigation exact, but split each page into smaller
+                // TTS-friendly chunks so long PDFs do not trip the model.
+                return pdfPages.flatMap { pageText in
+                    chunks(from: pageText)
+                }
+            }
+        }
+
         return chunks(from: text)
     }
 
     static func chunks(from text: String) -> [String] {
         let cleaned = TextNormalizationService.normalize(text)
         guard !cleaned.isEmpty else { return [] }
+
+        if cleaned.contains(pdfPageBreakMarker) {
+            return cleaned
+                .components(separatedBy: pdfPageBreakMarker)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        }
 
         let paragraphs = cleaned
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -93,6 +124,25 @@ struct ReaderPlaybackChunkService {
             .filter { !$0.isEmpty }
     }
 
+    static func pageChunks(for entry: LibraryEntry) -> [String] {
+        guard let text = normalizedText(for: entry) else { return [] }
+
+        if text.contains(pdfPageBreakMarker) {
+            return text
+                .components(separatedBy: pdfPageBreakMarker)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        }
+
+        if entry.sourceKind == .pdf, let pdfChunks = pdfPageChunks(for: entry), !pdfChunks.isEmpty {
+            return pdfChunks
+        }
+
+        let cleaned = TextNormalizationService.normalize(text)
+        guard !cleaned.isEmpty else { return [] }
+
+        return chunks(from: cleaned)
+    }
+
     static func chunkIndex(for progress: Double, chunkCount: Int) -> Int {
         guard chunkCount > 0 else { return 0 }
         let clampedProgress = min(max(progress, 0), 0.999_999)
@@ -104,6 +154,18 @@ struct ReaderPlaybackChunkService {
         guard chunkCount > 0 else { return 0 }
         let boundedIndex = min(max(chunkIndex, 0), chunkCount - 1)
         return Double(boundedIndex) / Double(chunkCount)
+    }
+
+    private static func pdfPageChunks(for entry: LibraryEntry) -> [String]? {
+        guard let path = entry.storedFilePath else { return nil }
+        let fileURL = URL(fileURLWithPath: path)
+        guard let document = PDFDocument(url: fileURL), document.pageCount > 0 else { return nil }
+
+        return (0..<document.pageCount).map { index in
+            guard let page = document.page(at: index) else { return "" }
+            let rawText = page.string ?? ""
+            return TextNormalizationService.normalize(rawText)
+        }
     }
 
     private static func splitIntoSentenceSegments(_ text: String) -> [String] {

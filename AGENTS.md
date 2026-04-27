@@ -33,3 +33,6 @@ Apply these instructions to all work in this repository.
 - Keep changes scoped to the requested task.
 - Preserve existing app behavior unless a change is explicitly requested.
 - For repository context, consult `AI.md` first; it contains the project map and the app flow.
+- SwiftData persistence lives in `~/Library/Application Support/Anything Reader/AnythingReader-v2.sqlite`.
+- Imported source files are staged under `~/Library/Application Support/Anything Reader/Uploaded Files/`.
+- `LibraryEntry` persists derived reading metadata on the model itself, including page counts, chapter counts, and jump targets, so the UI does not have to recompute them at runtime.

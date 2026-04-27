@@ -43,6 +43,20 @@ enum ReaderSourceKind: String, CaseIterable, Identifiable {
     }
 }
 
+enum ReadingStructureKind: String, Codable, CaseIterable, Identifiable {
+    case page
+    case chapter
+
+    var id: String { rawValue }
+}
+
+struct ReaderJumpTarget: Codable, Identifiable, Hashable {
+    let index: Int
+    let title: String
+
+    var id: Int { index }
+}
+
 @Model
 final class LibraryEntry {
     var title: String
@@ -60,6 +74,10 @@ final class LibraryEntry {
     var sourceText: String
     var phonemeText: String?
     var phonemeUpdatedAt: Date?
+    var readingStructureKindRawValue: String?
+    var pageCount: Int
+    var chapterCount: Int
+    var readingJumpTargetsData: Data?
     var progress: Double
     var lastOpened: Date
     var createdAt: Date
@@ -80,6 +98,10 @@ final class LibraryEntry {
         sourceText: String = "",
         phonemeText: String? = nil,
         phonemeUpdatedAt: Date? = nil,
+        readingStructureKind: ReadingStructureKind? = nil,
+        pageCount: Int = 0,
+        chapterCount: Int = 0,
+        readingJumpTargets: [ReaderJumpTarget] = [],
         progress: Double = 0.0,
         lastOpened: Date = .now,
         createdAt: Date = .now
@@ -99,6 +121,10 @@ final class LibraryEntry {
         self.sourceText = sourceText
         self.phonemeText = phonemeText
         self.phonemeUpdatedAt = phonemeUpdatedAt
+        self.readingStructureKindRawValue = readingStructureKind?.rawValue
+        self.pageCount = pageCount
+        self.chapterCount = chapterCount
+        self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
         self.progress = progress
         self.lastOpened = lastOpened
         self.createdAt = createdAt
@@ -116,6 +142,36 @@ final class LibraryEntry {
             String(createdAt.timeIntervalSince1970)
         ]
         .joined(separator: "|")
+    }
+
+    var readingStructureKind: ReadingStructureKind? {
+        get {
+            guard let readingStructureKindRawValue else { return nil }
+            return ReadingStructureKind(rawValue: readingStructureKindRawValue)
+        }
+        set {
+            readingStructureKindRawValue = newValue?.rawValue
+        }
+    }
+
+    var readingJumpTargets: [ReaderJumpTarget] {
+        get {
+            guard let readingJumpTargetsData else { return [] }
+
+            do {
+                return try JSONDecoder().decode([ReaderJumpTarget].self, from: readingJumpTargetsData)
+            } catch {
+                return []
+            }
+        }
+        set {
+            readingJumpTargetsData = Self.encodeJumpTargets(newValue)
+        }
+    }
+
+    private static func encodeJumpTargets(_ targets: [ReaderJumpTarget]) -> Data? {
+        guard !targets.isEmpty else { return nil }
+        return try? JSONEncoder().encode(targets)
     }
 }
 

@@ -8,6 +8,7 @@
 import AppKit
 import Foundation
 import PDFKit
+import ZIPFoundation
 
 struct IngestedDocument {
     let title: String?
@@ -15,6 +16,10 @@ struct IngestedDocument {
     let normalizedTextFileURL: URL
     let sourceKind: ReaderSourceKind
     let fileSizeBytes: Int64
+    let readingStructureKind: ReadingStructureKind?
+    let pageCount: Int
+    let chapterCount: Int
+    let readingJumpTargets: [ReaderJumpTarget]
 }
 
 enum DocumentIngestError: LocalizedError {
@@ -68,25 +73,43 @@ actor DocumentIngestService {
         let sourceKind = readerSourceKind(for: normalizedFileExtension)
         let rawText: String
         let extractedTitle: String?
+        let readingMetadata: ReadingMetadata
 
         switch sourceKind {
         case .pdf:
             rawText = try PDFTextExtractionService.extractText(from: stagedFileURL)
             extractedTitle = bestTitleCandidate(from: rawText)
+            readingMetadata = PDFTextExtractionService.readingMetadata(from: stagedFileURL)
         case .epub:
-            rawText = try EPUBTextExtractionService.extractText(from: stagedFileURL)
+            let epubTextExtraction = try EPUBTextExtractionService.extractText(from: stagedFileURL)
+            rawText = epubTextExtraction.text
             extractedTitle = bestTitleCandidate(from: rawText)
+            readingMetadata = epubTextExtraction.readingMetadata
         case .text, .pastedText:
             guard let text = String(data: fileData, encoding: .utf8) else {
                 throw DocumentIngestError.unreadableDocument
             }
             rawText = text
             extractedTitle = bestTitleCandidate(from: rawText)
+            readingMetadata = ReadingMetadata(
+                readingStructureKind: nil,
+                pageCount: 0,
+                chapterCount: 0,
+                readingJumpTargets: []
+            )
         }
 
         let normalizedText = TextNormalizationService.normalize(rawText)
         guard !normalizedText.isEmpty else {
             throw DocumentIngestError.normalizationFailed
+        }
+
+        let resolvedReadingMetadata: ReadingMetadata
+        switch sourceKind {
+        case .text, .pastedText:
+            resolvedReadingMetadata = TXTReadingMetadataService.readingMetadata(from: normalizedText)
+        default:
+            resolvedReadingMetadata = readingMetadata
         }
 
         let normalizedURL = try saveNormalizedText(
@@ -100,7 +123,11 @@ actor DocumentIngestService {
             normalizedText: normalizedText,
             normalizedTextFileURL: normalizedURL,
             sourceKind: sourceKind,
-            fileSizeBytes: Int64(fileData.count)
+            fileSizeBytes: Int64(fileData.count),
+            readingStructureKind: resolvedReadingMetadata.readingStructureKind,
+            pageCount: resolvedReadingMetadata.pageCount,
+            chapterCount: resolvedReadingMetadata.chapterCount,
+            readingJumpTargets: resolvedReadingMetadata.readingJumpTargets
         )
     }
 
@@ -171,6 +198,13 @@ actor DocumentIngestService {
             return .text
         }
     }
+}
+
+private struct ReadingMetadata {
+    let readingStructureKind: ReadingStructureKind?
+    let pageCount: Int
+    let chapterCount: Int
+    let readingJumpTargets: [ReaderJumpTarget]
 }
 
 nonisolated private func bestTitleCandidate(from text: String) -> String? {
@@ -245,12 +279,35 @@ private enum PDFTextExtractionService {
             }
         }
 
-        let extracted = cleanedPages.joined(separator: "\n\n")
+        let extracted = cleanedPages.joined(separator: "\n\n[[PDF_PAGE_BREAK]]\n\n")
         guard !extracted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw DocumentIngestError.extractionFailed
         }
 
         return extracted
+    }
+
+    nonisolated static func readingMetadata(from url: URL) -> ReadingMetadata {
+        guard let document = PDFDocument(url: url), document.pageCount > 0 else {
+            return ReadingMetadata(
+                readingStructureKind: nil,
+                pageCount: 0,
+                chapterCount: 0,
+                readingJumpTargets: []
+            )
+        }
+
+        let pageCount = document.pageCount
+        let jumpTargets = (0..<pageCount).map { index in
+            ReaderJumpTarget(index: index, title: "Page \(index + 1)")
+        }
+
+        return ReadingMetadata(
+            readingStructureKind: .page,
+            pageCount: pageCount,
+            chapterCount: 0,
+            readingJumpTargets: jumpTargets
+        )
     }
 
     nonisolated static func extractTitle(from url: URL) -> String? {
@@ -295,127 +352,254 @@ private enum PDFTextExtractionService {
 }
 
 private enum EPUBTextExtractionService {
-    nonisolated static func extractText(from url: URL) throws -> String {
-        let zipEntries = try archiveEntries(at: url)
-        guard zipEntries.contains("META-INF/container.xml") else {
+    nonisolated static func extractText(from url: URL) throws -> EPUBTextExtractionResult {
+        let archive = try Archive(url: url, accessMode: .read)
+
+        guard let containerData = try extractArchiveData(archive, entryPath: "META-INF/container.xml"),
+              let opfPath = try opfPath(from: containerData),
+              let opfData = try extractArchiveData(archive, entryPath: opfPath) else {
             throw DocumentIngestError.archiveAccessFailed
         }
 
-        let containerData = try archiveData(at: url, entryPath: "META-INF/container.xml")
-        let opfPath = try opfPath(from: containerData)
-        let spinePaths = try spineEntryPaths(from: opfPath, archiveEntries: zipEntries, archiveURL: url)
+        let document = try XMLDocument(data: opfData, options: [])
+        let chapters = try chapterSections(from: document, archive: archive, opfPath: opfPath)
 
-        var orderedSections: [String] = []
-        for path in spinePaths {
-            guard path.hasSuffix(".xhtml") || path.hasSuffix(".html") || path.hasSuffix(".htm") else { continue }
-            guard let htmlData = try? archiveData(at: url, entryPath: path) else { continue }
-            if let plainText = htmlToPlainText(htmlData) {
-                let cleaned = plainText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !cleaned.isEmpty {
-                    orderedSections.append(cleaned)
-                }
-            }
-        }
-
-        if orderedSections.isEmpty {
-            for path in zipEntries.sorted() where path.hasSuffix(".xhtml") || path.hasSuffix(".html") || path.hasSuffix(".htm") {
-                guard let htmlData = try? archiveData(at: url, entryPath: path) else { continue }
-                if let plainText = htmlToPlainText(htmlData) {
-                    let cleaned = plainText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !cleaned.isEmpty {
-                        orderedSections.append(cleaned)
-                    }
-                }
-            }
-        }
-
+        let orderedSections = chapters.map(\.text).filter { !$0.isEmpty }
         let extracted = orderedSections.joined(separator: "\n\n")
         guard !extracted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw DocumentIngestError.extractionFailed
         }
 
-        return extracted
+        let readingMetadata = ReadingMetadata(
+            readingStructureKind: .chapter,
+            pageCount: chapters.count,
+            chapterCount: chapters.count,
+            readingJumpTargets: chapters.enumerated().map { index, chapter in
+                ReaderJumpTarget(index: index, title: chapter.title)
+            }
+        )
+
+        return EPUBTextExtractionResult(text: extracted, readingMetadata: readingMetadata)
     }
 
     nonisolated static func extractTitle(from url: URL) -> String? {
-        guard let containerData = try? archiveData(at: url, entryPath: "META-INF/container.xml"),
-              let opfPath = try? opfPath(from: containerData),
-              let opfData = try? archiveData(at: url, entryPath: opfPath) else {
-            return nil
-        }
-
-        guard let document = try? XMLDocument(data: opfData, options: []) else {
-            return nil
-        }
-
-        let titleNodes = try? document.nodes(forXPath: "//*[local-name()='metadata']/*[local-name()='title']")
-        if let value = titleNodes?.compactMap({ ($0 as? XMLElement)?.stringValue }).first?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !value.isEmpty {
-            return value
-        }
-
-        if let metaNodes = try? document.nodes(forXPath: "//*[local-name()='metadata']/*[local-name()='meta']") {
-            for node in metaNodes {
-                guard let element = node as? XMLElement,
-                      let name = element.attribute(forName: "name")?.stringValue?.lowercased(),
-                      name == "title",
-                      let content = element.attribute(forName: "content")?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !content.isEmpty else { continue }
-                return content
+        do {
+            let archive = try Archive(url: url, accessMode: .read)
+            guard let containerData = try extractArchiveData(archive, entryPath: "META-INF/container.xml"),
+                  let opfPath = try opfPath(from: containerData),
+                  let opfData = try extractArchiveData(archive, entryPath: opfPath) else {
+                return nil
             }
-        }
 
-        return nil
+            guard let document = try? XMLDocument(data: opfData, options: []) else {
+                return nil
+            }
+
+            let titleNodes = try? document.nodes(forXPath: "//*[local-name()='metadata']/*[local-name()='title']")
+            if let value = titleNodes?.compactMap({ ($0 as? XMLElement)?.stringValue }).first?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return value
+            }
+
+            if let metaNodes = try? document.nodes(forXPath: "//*[local-name()='metadata']/*[local-name()='meta']") {
+                for node in metaNodes {
+                    guard let element = node as? XMLElement,
+                          let name = element.attribute(forName: "name")?.stringValue?.lowercased(),
+                          name == "title",
+                          let content = element.attribute(forName: "content")?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !content.isEmpty else { continue }
+                    return content
+                }
+            }
+
+            return nil
+        } catch {
+            return nil
+        }
     }
 
-    nonisolated private static func opfPath(from containerData: Data) throws -> String {
+    nonisolated private static func opfPath(from containerData: Data) throws -> String? {
         let document = try XMLDocument(data: containerData, options: [])
         guard
             let rootfile = try document.nodes(forXPath: "//container/rootfiles/rootfile").first as? XMLElement,
             let fullPath = rootfile.attribute(forName: "full-path")?.stringValue
         else {
-            throw DocumentIngestError.extractionFailed
+            return nil
         }
 
         return fullPath
     }
 
-    nonisolated private static func spineEntryPaths(from opfPath: String, archiveEntries: [String], archiveURL: URL) throws -> [String] {
-        let opfData = try archiveData(at: archiveURL, entryPath: opfPath)
-        let document = try XMLDocument(data: opfData, options: [])
+    nonisolated private static func chapterSections(
+        from document: XMLDocument,
+        archive: Archive,
+        opfPath: String
+    ) throws -> [EPUBChapterSection] {
+        let basePath = (opfPath as NSString).deletingLastPathComponent
+        let manifestItems = try manifestItems(from: document)
+        let spineItemIDs = try document.nodes(forXPath: "//*[local-name()='spine']/*[local-name()='itemref']")
+            .compactMap { node -> String? in
+                guard let element = node as? XMLElement else { return nil }
+                return element.attribute(forName: "idref")?.stringValue
+            }
 
+        let navigationTitles = try navigationTitles(from: document, archive: archive, manifestItems: manifestItems, basePath: basePath)
+        var sections: [EPUBChapterSection] = []
+
+        for id in spineItemIDs {
+            guard let item = manifestItems[id] else { continue }
+            guard item.href.hasSuffix(".xhtml") || item.href.hasSuffix(".html") || item.href.hasSuffix(".htm") else { continue }
+
+            let entryPath = normalizedArchivePath(basePath: basePath, href: item.href)
+            guard let htmlData = try extractArchiveData(archive, entryPath: entryPath),
+                  let plainText = htmlToPlainText(htmlData) else {
+                continue
+            }
+
+            let cleanedText = plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanedText.isEmpty else { continue }
+
+            let title = navigationTitles[normalizedNavigationKey(item.href)]
+                ?? bestTitleCandidate(from: cleanedText)
+                ?? fallbackTitle(for: item)
+            sections.append(EPUBChapterSection(title: title, text: cleanedText))
+        }
+
+        if sections.isEmpty {
+            let fallbackItems = manifestItems.values
+                .filter { $0.href.hasSuffix(".xhtml") || $0.href.hasSuffix(".html") || $0.href.hasSuffix(".htm") }
+                .sorted { $0.href < $1.href }
+
+            for item in fallbackItems {
+                let entryPath = normalizedArchivePath(basePath: basePath, href: item.href)
+                guard let htmlData = try extractArchiveData(archive, entryPath: entryPath),
+                      let plainText = htmlToPlainText(htmlData) else {
+                    continue
+                }
+
+                let cleanedText = plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !cleanedText.isEmpty else { continue }
+
+                let title = bestTitleCandidate(from: cleanedText) ?? fallbackTitle(for: item)
+                sections.append(EPUBChapterSection(title: title, text: cleanedText))
+            }
+        }
+
+        return sections
+    }
+
+    nonisolated private static func manifestItems(from document: XMLDocument) throws -> [String: EPUBManifestItem] {
         let manifestNodes = try document.nodes(forXPath: "//*[local-name()='manifest']/*[local-name()='item']")
-        var manifest: [String: String] = [:]
+        var manifest: [String: EPUBManifestItem] = [:]
+
         for node in manifestNodes {
             guard let element = node as? XMLElement,
                   let id = element.attribute(forName: "id")?.stringValue,
                   let href = element.attribute(forName: "href")?.stringValue else {
                 continue
             }
-            manifest[id] = href
+
+            let properties = element.attribute(forName: "properties")?.stringValue ?? ""
+            let mediaType = element.attribute(forName: "media-type")?.stringValue ?? ""
+            manifest[id] = EPUBManifestItem(
+                id: id,
+                href: href,
+                properties: properties,
+                mediaType: mediaType
+            )
         }
 
-        let spineNodes = try document.nodes(forXPath: "//*[local-name()='spine']/*[local-name()='itemref']")
-        let basePath = (opfPath as NSString).deletingLastPathComponent
-        let orderedPaths = spineNodes.compactMap { node -> String? in
-            guard let element = node as? XMLElement,
-                  let idref = element.attribute(forName: "idref")?.stringValue,
-                  let href = manifest[idref] else {
-                return nil
+        return manifest
+    }
+
+    nonisolated private static func navigationTitles(
+        from document: XMLDocument,
+        archive: Archive,
+        manifestItems: [String: EPUBManifestItem],
+        basePath: String
+    ) throws -> [String: String] {
+        var titles: [String: String] = [:]
+
+        if let navItem = manifestItems.values.first(where: { $0.properties.lowercased().contains("nav") }) {
+            let navPath = normalizedArchivePath(basePath: basePath, href: navItem.href)
+            if let navData = try extractArchiveData(archive, entryPath: navPath),
+               let navDocument = try? XMLDocument(data: navData, options: []) {
+                let navNodes = try navDocument.nodes(forXPath: "//*[local-name()='nav']//*[local-name()='a']")
+                for node in navNodes {
+                    guard let element = node as? XMLElement,
+                          let href = element.attribute(forName: "href")?.stringValue else {
+                        continue
+                    }
+
+                    let title = element.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let title, !title.isEmpty else { continue }
+                    titles[normalizedNavigationKey(href)] = title
+                }
             }
-            return normalizedArchivePath(basePath: basePath, href: href)
         }
 
-        if orderedPaths.isEmpty {
-            return archiveEntries
+        guard titles.isEmpty else {
+            return titles
         }
 
-        return orderedPaths
+        guard let ncxItem = manifestItems.values.first(where: { item in
+            item.mediaType.lowercased().contains("ncx") || item.href.lowercased().hasSuffix(".ncx")
+        }) else {
+            return titles
+        }
+
+        let ncxPath = normalizedArchivePath(basePath: basePath, href: ncxItem.href)
+        guard let ncxData = try extractArchiveData(archive, entryPath: ncxPath),
+              let ncxDocument = try? XMLDocument(data: ncxData, options: []) else {
+            return titles
+        }
+
+        let navPoints = try ncxDocument.nodes(forXPath: "//*[local-name()='navMap']//*[local-name()='navPoint']")
+        for node in navPoints {
+            guard let navPoint = node as? XMLElement else { continue }
+
+            let titleNode = navPoint.elements(forName: "navLabel").first?.elements(forName: "text").first
+            let title = titleNode?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let title, !title.isEmpty else { continue }
+
+            guard
+                let contentElement = navPoint.elements(forName: "content").first,
+                let src = contentElement.attribute(forName: "src")?.stringValue
+            else {
+                continue
+            }
+
+            titles[normalizedNavigationKey(src)] = title
+        }
+
+        return titles
+    }
+
+    nonisolated private static func normalizedNavigationKey(_ href: String) -> String {
+        let fragmentless = href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? href
+        return fragmentless.removingPercentEncoding ?? fragmentless
     }
 
     nonisolated private static func normalizedArchivePath(basePath: String, href: String) -> String {
         let combined = (basePath as NSString).appendingPathComponent(href)
         return combined.removingPercentEncoding ?? combined
+    }
+
+    nonisolated private static func fallbackTitle(for item: EPUBManifestItem) -> String {
+        let fileName = (item.href as NSString).lastPathComponent
+        let title = (fileName as NSString).deletingPathExtension
+        return title.isEmpty ? item.id : title
+    }
+
+    nonisolated private static func extractArchiveData(_ archive: Archive, entryPath: String) throws -> Data? {
+        guard let entry = archive[entryPath] else { return nil }
+
+        var extractedData = Data()
+        _ = try archive.extract(entry) { chunk in
+            extractedData.append(chunk)
+        }
+
+        return extractedData.isEmpty ? nil : extractedData
     }
 
     nonisolated private static func htmlToPlainText(_ data: Data) -> String? {
@@ -432,48 +616,70 @@ private enum EPUBTextExtractionService {
     }
 }
 
-nonisolated private func archiveEntries(at url: URL) throws -> [String] {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-    process.arguments = ["-Z1", url.path]
-
-    let standardOutput = Pipe()
-    let standardError = Pipe()
-    process.standardOutput = standardOutput
-    process.standardError = standardError
-
-    try process.run()
-    process.waitUntilExit()
-
-    let outputData = standardOutput.fileHandleForReading.readDataToEndOfFile()
-    guard process.terminationStatus == 0,
-          let output = String(data: outputData, encoding: .utf8) else {
-        throw DocumentIngestError.archiveAccessFailed
-    }
-
-    return output
-        .split(separator: "\n")
-        .map(String.init)
-        .filter { !$0.isEmpty }
+private struct EPUBTextExtractionResult {
+    let text: String
+    let readingMetadata: ReadingMetadata
 }
 
-nonisolated private func archiveData(at url: URL, entryPath: String) throws -> Data {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-    process.arguments = ["-p", url.path, entryPath]
+private struct EPUBChapterSection {
+    let title: String
+    let text: String
+}
 
-    let standardOutput = Pipe()
-    let standardError = Pipe()
-    process.standardOutput = standardOutput
-    process.standardError = standardError
+private struct EPUBManifestItem {
+    let id: String
+    let href: String
+    let properties: String
+    let mediaType: String
+}
 
-    try process.run()
-    process.waitUntilExit()
-
-    let outputData = standardOutput.fileHandleForReading.readDataToEndOfFile()
-    guard process.terminationStatus == 0, !outputData.isEmpty else {
-        throw DocumentIngestError.archiveAccessFailed
+private enum TXTReadingMetadataService {
+    nonisolated static func readingMetadata(from normalizedText: String) -> ReadingMetadata {
+        let pageChunks = splitIntoPages(from: normalizedText)
+        return ReadingMetadata(
+            readingStructureKind: pageChunks.isEmpty ? nil : .page,
+            pageCount: pageChunks.count,
+            chapterCount: 0,
+            readingJumpTargets: pageChunks.enumerated().map { index, _ in
+                ReaderJumpTarget(index: index, title: "Page \(index + 1)")
+            }
+        )
     }
 
-    return outputData
+    nonisolated private static func splitIntoPages(from text: String) -> [String] {
+        let cleaned = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleaned.isEmpty else { return [] }
+
+        let targetCharacterCount = 2_200
+        let paragraphs = cleaned.components(separatedBy: "\n\n")
+        var pages: [String] = []
+        var buffer = ""
+
+        for paragraph in paragraphs {
+            let paragraphText = paragraph
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !paragraphText.isEmpty else { continue }
+
+            if buffer.isEmpty {
+                buffer = paragraphText
+            } else if buffer.count + 2 + paragraphText.count <= targetCharacterCount {
+                buffer += "\n\n"
+                buffer += paragraphText
+            } else {
+                pages.append(buffer)
+                buffer = paragraphText
+            }
+        }
+
+        if !buffer.isEmpty {
+            pages.append(buffer)
+        }
+
+        return pages
+    }
 }
