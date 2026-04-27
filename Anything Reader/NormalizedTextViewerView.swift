@@ -57,6 +57,7 @@ struct NormalizedTextViewerScreen: View {
             NormalizedTextDocumentView(text: normalizedText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(documentBackground)
+                .padding(18)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -263,6 +264,7 @@ struct NormalizedTextDocumentView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.backgroundColor = .clear
+        scrollView.contentInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
 
         guard let textView = scrollView.documentView as? STTextView else { return }
 
