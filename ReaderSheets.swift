@@ -189,6 +189,7 @@ struct ReaderKokoroDownloadSheet: View {
             return false
         }()
         let isActive = modelStore.activeModelFileName == option.localFileName && isInstalled
+        let isSelectable = option.isRecommended
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -229,6 +230,7 @@ struct ReaderKokoroDownloadSheet: View {
                         }
                         .labelsHidden()
                         .toggleStyle(.switch)
+                        .disabled(!isSelectable)
                         .help("Only one downloaded model can be active at a time.")
 
                         Button(role: .destructive) {
@@ -261,6 +263,12 @@ struct ReaderKokoroDownloadSheet: View {
                 Text(qualityDescription(for: option))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if isInstalled && !isSelectable {
+                    Text("Not selectable in this build")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
 
                 Spacer(minLength: 0)
 

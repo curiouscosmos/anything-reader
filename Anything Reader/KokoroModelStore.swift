@@ -35,33 +35,6 @@ enum KokoroDownloadCatalog {
             isRecommended: true,
             isRuntimeCompatible: true,
             qualityRank: 0
-        ),
-        .init(
-            localFileName: "kokoro_fp16.safetensors",
-            displayName: "FP16",
-            qualityLabel: "Better quality",
-            downloadURL: URL(string: "https://huggingface.co/mlx-community/Kokoro-82M-8bit/resolve/main/kokoro-v1_0.safetensors?download=true")!,
-            isRecommended: false,
-            isRuntimeCompatible: false,
-            qualityRank: 1
-        ),
-        .init(
-            localFileName: "kokoro_quantized.safetensors",
-            displayName: "Quantized",
-            qualityLabel: "Smaller, faster CPU",
-            downloadURL: URL(string: "https://huggingface.co/mlx-community/Kokoro-82M-6bit/resolve/main/kokoro-v1_0.safetensors?download=true")!,
-            isRecommended: false,
-            isRuntimeCompatible: false,
-            qualityRank: 2
-        ),
-        .init(
-            localFileName: "kokoro_q4f16.safetensors",
-            displayName: "Q4 F16",
-            qualityLabel: "Smallest, experimental",
-            downloadURL: URL(string: "https://huggingface.co/mlx-community/Kokoro-82M-4bit/resolve/main/kokoro-v1_0.safetensors?download=true")!,
-            isRecommended: false,
-            isRuntimeCompatible: false,
-            qualityRank: 3
         )
     ]
 
@@ -109,11 +82,12 @@ final class KokoroModelStore: ObservableObject {
     var selectedOption: KokoroDownloadOption? {
         if let activeFileName = activeModelFileName,
            let activeOption = KokoroDownloadCatalog.allOptions.first(where: { $0.localFileName == activeFileName }),
-           isOptionDownloaded(activeOption) {
+           isOptionDownloaded(activeOption),
+           isRuntimeCompatibleModel(at: localModelURL(for: activeOption)) {
             return activeOption
         }
 
-        return installedOptions.first
+        return runtimeCompatibleInstalledOptions.first
     }
 
     func refreshInstallationStatus() {
@@ -126,19 +100,27 @@ final class KokoroModelStore: ObservableObject {
             return
         }
 
-        if let firstInstalled = installedOptions.first {
-            activeModelFileName = firstInstalled.localFileName
-            storeSelectedOption(firstInstalled)
-            status = .installed(firstInstalled)
-        } else {
+        if let firstCompatible = runtimeCompatibleInstalledOptions.first {
+            activeModelFileName = firstCompatible.localFileName
+            storeSelectedOption(firstCompatible)
+            status = .installed(firstCompatible)
+        } else if installedOptions.isEmpty {
             activeModelFileName = nil
             UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
             status = .notInstalled
+        } else {
+            activeModelFileName = nil
+            UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
+            status = .failed("Only Kokoro-82M-bf16 is compatible with the current Kokoro runtime.")
         }
     }
 
     func activateDownloadedModel(_ option: KokoroDownloadOption) {
         guard isOptionDownloaded(option) else { return }
+        guard isRuntimeCompatibleModel(at: localModelURL(for: option)) else {
+            status = .failed("Only Kokoro-82M-bf16 can be activated with this build.")
+            return
+        }
         activeModelFileName = option.localFileName
         storeSelectedOption(option)
         status = .installed(option)
@@ -147,7 +129,7 @@ final class KokoroModelStore: ObservableObject {
     func deactivateDownloadedModel(_ option: KokoroDownloadOption) {
         guard selectedOption?.localFileName == option.localFileName else { return }
 
-        let remainingOptions = installedOptions.filter { $0.localFileName != option.localFileName }
+        let remainingOptions = runtimeCompatibleInstalledOptions.filter { $0.localFileName != option.localFileName }
         if let nextOption = remainingOptions.first {
             activeModelFileName = nextOption.localFileName
             storeSelectedOption(nextOption)
@@ -155,7 +137,7 @@ final class KokoroModelStore: ObservableObject {
         } else {
             activeModelFileName = nil
             UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
-            status = .notInstalled
+            status = installedOptions.isEmpty ? .notInstalled : .failed("Only Kokoro-82M-bf16 is compatible with the current Kokoro runtime.")
         }
     }
 
@@ -169,12 +151,12 @@ final class KokoroModelStore: ObservableObject {
             activeModelFileName = nil
             UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
 
-            if let fallback = installedOptions.first {
+            if let fallback = runtimeCompatibleInstalledOptions.first {
                 activeModelFileName = fallback.localFileName
                 storeSelectedOption(fallback)
                 status = .installed(fallback)
             } else {
-                status = .notInstalled
+                status = installedOptions.isEmpty ? .notInstalled : .failed("Only Kokoro-82M-bf16 is compatible with the current Kokoro runtime.")
             }
         } else {
             refreshInstallationStatus()
@@ -201,9 +183,13 @@ final class KokoroModelStore: ObservableObject {
             do {
                 try await downloadAndInstallModel(option: option)
                 await MainActor.run {
-                    self.activeModelFileName = option.localFileName
-                    self.storeSelectedOption(option)
-                    self.status = .installed(option)
+                    if self.isRuntimeCompatibleModel(at: self.localModelURL(for: option)) {
+                        self.activeModelFileName = option.localFileName
+                        self.storeSelectedOption(option)
+                        self.status = .installed(option)
+                    } else {
+                        self.status = .failed("Downloaded model is not compatible with this build.")
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -215,7 +201,8 @@ final class KokoroModelStore: ObservableObject {
 
     func modelURL() -> URL? {
         if let selected = selectedOption, isOptionDownloaded(selected) {
-            return localModelURL(for: selected)
+            let url = localModelURL(for: selected)
+            return isRuntimeCompatibleModel(at: url) ? url : nil
         }
 
         return nil
@@ -273,6 +260,23 @@ final class KokoroModelStore: ObservableObject {
         } else {
             activeModelFileName = nil
             UserDefaults.standard.removeObject(forKey: selectedModelStorageKey)
+        }
+
+        deleteLegacyUnsupportedDownloadsIfNeeded()
+    }
+
+    private func deleteLegacyUnsupportedDownloadsIfNeeded() {
+        let legacyFileNames = [
+            "kokoro_fp16.safetensors",
+            "kokoro_quantized.safetensors",
+            "kokoro_q4f16.safetensors"
+        ]
+
+        for fileName in legacyFileNames {
+            let legacyURL = modelDirectory().appendingPathComponent(fileName)
+            if fileManager().fileExists(atPath: legacyURL.path) {
+                try? fileManager().removeItem(at: legacyURL)
+            }
         }
     }
 
