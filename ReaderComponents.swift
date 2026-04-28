@@ -528,8 +528,7 @@ struct ReaderLibraryCardView: View {
 
                         if let currentReadingProgress = entry.currentReadingProgressSummaryText ?? entry.currentReadingPositionDisplayText {
                             Text(currentReadingProgress)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.88))
+                                .font(.body.weight(.semibold))
                                 .lineLimit(1)
                         }
                     }
@@ -560,7 +559,7 @@ struct ReaderLibraryCardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(TopRoundedRectangle(radius: 16).fill(metaBackground))
             }
-            .padding(.vertical, 20)
+            .padding(.vertical, 2)
 
             // Overflow actions live outside the footer so they remain reachable.
             Button {
