@@ -50,6 +50,28 @@ enum ReadingStructureKind: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum PDFExtractionMode: String, Codable, CaseIterable, Identifiable {
+    case directText
+    case ocr
+    case hybrid
+    case unknown
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .directText:
+            return "Direct Text"
+        case .ocr:
+            return "OCR"
+        case .hybrid:
+            return "Hybrid"
+        case .unknown:
+            return "Unknown"
+        }
+    }
+}
+
 enum TextLanguage: String, Codable, CaseIterable, Identifiable {
     case english = "en"
     case french = "fr"
@@ -147,10 +169,10 @@ final class LibraryEntry {
     var categoryName: String?
     var avatarSymbolName: String
     var accentName: String
-    var sourceText: String
     var phonemeText: String?
     var phonemeUpdatedAt: Date?
     var textLanguageRawValue: String?
+    var pdfExtractionModeRawValue: String?
     var readingStructureKindRawValue: String?
     var pageCount: Int
     var chapterCount: Int
@@ -174,10 +196,10 @@ final class LibraryEntry {
         categoryName: String? = nil,
         avatarSymbolName: String,
         accentName: String,
-        sourceText: String = "",
         phonemeText: String? = nil,
         phonemeUpdatedAt: Date? = nil,
         textLanguage: TextLanguage? = nil,
+        pdfExtractionMode: PDFExtractionMode? = nil,
         readingStructureKind: ReadingStructureKind? = nil,
         pageCount: Int = 0,
         chapterCount: Int = 0,
@@ -200,10 +222,10 @@ final class LibraryEntry {
         self.categoryName = categoryName
         self.avatarSymbolName = avatarSymbolName
         self.accentName = accentName
-        self.sourceText = sourceText
         self.phonemeText = phonemeText
         self.phonemeUpdatedAt = phonemeUpdatedAt
         self.textLanguageRawValue = textLanguage?.rawValue
+        self.pdfExtractionModeRawValue = pdfExtractionMode?.rawValue
         self.readingStructureKindRawValue = readingStructureKind?.rawValue
         self.pageCount = pageCount
         self.chapterCount = chapterCount
@@ -246,6 +268,16 @@ final class LibraryEntry {
         }
         set {
             textLanguageRawValue = newValue?.rawValue
+        }
+    }
+
+    var pdfExtractionMode: PDFExtractionMode? {
+        get {
+            guard let pdfExtractionModeRawValue else { return nil }
+            return PDFExtractionMode(rawValue: pdfExtractionModeRawValue)
+        }
+        set {
+            pdfExtractionModeRawValue = newValue?.rawValue
         }
     }
 

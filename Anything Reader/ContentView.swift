@@ -492,7 +492,7 @@ struct ContentView: View {
             } else {
                 matchesQuery = entry.title.lowercased().contains(query)
                     || entry.subtitle.lowercased().contains(query)
-                    || entry.sourceText.lowercased().contains(query)
+                    || (normalizedTextSnippet(for: entry)?.lowercased().contains(query) ?? false)
                     || entry.fileExtension.lowercased().contains(query)
                     || (entry.categoryName?.lowercased().contains(query) ?? false)
             }
@@ -527,17 +527,11 @@ struct ContentView: View {
             "An imported ePub document.",
             "Saved text record for later playback."
         ]
-        let generatedSourceSnippets: Set<String> = [
-            "Demo PDF placeholder content.",
-            "Demo ePub placeholder content.",
-            "Saved pasted text from the reader."
-        ]
 
         let entriesToDelete = libraryEntries.filter { entry in
             generatedTitles.contains(entry.title)
                 || generatedSubtitles.contains(entry.subtitle)
                 || generatedCategoryNames.contains(entry.categoryName ?? "")
-                || generatedSourceSnippets.contains(entry.sourceText)
         }
 
         let categoriesToDelete = categories.filter { generatedCategoryNames.contains($0.name) }
@@ -621,6 +615,10 @@ struct ContentView: View {
         viewerEntry = entry
     }
 
+    private func normalizedTextSnippet(for entry: LibraryEntry) -> String? {
+        ReaderPlaybackChunkService.normalizedText(for: entry)
+    }
+
     private func revealLibraryEntryLocation(_ entry: LibraryEntry) {
         guard let storedPath = entry.storedFilePath else {
             uploadAlertMessage = "This item does not have a saved file location."
@@ -683,7 +681,6 @@ struct ContentView: View {
             categoryName: nil,
             avatarSymbolName: Self.fallbackAvatars.randomElement() ?? "waveform",
             accentName: Self.accentPalette.randomElement() ?? "emerald",
-            sourceText: normalizedText,
             phonemeText: nil,
             phonemeUpdatedAt: nil,
             textLanguage: detectedLanguage,
@@ -776,10 +773,10 @@ struct ContentView: View {
                 categoryName: nil,
                 avatarSymbolName: avatarSymbol(for: ingest.sourceKind),
                 accentName: Self.accentPalette.randomElement() ?? "emerald",
-                sourceText: ingest.normalizedText,
                 phonemeText: nil,
                 phonemeUpdatedAt: nil,
                 textLanguage: ingest.textLanguage,
+                pdfExtractionMode: ingest.pdfExtractionMode,
                 readingStructureKind: ingest.readingStructureKind,
                 pageCount: ingest.pageCount,
                 chapterCount: ingest.chapterCount,
@@ -866,10 +863,8 @@ struct ContentView: View {
         }
 
         let directoryURL = try uploadedFilesDirectory()
-        let baseName = sourceURL.deletingPathExtension().lastPathComponent
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-        let destinationURL = directoryURL.appendingPathComponent("\(UUID().uuidString)-\(baseName).\(extensionName)")
+        let baseName = sanitizedImportedFileBaseName(from: sourceURL)
+        let destinationURL = directoryURL.appendingPathComponent("\(baseName).\(extensionName)")
 
         if fileManager.fileExists(atPath: destinationURL.path) {
             try fileManager.removeItem(at: destinationURL)
@@ -878,6 +873,24 @@ struct ContentView: View {
         try fileManager.copyItem(at: sourceURL, to: destinationURL)
         return destinationURL
     }
+
+    private func sanitizedImportedFileBaseName(from sourceURL: URL) -> String {
+        let fileStem = sourceURL.deletingPathExtension().lastPathComponent
+        let sanitizedStem = fileStem
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+        let timestamp = Self.importTimestampFormatter.string(from: .now)
+        return "\(sanitizedStem)_\(timestamp)"
+    }
+
+    private static let importTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd_HHmmssSSS"
+        return formatter
+    }()
 
     @MainActor
     private func applyPhonemeCache(_ phonemeText: String, to entry: LibraryEntry) {
@@ -1052,7 +1065,8 @@ struct ContentView: View {
             chunkCount: playbackChunks.count
         )
 
-        let duration = max(600, min(10800, entry.sourceText.isEmpty ? 1800 : max(600, entry.sourceText.count / 12)))
+        let normalizedText = normalizedTextSnippet(for: entry) ?? ""
+        let duration = max(600, min(10800, normalizedText.isEmpty ? 1800 : max(600, normalizedText.count / 12)))
         let elapsedSeconds = Int((Double(duration) * entry.progress).rounded())
 
         playbackState = PlaybackState(

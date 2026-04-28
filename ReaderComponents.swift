@@ -505,6 +505,15 @@ struct ReaderLibraryCardView: View {
                             .padding(.vertical, 6)
                             .background(Color.white.opacity(0.18), in: Capsule())
 
+                        if let extractionMode = entry.pdfExtractionMode, entry.sourceKind == .pdf {
+                            Text(extractionMode.displayName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(pdfExtractionBadgeBackground(for: extractionMode), in: Capsule())
+                        }
+
                         if let categoryName = entry.categoryName {
                             Text(categoryName)
                                 .font(.caption.weight(.semibold))
@@ -671,6 +680,19 @@ struct ReaderLibraryCardView: View {
 
     private var primaryTextColor: Color {
         preferredMode == .light ? .black : .white
+    }
+
+    private func pdfExtractionBadgeBackground(for mode: PDFExtractionMode) -> Color {
+        switch mode {
+        case .directText:
+            return Color.green.opacity(0.20)
+        case .ocr:
+            return Color.orange.opacity(0.22)
+        case .hybrid:
+            return Color.blue.opacity(0.22)
+        case .unknown:
+            return Color.white.opacity(0.12)
+        }
     }
 }
 

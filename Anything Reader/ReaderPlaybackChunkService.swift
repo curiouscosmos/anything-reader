@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import PDFKit
 import SwiftData
 
 struct ReaderPlaybackChunkService {
@@ -25,9 +24,7 @@ struct ReaderPlaybackChunkService {
                 }
             }
         }
-
-        let fallback = entry.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return fallback.isEmpty ? nil : fallback
+        return nil
     }
 
     static func chunks(for entry: LibraryEntry) -> [String] {
@@ -35,19 +32,10 @@ struct ReaderPlaybackChunkService {
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
 
         if entry.sourceKind == .pdf {
-            let pdfPages: [String]
-
             if text.contains(pdfPageBreakMarker) {
-                pdfPages = text
+                let pdfPages = text
                     .components(separatedBy: pdfPageBreakMarker)
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            } else if let extractedPages = pdfPageChunks(for: entry), !extractedPages.isEmpty {
-                pdfPages = extractedPages
-            } else {
-                pdfPages = []
-            }
-
-            if !pdfPages.isEmpty {
                 // Keep page navigation exact, but split each page into smaller
                 // TTS-friendly chunks so long PDFs do not trip the model.
                 return pdfPages.flatMap { pageText in
@@ -136,10 +124,6 @@ struct ReaderPlaybackChunkService {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         }
 
-        if entry.sourceKind == .pdf, let pdfChunks = pdfPageChunks(for: entry), !pdfChunks.isEmpty {
-            return pdfChunks
-        }
-
         let cleaned = TextNormalizationService.normalize(text, language: language)
         guard !cleaned.isEmpty else { return [] }
 
@@ -160,19 +144,6 @@ struct ReaderPlaybackChunkService {
         // call resolves back to the same page/chapter instead of the previous one.
         let centeredIndex = Double(boundedIndex) + 0.5
         return min(centeredIndex / Double(chunkCount), 0.999_999)
-    }
-
-    private static func pdfPageChunks(for entry: LibraryEntry) -> [String]? {
-        guard let path = entry.storedFilePath else { return nil }
-        let fileURL = URL(fileURLWithPath: path)
-        guard let document = PDFDocument(url: fileURL), document.pageCount > 0 else { return nil }
-        let language = entry.textLanguage ?? .unknown
-
-        return (0..<document.pageCount).map { index in
-            guard let page = document.page(at: index) else { return "" }
-            let rawText = page.string ?? ""
-            return TextNormalizationService.normalize(rawText, language: language)
-        }
     }
 
     private static func splitIntoSentenceSegments(_ text: String, language: TextLanguage?) -> [String] {

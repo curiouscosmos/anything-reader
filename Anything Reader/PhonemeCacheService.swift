@@ -173,7 +173,7 @@ actor PhonemeCacheService {
     }
 
     private func nonEmptySourceText(for entry: LibraryEntry) -> String? {
-        let text = entry.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = ReaderPlaybackChunkService.normalizedText(for: entry)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return text.isEmpty ? nil : text
     }
 }

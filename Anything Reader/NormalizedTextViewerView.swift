@@ -23,7 +23,6 @@ struct NormalizedTextViewerScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
-
             content
         }
         .padding(24)
@@ -57,14 +56,14 @@ struct NormalizedTextViewerScreen: View {
             errorState(message: errorMessage)
         } else {
             NormalizedTextDocumentView(text: viewerText, focusRange: viewerFocusRange)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(documentBackground)
-                .padding(18)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(borderColor, lineWidth: 1)
-                )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(documentBackground)
+            .padding(18)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: 1)
+            )
         }
     }
 
@@ -323,10 +322,22 @@ struct NormalizedTextViewerScreen: View {
     }
 
     private static func pageText(for entry: LibraryEntry, normalizedText: String, progress: Double) -> ViewerRenderResult {
-        let chunks = ReaderPlaybackChunkService.pageChunks(for: entry)
-        let resolvedChunks = chunks.isEmpty ? ReaderPlaybackChunkService.chunks(from: normalizedText) : chunks
-        let chunksToRender = resolvedChunks.isEmpty ? [normalizedText] : resolvedChunks
-        guard !chunksToRender.isEmpty else { return ViewerRenderResult(text: normalizedText, focusRange: nil) }
+        guard normalizedText.contains(ReaderPlaybackChunkService.pdfPageBreakMarker) else {
+            // OCR PDFs often do not preserve reliable page boundaries in the
+            // extracted text. In that case, render the normalized file directly
+            // instead of trying to rebuild pages from the original PDF layer.
+            return ViewerRenderResult(text: normalizedText, focusRange: nil)
+        }
+
+        let chunksToRender = normalizedText
+            .components(separatedBy: ReaderPlaybackChunkService.pdfPageBreakMarker)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !chunksToRender.isEmpty else {
+            return ViewerRenderResult(text: normalizedText, focusRange: nil)
+        }
+
         let total = chunksToRender.count
         let currentIndex = ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: total)
 

@@ -123,6 +123,7 @@ Notes:
 - Latin-script languages keep the existing normalization behavior.
 - Mandarin, Japanese, Hindi, and Punjabi use more conservative normalization to avoid breaking script-specific text.
 - Actual speech quality still depends on the selected Kokoro voice/model for the language you want to hear.
+- For PDFs, the app first checks whether the extracted text layer looks readable. If it looks like gibberish, the page is rendered to an image and OCR is used instead.
 
 ## Minimum Requirements
 
