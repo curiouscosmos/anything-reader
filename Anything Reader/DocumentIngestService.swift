@@ -8,6 +8,7 @@
 import AppKit
 import Foundation
 import PDFKit
+import Vision
 import ZIPFoundation
 
 struct IngestedDocument {
@@ -16,6 +17,7 @@ struct IngestedDocument {
     let normalizedTextFileURL: URL
     let sourceKind: ReaderSourceKind
     let fileSizeBytes: Int64
+    let textLanguage: TextLanguage
     let readingStructureKind: ReadingStructureKind?
     let pageCount: Int
     let chapterCount: Int
@@ -73,17 +75,20 @@ actor DocumentIngestService {
         let sourceKind = readerSourceKind(for: normalizedFileExtension)
         let rawText: String
         let extractedTitle: String?
+        let detectedLanguage: TextLanguage
         let readingMetadata: ReadingMetadata
 
         switch sourceKind {
         case .pdf:
             rawText = try PDFTextExtractionService.extractText(from: stagedFileURL)
             extractedTitle = bestTitleCandidate(from: rawText)
+            detectedLanguage = TextNormalizationService.detectLanguage(for: rawText)
             readingMetadata = PDFTextExtractionService.readingMetadata(from: stagedFileURL)
         case .epub:
             let epubTextExtraction = try EPUBTextExtractionService.extractText(from: stagedFileURL)
             rawText = epubTextExtraction.text
             extractedTitle = bestTitleCandidate(from: rawText)
+            detectedLanguage = TextNormalizationService.detectLanguage(for: rawText)
             readingMetadata = epubTextExtraction.readingMetadata
         case .text, .pastedText:
             guard let text = String(data: fileData, encoding: .utf8) else {
@@ -91,6 +96,7 @@ actor DocumentIngestService {
             }
             rawText = text
             extractedTitle = bestTitleCandidate(from: rawText)
+            detectedLanguage = TextNormalizationService.detectLanguage(for: rawText)
             readingMetadata = ReadingMetadata(
                 readingStructureKind: nil,
                 pageCount: 0,
@@ -99,7 +105,7 @@ actor DocumentIngestService {
             )
         }
 
-        let normalizedText = TextNormalizationService.normalize(rawText)
+        let normalizedText = TextNormalizationService.normalize(rawText, language: detectedLanguage)
         guard !normalizedText.isEmpty else {
             throw DocumentIngestError.normalizationFailed
         }
@@ -124,6 +130,7 @@ actor DocumentIngestService {
             normalizedTextFileURL: normalizedURL,
             sourceKind: sourceKind,
             fileSizeBytes: Int64(fileData.count),
+            textLanguage: detectedLanguage,
             readingStructureKind: resolvedReadingMetadata.readingStructureKind,
             pageCount: resolvedReadingMetadata.pageCount,
             chapterCount: resolvedReadingMetadata.chapterCount,
@@ -266,7 +273,9 @@ private enum PDFTextExtractionService {
 
         for index in 0..<pageCount {
             guard let page = document.page(at: index) else { continue }
-            let pageLines = lines(from: page.string)
+            let preferredLanguage = detectLanguageHint(from: page.string)
+            let extractedPageText = pageText(from: page, preferredLanguage: preferredLanguage)
+            let pageLines = lines(from: extractedPageText)
             let filteredLines = pageLines.filter { line in
                 !boilerplateLines.contains(line)
                     && !isPageNumberLine(line)
@@ -312,7 +321,7 @@ private enum PDFTextExtractionService {
 
     nonisolated static func extractTitle(from url: URL) -> String? {
         guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return nil }
-        let pageText = page.string ?? ""
+        let pageText = pageText(from: page, preferredLanguage: detectLanguageHint(from: page.string))
         return bestTitleCandidate(from: pageText)
     }
 
@@ -331,6 +340,197 @@ private enum PDFTextExtractionService {
         line
             .replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated private static func pageText(
+        from page: PDFPage,
+        preferredLanguage: TextLanguage?
+    ) -> String {
+        let extractedText = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !shouldUseOCR(for: extractedText) {
+            return extractedText
+        }
+
+        if let ocrText = ocrText(from: page, preferredLanguage: preferredLanguage)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !ocrText.isEmpty {
+            return ocrText
+        }
+
+        return extractedText
+    }
+
+    nonisolated private static func shouldUseOCR(for text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+
+        let asciiLetterCount = trimmed.unicodeScalars.filter { scalar in
+            scalar.isASCII && CharacterSet.letters.contains(scalar)
+        }.count
+        guard asciiLetterCount > 0 else { return false }
+
+        let vowelCount = trimmed.lowercased().filter { "aeiouyáéíóúàèìòùäëïöüâêîôûãõåøæœ".contains($0) }.count
+        let ratio = Double(vowelCount) / Double(max(asciiLetterCount, 1))
+
+        if ratio < 0.20 && trimmed.count >= 20 {
+            return true
+        }
+
+        let wordCount = trimmed.split(whereSeparator: { $0.isWhitespace }).count
+        return wordCount <= 2 && trimmed.count >= 48
+    }
+
+    nonisolated private static func ocrText(
+        from page: PDFPage,
+        preferredLanguage: TextLanguage?
+    ) -> String? {
+        let renderSize = renderSize(for: page)
+        guard let cgImage = renderPDFPage(page, size: renderSize) else {
+            return nil
+        }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.automaticallyDetectsLanguage = false
+        request.usesLanguageCorrection = true
+        request.recognitionLanguages = ocrLanguageHints(preferredLanguage: preferredLanguage)
+
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
+            return nil
+        }
+
+        guard let observations = request.results, !observations.isEmpty else {
+            return nil
+        }
+
+        let orderedObservations = observations.sorted { lhs, rhs in
+            if lhs.boundingBox.midY == rhs.boundingBox.midY {
+                return lhs.boundingBox.minX < rhs.boundingBox.minX
+            }
+            return lhs.boundingBox.midY > rhs.boundingBox.midY
+        }
+
+        let recognizedLines = orderedObservations.compactMap { observation in
+            observation.topCandidates(1).first?.string
+        }
+
+        let merged = recognizedLines
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+
+        return merged.isEmpty ? nil : merged
+    }
+
+    nonisolated private static func renderSize(for page: PDFPage) -> CGSize {
+        let bounds = page.bounds(for: .mediaBox)
+        let maxDimension: CGFloat = 2800
+
+        guard bounds.width > 0, bounds.height > 0 else {
+            return CGSize(width: maxDimension, height: maxDimension)
+        }
+
+        let scale = maxDimension / max(bounds.width, bounds.height)
+        return CGSize(
+            width: max(bounds.width * scale, 1),
+            height: max(bounds.height * scale, 1)
+        )
+    }
+
+    nonisolated private static func renderPDFPage(_ page: PDFPage, size: CGSize) -> CGImage? {
+        let targetSize = CGSize(width: max(size.width, 1), height: max(size.height, 1))
+        let imageRect = CGRect(origin: .zero, size: targetSize)
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(targetSize.width.rounded()),
+            pixelsHigh: Int(targetSize.height.rounded()),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return nil
+        }
+
+        bitmap.size = targetSize
+
+        guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+            return nil
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.cgContext.setFillColor(NSColor.white.cgColor)
+        context.cgContext.fill(imageRect)
+        context.cgContext.saveGState()
+
+        let pdfBounds = page.bounds(for: .mediaBox)
+        let scaleX = targetSize.width / max(pdfBounds.width, 1)
+        let scaleY = targetSize.height / max(pdfBounds.height, 1)
+        context.cgContext.scaleBy(x: scaleX, y: scaleY)
+        page.draw(with: .mediaBox, to: context.cgContext)
+        context.cgContext.restoreGState()
+        NSGraphicsContext.restoreGraphicsState()
+
+        return bitmap.cgImage
+    }
+
+    nonisolated private static func ocrLanguageHints(preferredLanguage: TextLanguage?) -> [String] {
+        var identifiers: [String] = [
+            "en-US",
+            "fr-FR",
+            "es-ES",
+            "de-DE",
+            "it-IT",
+            "ja-JP",
+            "zh-Hans",
+            "hi-IN",
+            "pa-IN"
+        ]
+
+        if let preferredLanguage {
+            let preferredIdentifier: String?
+            switch preferredLanguage {
+            case .english:
+                preferredIdentifier = "en-US"
+            case .french:
+                preferredIdentifier = "fr-FR"
+            case .spanish:
+                preferredIdentifier = "es-ES"
+            case .german:
+                preferredIdentifier = "de-DE"
+            case .mandarin:
+                preferredIdentifier = "zh-Hans"
+            case .italian:
+                preferredIdentifier = "it-IT"
+            case .japanese:
+                preferredIdentifier = "ja-JP"
+            case .hindi:
+                preferredIdentifier = "hi-IN"
+            case .punjabi:
+                preferredIdentifier = "pa-IN"
+            case .unknown:
+                preferredIdentifier = nil
+            }
+
+            if let preferredIdentifier {
+                identifiers.removeAll(where: { $0 == preferredIdentifier })
+                identifiers.insert(preferredIdentifier, at: 0)
+            }
+        }
+
+        return identifiers
+    }
+
+    nonisolated private static func detectLanguageHint(from text: String?) -> TextLanguage? {
+        guard let text else { return nil }
+        let detected = TextNormalizationService.detectLanguage(for: text)
+        return detected == .unknown ? nil : detected
     }
 
     nonisolated private static func isPageNumberLine(_ line: String) -> Bool {

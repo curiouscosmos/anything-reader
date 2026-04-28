@@ -50,6 +50,82 @@ enum ReadingStructureKind: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum TextLanguage: String, Codable, CaseIterable, Identifiable {
+    case english = "en"
+    case french = "fr"
+    case spanish = "es"
+    case german = "de"
+    case mandarin = "zh-Hans"
+    case italian = "it"
+    case japanese = "ja"
+    case hindi = "hi"
+    case punjabi = "pa"
+    case unknown = "und"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .english:
+            return "English"
+        case .french:
+            return "French"
+        case .spanish:
+            return "Spanish"
+        case .german:
+            return "German"
+        case .mandarin:
+            return "Mandarin"
+        case .italian:
+            return "Italian"
+        case .japanese:
+            return "Japanese"
+        case .hindi:
+            return "Hindi"
+        case .punjabi:
+            return "Punjabi"
+        case .unknown:
+            return "Unknown"
+        }
+    }
+
+    var isConservativeNormalizationLanguage: Bool {
+        switch self {
+        case .mandarin, .japanese, .hindi, .punjabi, .unknown:
+            return true
+        case .english, .french, .spanish, .german, .italian:
+            return false
+        }
+    }
+
+    init?(naturalLanguageIdentifier identifier: String) {
+        switch identifier.lowercased() {
+        case "en":
+            self = .english
+        case "fr":
+            self = .french
+        case "es":
+            self = .spanish
+        case "de":
+            self = .german
+        case "it":
+            self = .italian
+        case "ja":
+            self = .japanese
+        case "hi":
+            self = .hindi
+        case "pa":
+            self = .punjabi
+        case "zh", "zh-hans", "zh-hant":
+            self = .mandarin
+        case "und":
+            self = .unknown
+        default:
+            return nil
+        }
+    }
+}
+
 struct ReaderJumpTarget: Codable, Identifiable, Hashable {
     let index: Int
     let title: String
@@ -74,6 +150,7 @@ final class LibraryEntry {
     var sourceText: String
     var phonemeText: String?
     var phonemeUpdatedAt: Date?
+    var textLanguageRawValue: String?
     var readingStructureKindRawValue: String?
     var pageCount: Int
     var chapterCount: Int
@@ -100,6 +177,7 @@ final class LibraryEntry {
         sourceText: String = "",
         phonemeText: String? = nil,
         phonemeUpdatedAt: Date? = nil,
+        textLanguage: TextLanguage? = nil,
         readingStructureKind: ReadingStructureKind? = nil,
         pageCount: Int = 0,
         chapterCount: Int = 0,
@@ -125,6 +203,7 @@ final class LibraryEntry {
         self.sourceText = sourceText
         self.phonemeText = phonemeText
         self.phonemeUpdatedAt = phonemeUpdatedAt
+        self.textLanguageRawValue = textLanguage?.rawValue
         self.readingStructureKindRawValue = readingStructureKind?.rawValue
         self.pageCount = pageCount
         self.chapterCount = chapterCount
@@ -157,6 +236,16 @@ final class LibraryEntry {
         }
         set {
             readingStructureKindRawValue = newValue?.rawValue
+        }
+    }
+
+    var textLanguage: TextLanguage? {
+        get {
+            guard let textLanguageRawValue else { return nil }
+            return TextLanguage(rawValue: textLanguageRawValue)
+        }
+        set {
+            textLanguageRawValue = newValue?.rawValue
         }
     }
 

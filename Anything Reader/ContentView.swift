@@ -658,7 +658,8 @@ struct ContentView: View {
         let fileName = resolvedTitle.replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
 
-        let normalizedText = TextNormalizationService.normalize(trimmedText)
+        let detectedLanguage = TextNormalizationService.detectLanguage(for: trimmedText)
+        let normalizedText = TextNormalizationService.normalize(trimmedText, language: detectedLanguage)
         guard !normalizedText.isEmpty else {
             uploadAlertMessage = "The pasted text could not be normalized."
             return
@@ -685,6 +686,7 @@ struct ContentView: View {
             sourceText: normalizedText,
             phonemeText: nil,
             phonemeUpdatedAt: nil,
+            textLanguage: detectedLanguage,
             progress: 0.04,
             lastOpened: .now
         )
@@ -777,6 +779,7 @@ struct ContentView: View {
                 sourceText: ingest.normalizedText,
                 phonemeText: nil,
                 phonemeUpdatedAt: nil,
+                textLanguage: ingest.textLanguage,
                 readingStructureKind: ingest.readingStructureKind,
                 pageCount: ingest.pageCount,
                 chapterCount: ingest.chapterCount,

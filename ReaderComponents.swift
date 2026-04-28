@@ -1157,7 +1157,7 @@ struct ReaderPlayerBarView: View {
 
     // Base surface for the player chrome.
     private var panelBackground: Color {
-        preferredMode == .light ? Color.white.opacity(0.72) : Color.white.opacity(0.05)
+        preferredMode == .light ? Color.white.opacity(0.72) : Color.black.opacity(0.85)
     }
 
     // Border tint for the player chrome.

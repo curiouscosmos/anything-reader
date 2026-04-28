@@ -106,6 +106,24 @@ The UI shell is built with SwiftUI and keeps playback controls, settings, and li
   - `readingStructureKind`
   - `readingJumpTargets`
 
+## Supported Languages
+
+Text normalization and chunking are language-aware for:
+- English
+- French
+- Spanish
+- German
+- Mandarin
+- Italian
+- Japanese
+- Hindi (Pending Kokoro Support)
+- Punjabi (Pending Kokoro Support)
+
+Notes:
+- Latin-script languages keep the existing normalization behavior.
+- Mandarin, Japanese, Hindi, and Punjabi use more conservative normalization to avoid breaking script-specific text.
+- Actual speech quality still depends on the selected Kokoro voice/model for the language you want to hear.
+
 ## Minimum Requirements
 
 To run the app locally:

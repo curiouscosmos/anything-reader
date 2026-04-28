@@ -32,6 +32,7 @@ struct ReaderPlaybackChunkService {
 
     static func chunks(for entry: LibraryEntry) -> [String] {
         guard let text = normalizedText(for: entry) else { return [] }
+        let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
 
         if entry.sourceKind == .pdf {
             let pdfPages: [String]
@@ -50,16 +51,17 @@ struct ReaderPlaybackChunkService {
                 // Keep page navigation exact, but split each page into smaller
                 // TTS-friendly chunks so long PDFs do not trip the model.
                 return pdfPages.flatMap { pageText in
-                    chunks(from: pageText)
+                    chunks(from: pageText, language: language)
                 }
             }
         }
 
-        return chunks(from: text)
+        return chunks(from: text, language: language)
     }
 
-    static func chunks(from text: String) -> [String] {
-        let cleaned = TextNormalizationService.normalize(text)
+    static func chunks(from text: String, language: TextLanguage? = nil) -> [String] {
+        let resolvedLanguage = language ?? TextNormalizationService.detectLanguage(for: text)
+        let cleaned = TextNormalizationService.normalize(text, language: resolvedLanguage)
         guard !cleaned.isEmpty else { return [] }
 
         if cleaned.contains(pdfPageBreakMarker) {
@@ -82,7 +84,7 @@ struct ReaderPlaybackChunkService {
 
             guard !paragraphText.isEmpty else { continue }
 
-            let segments = splitIntoSentenceSegments(paragraphText)
+            let segments = splitIntoSentenceSegments(paragraphText, language: resolvedLanguage)
             if segments.isEmpty {
                 chunks.append(paragraphText)
                 continue
@@ -126,6 +128,7 @@ struct ReaderPlaybackChunkService {
 
     static func pageChunks(for entry: LibraryEntry) -> [String] {
         guard let text = normalizedText(for: entry) else { return [] }
+        let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
 
         if text.contains(pdfPageBreakMarker) {
             return text
@@ -137,10 +140,10 @@ struct ReaderPlaybackChunkService {
             return pdfChunks
         }
 
-        let cleaned = TextNormalizationService.normalize(text)
+        let cleaned = TextNormalizationService.normalize(text, language: language)
         guard !cleaned.isEmpty else { return [] }
 
-        return chunks(from: cleaned)
+        return chunks(from: cleaned, language: language)
     }
 
     static func chunkIndex(for progress: Double, chunkCount: Int) -> Int {
@@ -163,16 +166,17 @@ struct ReaderPlaybackChunkService {
         guard let path = entry.storedFilePath else { return nil }
         let fileURL = URL(fileURLWithPath: path)
         guard let document = PDFDocument(url: fileURL), document.pageCount > 0 else { return nil }
+        let language = entry.textLanguage ?? .unknown
 
         return (0..<document.pageCount).map { index in
             guard let page = document.page(at: index) else { return "" }
             let rawText = page.string ?? ""
-            return TextNormalizationService.normalize(rawText)
+            return TextNormalizationService.normalize(rawText, language: language)
         }
     }
 
-    private static func splitIntoSentenceSegments(_ text: String) -> [String] {
-        let pattern = #"(?<=[.!?])\s+"#
+    private static func splitIntoSentenceSegments(_ text: String, language: TextLanguage?) -> [String] {
+        let pattern = sentenceBoundaryPattern(for: language)
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return [text]
         }
@@ -196,6 +200,17 @@ struct ReaderPlaybackChunkService {
         }
 
         return segments.isEmpty ? [text] : segments
+    }
+
+    private static func sentenceBoundaryPattern(for language: TextLanguage?) -> String {
+        switch language {
+        case .mandarin, .japanese:
+            return #"(?<=[。！？!?；;…])\s*"#
+        case .hindi, .punjabi:
+            return #"(?<=[।॥!?؛;…])\s*"#
+        default:
+            return #"(?<=[.!?])\s+"#
+        }
     }
 
     private static func splitLongSegment(_ text: String) -> [String] {
