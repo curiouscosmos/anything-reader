@@ -59,7 +59,8 @@ actor DocumentIngestService {
     func process(
         stagedFileURL: URL,
         fileExtension: String,
-        originalFileName: String
+        originalFileName: String,
+        documentLanguage: TextLanguage
     ) throws -> IngestedDocument {
         let normalizedFileExtension = fileExtension.lowercased()
         let fileManager = FileManager.default
@@ -74,25 +75,30 @@ actor DocumentIngestService {
         }
 
         let sourceKind = readerSourceKind(for: normalizedFileExtension)
+        let detectedLanguage = Self.detectLanguage(
+            for: stagedFileURL,
+            fileExtension: normalizedFileExtension
+        )
+        let resolvedLanguage = documentLanguage == .unknown ? detectedLanguage : documentLanguage
         let rawText: String
         let extractedTitle: String?
-        let detectedLanguage: TextLanguage
         let pdfExtractionMode: PDFExtractionMode?
         let readingMetadata: ReadingMetadata
 
         switch sourceKind {
         case .pdf:
-            let pdfExtraction = try PDFTextExtractionService.extractText(from: stagedFileURL)
+            let pdfExtraction = try PDFTextExtractionService.extractText(
+                from: stagedFileURL,
+                preferredLanguage: resolvedLanguage
+            )
             rawText = pdfExtraction.text
             extractedTitle = bestTitleCandidate(from: rawText)
-            detectedLanguage = TextNormalizationService.detectLanguage(for: rawText)
             pdfExtractionMode = pdfExtraction.mode
             readingMetadata = PDFTextExtractionService.readingMetadata(from: stagedFileURL)
         case .epub:
             let epubTextExtraction = try EPUBTextExtractionService.extractText(from: stagedFileURL)
             rawText = epubTextExtraction.text
             extractedTitle = bestTitleCandidate(from: rawText)
-            detectedLanguage = TextNormalizationService.detectLanguage(for: rawText)
             pdfExtractionMode = nil
             readingMetadata = epubTextExtraction.readingMetadata
         case .text, .pastedText:
@@ -101,7 +107,6 @@ actor DocumentIngestService {
             }
             rawText = text
             extractedTitle = bestTitleCandidate(from: rawText)
-            detectedLanguage = TextNormalizationService.detectLanguage(for: rawText)
             pdfExtractionMode = nil
             readingMetadata = ReadingMetadata(
                 readingStructureKind: nil,
@@ -111,7 +116,7 @@ actor DocumentIngestService {
             )
         }
 
-        let normalizedText = TextNormalizationService.normalize(rawText, language: detectedLanguage)
+        let normalizedText = TextNormalizationService.normalize(rawText, language: resolvedLanguage)
         guard !normalizedText.isEmpty else {
             throw DocumentIngestError.normalizationFailed
         }
@@ -136,7 +141,7 @@ actor DocumentIngestService {
             normalizedTextFileURL: normalizedURL,
             sourceKind: sourceKind,
             fileSizeBytes: Int64(fileData.count),
-            textLanguage: detectedLanguage,
+            textLanguage: resolvedLanguage,
             pdfExtractionMode: pdfExtractionMode,
             readingStructureKind: resolvedReadingMetadata.readingStructureKind,
             pageCount: resolvedReadingMetadata.pageCount,
@@ -190,6 +195,31 @@ actor DocumentIngestService {
         return uploadsDirectory
     }
 
+    nonisolated static func detectLanguage(
+        for stagedFileURL: URL,
+        fileExtension: String
+    ) -> TextLanguage {
+        switch fileExtension.lowercased() {
+        case "pdf":
+            return PDFTextExtractionService.previewLanguage(from: stagedFileURL)
+        case "epub":
+            guard let text = try? EPUBTextExtractionService.extractText(from: stagedFileURL).text else {
+                return .english
+            }
+            let detected = TextNormalizationService.detectLanguage(for: text)
+            return detected == .unknown ? .english : detected
+        case "txt":
+            guard let data = try? Data(contentsOf: stagedFileURL),
+                  let text = String(data: data, encoding: .utf8) else {
+                return .english
+            }
+            let detected = TextNormalizationService.detectLanguage(for: text)
+            return detected == .unknown ? .english : detected
+        default:
+            return .english
+        }
+    }
+
     private func readerSourceKind(for fileExtension: String) -> ReaderSourceKind {
         switch fileExtension.lowercased() {
         case "pdf":
@@ -228,7 +258,10 @@ nonisolated private func bestTitleCandidate(from text: String) -> String? {
 }
 
 private enum PDFTextExtractionService {
-    nonisolated static func extractText(from url: URL) throws -> PDFTextExtractionResult {
+    nonisolated static func extractText(
+        from url: URL,
+        preferredLanguage: TextLanguage? = nil
+    ) throws -> PDFTextExtractionResult {
         guard let document = PDFDocument(url: url), document.pageCount > 0 else {
             throw DocumentIngestError.unreadableDocument
         }
@@ -272,14 +305,14 @@ private enum PDFTextExtractionService {
         for index in 0..<pageCount {
             guard let page = document.page(at: index) else { continue }
             let directText = directPageText(from: page)
-            let preferredLanguage = detectLanguageHint(from: directText)
+            let pagePreferredLanguage = preferredLanguage ?? detectLanguageHint(from: directText)
             let shouldUseOCRForPage = shouldUseOCRForPage(
                 directText: directText,
                 extractionMode: extractionMode
             )
             let extractedPageText = shouldUseOCRForPage
-                ? (ocrText(from: page, preferredLanguage: preferredLanguage)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? directText)
-                : bestPageText(from: page, preferredLanguage: preferredLanguage)
+                ? (ocrText(from: page, preferredLanguage: pagePreferredLanguage)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? directText)
+                : bestPageText(from: page, preferredLanguage: pagePreferredLanguage)
             let pageLines = lines(from: extractedPageText)
             let filteredLines = pageLines.filter { line in
                 !boilerplateLines.contains(line)
@@ -300,7 +333,8 @@ private enum PDFTextExtractionService {
            extractionMode != .ocr {
             let forcedOCRPages = (0..<pageCount).compactMap { index -> String? in
                 guard let page = document.page(at: index) else { return nil }
-                return bestPageText(from: page, preferredLanguage: detectLanguageHint(from: page.string), forceOCR: true)
+                let pagePreferredLanguage = preferredLanguage ?? detectLanguageHint(from: page.string)
+                return bestPageText(from: page, preferredLanguage: pagePreferredLanguage, forceOCR: true)
             }
 
             let forcedExtracted = forcedOCRPages
@@ -320,6 +354,20 @@ private enum PDFTextExtractionService {
         }
 
         return PDFTextExtractionResult(text: extracted, mode: extractionMode)
+    }
+
+    nonisolated static func previewLanguage(from url: URL) -> TextLanguage {
+        guard let document = PDFDocument(url: url), document.pageCount > 0 else {
+            return .english
+        }
+
+        let samplePages = min(document.pageCount, 3)
+        let sampleText = (0..<samplePages)
+            .compactMap { document.page(at: $0)?.string }
+            .joined(separator: "\n")
+
+        let detected = TextNormalizationService.detectLanguage(for: sampleText)
+        return detected == .unknown ? .english : detected
     }
 
     nonisolated static func readingMetadata(from url: URL) -> ReadingMetadata {

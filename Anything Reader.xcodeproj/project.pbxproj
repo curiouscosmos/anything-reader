@@ -692,15 +692,15 @@
 			package = D18511592F9EC5D1008E9FF8 /* XCRemoteSwiftPackageReference "mlx-swift" */;
 			productName = MLX;
 		};
-		D18511692F9F2B01008E9FF8 /* STTextView */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D18511682F9F2B01008E9FF8 /* XCRemoteSwiftPackageReference "STTextView" */;
-			productName = STTextView;
-		};
 		D18511672F9F2B01008E9FF8 /* ZIPFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D18510522F9F1000008E9FF8 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
+		};
+		D18511692F9F2B01008E9FF8 /* STTextView */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D18511682F9F2B01008E9FF8 /* XCRemoteSwiftPackageReference "STTextView" */;
+			productName = STTextView;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

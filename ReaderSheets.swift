@@ -93,6 +93,126 @@ struct ReaderSettingsSheet: View {
     }
 }
 
+// Import language sheet shown before the file is normalized.
+struct ReaderImportLanguageSheet: View {
+    @Binding var documentLanguage: TextLanguage
+    @Binding var isTranslateDocument: Bool
+    @Binding var translateToLanguage: TextLanguage
+
+    let detectedLanguage: TextLanguage?
+    let onImport: () -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    headerSection
+
+                    formSection(title: "Document Language") {
+                        Picker("Document Language", selection: $documentLanguage) {
+                            ForEach(languageOptions) { language in
+                                Text(language.displayName)
+                                    .tag(language)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        if let detectedLanguage {
+                            Text("Auto-detected as \(detectedLanguage.displayName). You can change this before import for better OCR text extraction.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Anything Reader will use this language for normalization and OCR.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    formSection(title: "Translation") {
+                        Toggle("Translate document", isOn: $isTranslateDocument)
+
+                        if isTranslateDocument {
+                            Picker("Translate to Language", selection: $translateToLanguage) {
+                                ForEach(languageOptions) { language in
+                                    Text(language.displayName)
+                                        .tag(language)
+                                }
+                            }
+                            .pickerStyle(.menu)
+
+                            Text("Translation wiring comes next. This stores your preference for that flow.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Translation is disabled for now.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle("Import Options")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        onCancel()
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import") {
+                        onImport()
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .interactiveDismissDisabled(true)
+    }
+
+    private var languageOptions: [TextLanguage] {
+        TextLanguage.allCases
+    }
+
+    @ViewBuilder
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Choose import options")
+                .font(.title2.weight(.bold))
+
+            Text("Select the document language before normalization starts. The same language is used for OCR if the file needs text extraction from images.")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(.thinMaterial, in: Rectangle())
+    }
+
+    @ViewBuilder
+    private func formSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(.thinMaterial, in: Rectangle())
+        }
+    }
+}
+
 // Modal for Kokoro model downloads.
 struct ReaderKokoroDownloadSheet: View {
     @ObservedObject var modelStore: KokoroModelStore

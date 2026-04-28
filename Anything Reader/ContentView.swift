@@ -30,6 +30,7 @@ struct ContentView: View {
     @State private var isShowingKokoroDownloadModal = false
     @State private var isShowingCategorySheet = false
     @State private var isShowingFileImporter = false
+    @State private var isShowingImportLanguageSheet = false
     @State private var newCategoryName = ""
     @State private var pastedTitle = ""
     @State private var pastedText = ""
@@ -39,6 +40,10 @@ struct ContentView: View {
     @State private var successToastMessage: String?
     @State private var isProcessingImport = false
     @State private var pendingImportContext: PendingImportContext?
+    @State private var detectedDocumentLanguage: TextLanguage = .english
+    @State private var pendingDocumentLanguage: TextLanguage = .english
+    @State private var isTranslateDocument = false
+    @State private var translateToLanguage: TextLanguage = .english
     @State private var playbackState = PlaybackState()
     @State private var activeEntry: LibraryEntry?
     @State private var viewerEntry: LibraryEntry?
@@ -173,6 +178,16 @@ struct ContentView: View {
             ReaderNewCategorySheet(
                 categoryName: $newCategoryName,
                 onCreate: createCategory
+            )
+        }
+        .sheet(isPresented: $isShowingImportLanguageSheet) {
+            ReaderImportLanguageSheet(
+                documentLanguage: $pendingDocumentLanguage,
+                isTranslateDocument: $isTranslateDocument,
+                translateToLanguage: $translateToLanguage,
+                detectedLanguage: detectedDocumentLanguage,
+                onImport: confirmPendingImport,
+                onCancel: discardPendingImport
             )
         }
         .fileImporter(
@@ -717,42 +732,66 @@ struct ContentView: View {
                 uploadAlertMessage = "No file was selected."
                 return
             }
-            Task { await beginImport(from: sourceURL) }
+            Task { await preparePendingImport(from: sourceURL) }
         case .failure(let error):
             uploadAlertMessage = error.localizedDescription
         }
     }
 
     @MainActor
-    private func beginImport(from sourceURL: URL) async {
+    private func preparePendingImport(from sourceURL: URL) async {
         do {
             let stagedURL = try stageImportedFile(from: sourceURL)
+            let fileExtension = stagedURL.pathExtension.lowercased()
+            let detectedLanguage = DocumentIngestService.detectLanguage(
+                for: stagedURL,
+                fileExtension: fileExtension
+            )
+
+            detectedDocumentLanguage = detectedLanguage
+            pendingDocumentLanguage = detectedLanguage
             pendingImportContext = PendingImportContext(
                 sourceURL: sourceURL,
                 stagedURL: stagedURL,
                 fileName: sourceURL.lastPathComponent,
-                fileExtension: stagedURL.pathExtension.lowercased(),
-                sourceKind: readerSourceKind(for: stagedURL.pathExtension),
+                fileExtension: fileExtension,
+                sourceKind: readerSourceKind(for: fileExtension),
                 createdFileURLs: [stagedURL]
             )
+            isTranslateDocument = false
+            translateToLanguage = .english
             isProcessingImport = true
-            processingImportMessage = "Normalizing \(sourceURL.lastPathComponent)…"
-
-            await processPendingImport()
+            processingImportMessage = "Preparing import options…"
+            isProcessingImport = false
+            isShowingImportLanguageSheet = true
         } catch {
             uploadAlertMessage = error.localizedDescription
             cleanupPendingImportArtifacts()
         }
     }
 
-    private func processPendingImport() async {
+    @MainActor
+    private func confirmPendingImport() {
+        guard pendingImportContext != nil else { return }
+        isShowingImportLanguageSheet = false
+        isProcessingImport = true
+        processingImportMessage = "Normalizing \(pendingImportContext?.fileName ?? "file")…"
+
+        let selectedLanguage = pendingDocumentLanguage
+        Task {
+            await processPendingImport(documentLanguage: selectedLanguage)
+        }
+    }
+
+    private func processPendingImport(documentLanguage: TextLanguage) async {
         guard let context = await MainActor.run(body: { pendingImportContext }) else { return }
 
         do {
             let ingest = try await DocumentIngestService.shared.process(
                 stagedFileURL: context.stagedURL,
                 fileExtension: context.fileExtension,
-                originalFileName: context.fileName
+                originalFileName: context.fileName,
+                documentLanguage: documentLanguage
             )
 
             await MainActor.run {
@@ -806,7 +845,7 @@ struct ContentView: View {
         importFailureMessage = nil
         isProcessingImport = true
         processingImportMessage = "Retrying normalization…"
-        Task { await processPendingImport() }
+        Task { await processPendingImport(documentLanguage: pendingDocumentLanguage) }
     }
 
     @MainActor
@@ -825,6 +864,11 @@ struct ContentView: View {
             }
         }
         pendingImportContext = nil
+        detectedDocumentLanguage = .english
+        pendingDocumentLanguage = .english
+        isShowingImportLanguageSheet = false
+        isProcessingImport = false
+        processingImportMessage = ""
     }
 
     @MainActor
@@ -832,6 +876,11 @@ struct ContentView: View {
         isProcessingImport = false
         processingImportMessage = ""
         pendingImportContext = nil
+        detectedDocumentLanguage = .english
+        pendingDocumentLanguage = .english
+        isShowingImportLanguageSheet = false
+        isTranslateDocument = false
+        translateToLanguage = .english
 
         if let message {
             successToastMessage = message

@@ -498,12 +498,14 @@ struct ReaderLibraryCardView: View {
                     }
 
                     HStack(spacing: 8) {
-                        Label(entry.sourceKind.displayName, systemImage: entry.sourceKind.systemImage)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.18), in: Capsule())
+                        if let textLanguage = entry.textLanguage {
+                            Text(textLanguage.displayName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.16), in: Capsule())
+                        }
 
                         if let extractionMode = entry.pdfExtractionMode, entry.sourceKind == .pdf {
                             Text(extractionMode.displayName)
@@ -560,6 +562,13 @@ struct ReaderLibraryCardView: View {
                                 .background(Color.white.opacity(0.16), in: Circle())
                         }
                         .buttonStyle(.plain)
+
+                        Text(entry.sourceKind.displayName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.18), in: Capsule())
 
                         Spacer()
                     }
