@@ -41,6 +41,57 @@ enum TextNormalizationService {
         }
 
         if containsCharacters(in: sampleText, ranges: [
+            0x0980...0x09FF // Bengali
+        ]) {
+            return .bengali
+        }
+
+        if containsCharacters(in: sampleText, ranges: [
+            0x0B80...0x0BFF // Tamil
+        ]) {
+            return .tamil
+        }
+
+        if containsCharacters(in: sampleText, ranges: [
+            0x0C00...0x0C7F // Telugu
+        ]) {
+            return .telugu
+        }
+
+        if containsCharacters(in: sampleText, ranges: [
+            0x0590...0x05FF // Hebrew
+        ]) {
+            return .hebrew
+        }
+
+        if containsCharacters(in: sampleText, ranges: [
+            0x0600...0x06FF, // Arabic
+            0x0750...0x077F, // Arabic Supplement
+            0x08A0...0x08FF  // Arabic Extended-A
+        ]) {
+            return .arabic
+        }
+
+        if containsCharacters(in: sampleText, ranges: [
+            0x0370...0x03FF // Greek and Coptic
+        ]) {
+            return .greek
+        }
+
+        if containsCharacters(in: sampleText, ranges: [
+            0x0400...0x04FF, // Cyrillic
+            0x0500...0x052F  // Cyrillic Supplement
+        ]) {
+            return .russian
+        }
+
+        if containsCharacters(in: sampleText, ranges: [
+            0xAC00...0xD7AF // Hangul Syllables
+        ]) {
+            return .korean
+        }
+
+        if containsCharacters(in: sampleText, ranges: [
             0x4E00...0x9FFF, // CJK Unified Ideographs
             0x3400...0x4DBF, // CJK Extension A
             0xF900...0xFAFF  // CJK Compatibility Ideographs
@@ -84,14 +135,14 @@ enum TextNormalizationService {
         var normalized = trimmed
 
         switch language {
-        case .mandarin, .japanese, .hindi, .punjabi, .unknown:
+        case .mandarin, .japanese, .korean, .arabic, .hebrew, .persian, .urdu, .hindi, .marathi, .bengali, .punjabi, .tamil, .telugu, .thai, .unknown:
             normalized = normalized.replacingOccurrences(of: "\t", with: " ")
             normalized = normalized.replacingOccurrences(
                 of: "\\s{2,}",
                 with: " ",
                 options: .regularExpression
             )
-        case .english, .french, .spanish, .german, .italian:
+        case .english, .french, .spanish, .german, .italian, .portuguese, .dutch, .swedish, .turkish, .polish, .romanian, .russian, .ukrainian, .greek, .vietnamese, .indonesian, .malay:
             let substitutions: [(String, String)] = [
                 ("“", "\""),
                 ("”", "\""),
@@ -160,12 +211,56 @@ enum TextNormalizationService {
             return .german
         case "it":
             return .italian
+        case "pt":
+            return .portuguese
+        case "nl":
+            return .dutch
+        case "sv":
+            return .swedish
+        case "tr":
+            return .turkish
+        case "pl":
+            return .polish
+        case "ro":
+            return .romanian
+        case "ru":
+            return .russian
+        case "uk":
+            return .ukrainian
+        case "el":
+            return .greek
+        case "ar":
+            return .arabic
+        case "he":
+            return .hebrew
+        case "fa":
+            return .persian
+        case "ur":
+            return .urdu
         case "ja":
             return .japanese
         case "hi":
             return .hindi
+        case "mr":
+            return .marathi
+        case "bn":
+            return .bengali
         case "pa":
             return .punjabi
+        case "ta":
+            return .tamil
+        case "te":
+            return .telugu
+        case "vi":
+            return .vietnamese
+        case "th":
+            return .thai
+        case "id":
+            return .indonesian
+        case "ms":
+            return .malay
+        case "ko":
+            return .korean
         case "zh", "zh-hans", "zh-hant":
             return .mandarin
         default:

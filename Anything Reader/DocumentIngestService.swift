@@ -721,10 +721,32 @@ private enum PDFTextExtractionService {
             "es-ES",
             "de-DE",
             "it-IT",
-            "ja-JP",
-            "zh-Hans",
+            "pt-PT",
+            "nl-NL",
+            "sv-SE",
+            "tr-TR",
+            "pl-PL",
+            "ro-RO",
+            "ru-RU",
+            "uk-UA",
+            "el-GR",
+            "ar-SA",
+            "he-IL",
+            "fa-IR",
+            "ur-PK",
             "hi-IN",
-            "pa-IN"
+            "mr-IN",
+            "bn-BD",
+            "pa-IN",
+            "ta-IN",
+            "te-IN",
+            "vi-VN",
+            "th-TH",
+            "id-ID",
+            "ms-MY",
+            "ko-KR",
+            "ja-JP",
+            "zh-Hans"
         ]
 
         if let preferredLanguage {
@@ -742,12 +764,56 @@ private enum PDFTextExtractionService {
                 preferredIdentifier = "zh-Hans"
             case .italian:
                 preferredIdentifier = "it-IT"
+            case .portuguese:
+                preferredIdentifier = "pt-PT"
+            case .dutch:
+                preferredIdentifier = "nl-NL"
+            case .swedish:
+                preferredIdentifier = "sv-SE"
+            case .turkish:
+                preferredIdentifier = "tr-TR"
+            case .polish:
+                preferredIdentifier = "pl-PL"
+            case .romanian:
+                preferredIdentifier = "ro-RO"
+            case .russian:
+                preferredIdentifier = "ru-RU"
+            case .ukrainian:
+                preferredIdentifier = "uk-UA"
+            case .greek:
+                preferredIdentifier = "el-GR"
+            case .arabic:
+                preferredIdentifier = "ar-SA"
+            case .hebrew:
+                preferredIdentifier = "he-IL"
+            case .persian:
+                preferredIdentifier = "fa-IR"
+            case .urdu:
+                preferredIdentifier = "ur-PK"
             case .japanese:
                 preferredIdentifier = "ja-JP"
             case .hindi:
                 preferredIdentifier = "hi-IN"
+            case .marathi:
+                preferredIdentifier = "mr-IN"
+            case .bengali:
+                preferredIdentifier = "bn-BD"
             case .punjabi:
                 preferredIdentifier = "pa-IN"
+            case .tamil:
+                preferredIdentifier = "ta-IN"
+            case .telugu:
+                preferredIdentifier = "te-IN"
+            case .vietnamese:
+                preferredIdentifier = "vi-VN"
+            case .thai:
+                preferredIdentifier = "th-TH"
+            case .indonesian:
+                preferredIdentifier = "id-ID"
+            case .malay:
+                preferredIdentifier = "ms-MY"
+            case .korean:
+                preferredIdentifier = "ko-KR"
             case .unknown:
                 preferredIdentifier = nil
             }

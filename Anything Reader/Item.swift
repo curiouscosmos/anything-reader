@@ -77,11 +77,33 @@ enum TextLanguage: String, Codable, CaseIterable, Identifiable {
     case french = "fr"
     case spanish = "es"
     case german = "de"
-    case mandarin = "zh-Hans"
     case italian = "it"
-    case japanese = "ja"
+    case portuguese = "pt"
+    case dutch = "nl"
+    case swedish = "sv"
+    case turkish = "tr"
+    case polish = "pl"
+    case romanian = "ro"
+    case russian = "ru"
+    case ukrainian = "uk"
+    case greek = "el"
+    case arabic = "ar"
+    case hebrew = "he"
+    case persian = "fa"
+    case urdu = "ur"
     case hindi = "hi"
+    case marathi = "mr"
+    case bengali = "bn"
     case punjabi = "pa"
+    case tamil = "ta"
+    case telugu = "te"
+    case vietnamese = "vi"
+    case thai = "th"
+    case indonesian = "id"
+    case malay = "ms"
+    case korean = "ko"
+    case japanese = "ja"
+    case mandarin = "zh-Hans"
     case unknown = "und"
 
     var id: String { rawValue }
@@ -96,16 +118,60 @@ enum TextLanguage: String, Codable, CaseIterable, Identifiable {
             return "Spanish"
         case .german:
             return "German"
-        case .mandarin:
-            return "Mandarin"
         case .italian:
             return "Italian"
-        case .japanese:
-            return "Japanese"
+        case .portuguese:
+            return "Portuguese"
+        case .dutch:
+            return "Dutch"
+        case .swedish:
+            return "Swedish"
+        case .turkish:
+            return "Turkish"
+        case .polish:
+            return "Polish"
+        case .romanian:
+            return "Romanian"
+        case .russian:
+            return "Russian"
+        case .ukrainian:
+            return "Ukrainian"
+        case .greek:
+            return "Greek"
+        case .arabic:
+            return "Arabic"
+        case .hebrew:
+            return "Hebrew"
+        case .persian:
+            return "Persian"
+        case .urdu:
+            return "Urdu"
         case .hindi:
             return "Hindi"
+        case .marathi:
+            return "Marathi"
+        case .bengali:
+            return "Bengali"
         case .punjabi:
             return "Punjabi"
+        case .tamil:
+            return "Tamil"
+        case .telugu:
+            return "Telugu"
+        case .vietnamese:
+            return "Vietnamese"
+        case .thai:
+            return "Thai"
+        case .indonesian:
+            return "Indonesian"
+        case .malay:
+            return "Malay"
+        case .korean:
+            return "Korean"
+        case .japanese:
+            return "Japanese"
+        case .mandarin:
+            return "Mandarin"
         case .unknown:
             return "Unknown"
         }
@@ -113,9 +179,9 @@ enum TextLanguage: String, Codable, CaseIterable, Identifiable {
 
     var isConservativeNormalizationLanguage: Bool {
         switch self {
-        case .mandarin, .japanese, .hindi, .punjabi, .unknown:
+        case .mandarin, .japanese, .korean, .arabic, .hebrew, .persian, .urdu, .hindi, .marathi, .bengali, .punjabi, .tamil, .telugu, .thai, .unknown:
             return true
-        case .english, .french, .spanish, .german, .italian:
+        case .english, .french, .spanish, .german, .italian, .portuguese, .dutch, .swedish, .turkish, .polish, .romanian, .russian, .ukrainian, .greek, .vietnamese, .indonesian, .malay:
             return false
         }
     }
@@ -132,12 +198,56 @@ enum TextLanguage: String, Codable, CaseIterable, Identifiable {
             self = .german
         case "it":
             self = .italian
+        case "pt":
+            self = .portuguese
+        case "nl":
+            self = .dutch
+        case "sv":
+            self = .swedish
+        case "tr":
+            self = .turkish
+        case "pl":
+            self = .polish
+        case "ro":
+            self = .romanian
+        case "ru":
+            self = .russian
+        case "uk":
+            self = .ukrainian
+        case "el":
+            self = .greek
+        case "ar":
+            self = .arabic
+        case "he":
+            self = .hebrew
+        case "fa":
+            self = .persian
+        case "ur":
+            self = .urdu
         case "ja":
             self = .japanese
         case "hi":
             self = .hindi
+        case "mr":
+            self = .marathi
+        case "bn":
+            self = .bengali
         case "pa":
             self = .punjabi
+        case "ta":
+            self = .tamil
+        case "te":
+            self = .telugu
+        case "vi":
+            self = .vietnamese
+        case "th":
+            self = .thai
+        case "id":
+            self = .indonesian
+        case "ms":
+            self = .malay
+        case "ko":
+            self = .korean
         case "zh", "zh-hans", "zh-hant":
             self = .mandarin
         case "und":
