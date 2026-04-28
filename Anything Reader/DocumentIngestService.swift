@@ -25,6 +25,19 @@ struct IngestedDocument {
     let readingJumpTargets: [ReaderJumpTarget]
 }
 
+struct IngestedDocumentDraft {
+    let title: String?
+    let rawText: String
+    let sourceKind: ReaderSourceKind
+    let fileSizeBytes: Int64
+    let detectedLanguage: TextLanguage
+    let pdfExtractionMode: PDFExtractionMode?
+    let readingStructureKind: ReadingStructureKind?
+    let pageCount: Int
+    let chapterCount: Int
+    let readingJumpTargets: [ReaderJumpTarget]
+}
+
 enum DocumentIngestError: LocalizedError {
     case invalidFile
     case unsupportedFileType
@@ -62,6 +75,26 @@ actor DocumentIngestService {
         originalFileName: String,
         documentLanguage: TextLanguage
     ) throws -> IngestedDocument {
+        let draft = try extractDraft(
+            stagedFileURL: stagedFileURL,
+            fileExtension: fileExtension,
+            documentLanguage: documentLanguage
+        )
+
+        return try finalize(
+            draft: draft,
+            sourceText: draft.rawText,
+            normalizedLanguage: draft.detectedLanguage,
+            originalFileName: originalFileName,
+            sourceURL: stagedFileURL
+        )
+    }
+
+    func extractDraft(
+        stagedFileURL: URL,
+        fileExtension: String,
+        documentLanguage: TextLanguage
+    ) throws -> IngestedDocumentDraft {
         let normalizedFileExtension = fileExtension.lowercased()
         let fileManager = FileManager.default
 
@@ -116,37 +149,58 @@ actor DocumentIngestService {
             )
         }
 
-        let normalizedText = TextNormalizationService.normalize(rawText, language: resolvedLanguage)
-        guard !normalizedText.isEmpty else {
-            throw DocumentIngestError.normalizationFailed
-        }
-
         let resolvedReadingMetadata: ReadingMetadata
         switch sourceKind {
         case .text, .pastedText:
-            resolvedReadingMetadata = TXTReadingMetadataService.readingMetadata(from: normalizedText)
+            resolvedReadingMetadata = TXTReadingMetadataService.readingMetadata(from: rawText)
         default:
             resolvedReadingMetadata = readingMetadata
         }
 
-        let normalizedURL = try saveNormalizedText(
-            normalizedText,
-            originalFileName: originalFileName,
-            sourceURL: stagedFileURL
-        )
-
-        return IngestedDocument(
+        return IngestedDocumentDraft(
             title: extractedTitle,
-            normalizedText: normalizedText,
-            normalizedTextFileURL: normalizedURL,
+            rawText: rawText,
             sourceKind: sourceKind,
             fileSizeBytes: Int64(fileData.count),
-            textLanguage: resolvedLanguage,
+            detectedLanguage: resolvedLanguage,
             pdfExtractionMode: pdfExtractionMode,
             readingStructureKind: resolvedReadingMetadata.readingStructureKind,
             pageCount: resolvedReadingMetadata.pageCount,
             chapterCount: resolvedReadingMetadata.chapterCount,
             readingJumpTargets: resolvedReadingMetadata.readingJumpTargets
+        )
+    }
+
+    func finalize(
+        draft: IngestedDocumentDraft,
+        sourceText: String,
+        normalizedLanguage: TextLanguage,
+        originalFileName: String,
+        sourceURL: URL
+    ) throws -> IngestedDocument {
+        let normalizedText = TextNormalizationService.normalize(sourceText, language: normalizedLanguage)
+        guard !normalizedText.isEmpty else {
+            throw DocumentIngestError.normalizationFailed
+        }
+
+        let normalizedURL = try saveNormalizedText(
+            normalizedText,
+            originalFileName: originalFileName,
+            sourceURL: sourceURL
+        )
+
+        return IngestedDocument(
+            title: draft.title,
+            normalizedText: normalizedText,
+            normalizedTextFileURL: normalizedURL,
+            sourceKind: draft.sourceKind,
+            fileSizeBytes: draft.fileSizeBytes,
+            textLanguage: normalizedLanguage,
+            pdfExtractionMode: draft.pdfExtractionMode,
+            readingStructureKind: draft.readingStructureKind,
+            pageCount: draft.pageCount,
+            chapterCount: draft.chapterCount,
+            readingJumpTargets: draft.readingJumpTargets
         )
     }
 

@@ -9,6 +9,7 @@ import Foundation
 import AppKit
 import SwiftData
 import SwiftUI
+import Translation
 import UniformTypeIdentifiers
 
 struct ContentView: View {
@@ -61,6 +62,7 @@ struct ContentView: View {
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
     @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
+    @State private var translationCoordinator = DocumentTranslationCoordinator()
 
     private static let fallbackAvatars = [
         "waveform",
@@ -257,6 +259,9 @@ struct ContentView: View {
                 ReaderToastView(message: successToastMessage)
                     .padding(.top, 16)
             }
+        }
+        .overlay {
+            DocumentTranslationHostView(coordinator: translationCoordinator)
         }
         .task {
             cleanupGeneratedDemoContentIfNeeded()
@@ -787,11 +792,69 @@ struct ContentView: View {
         guard let context = await MainActor.run(body: { pendingImportContext }) else { return }
 
         do {
-            let ingest = try await DocumentIngestService.shared.process(
+            let draft = try await DocumentIngestService.shared.extractDraft(
                 stagedFileURL: context.stagedURL,
                 fileExtension: context.fileExtension,
-                originalFileName: context.fileName,
                 documentLanguage: documentLanguage
+            )
+
+            await MainActor.run {
+                processingImportMessage = isTranslateDocument
+                    ? "Checking translation support…"
+                    : "Normalizing \(context.fileName)…"
+            }
+
+            let shouldTranslate = await MainActor.run(body: { isTranslateDocument })
+            let finalText: String
+            let normalizedLanguage: TextLanguage
+
+            if shouldTranslate {
+                let targetLanguage = await MainActor.run(body: { translateToLanguage })
+                guard let translationSourceLanguage = draft.detectedLanguage.localeLanguage,
+                      let translationTargetLanguage = targetLanguage.localeLanguage else {
+                    throw DocumentTranslationError.missingLanguage
+                }
+
+                let availability = LanguageAvailability(preferredStrategy: .lowLatency)
+                let status = await availability.status(
+                    from: translationSourceLanguage,
+                    to: translationTargetLanguage
+                )
+
+                switch status {
+                case .installed, .supported:
+                    await MainActor.run {
+                        processingImportMessage = "Translating \(context.fileName)…"
+                    }
+                case .unsupported:
+                    throw DocumentTranslationError.unsupported(
+                        source: draft.detectedLanguage,
+                        target: targetLanguage
+                    )
+                @unknown default:
+                    throw DocumentTranslationError.unsupported(
+                        source: draft.detectedLanguage,
+                        target: targetLanguage
+                    )
+                }
+
+                finalText = try await translationCoordinator.translate(
+                    sourceText: draft.rawText,
+                    sourceLanguage: draft.detectedLanguage,
+                    targetLanguage: targetLanguage
+                )
+                normalizedLanguage = targetLanguage
+            } else {
+                finalText = draft.rawText
+                normalizedLanguage = draft.detectedLanguage
+            }
+
+            let ingest = try await DocumentIngestService.shared.finalize(
+                draft: draft,
+                sourceText: finalText,
+                normalizedLanguage: normalizedLanguage,
+                originalFileName: context.fileName,
+                sourceURL: context.stagedURL
             )
 
             await MainActor.run {
@@ -832,6 +895,13 @@ struct ContentView: View {
                 queueCoverArtGenerationIfNeeded(for: entry)
             }
         } catch {
+            if error is CancellationError {
+                await MainActor.run {
+                    isProcessingImport = false
+                }
+                return
+            }
+
             await MainActor.run {
                 isProcessingImport = false
                 importFailureMessage = error.localizedDescription
@@ -863,6 +933,7 @@ struct ContentView: View {
                 try? fileManager.removeItem(at: url)
             }
         }
+        translationCoordinator.cancel()
         pendingImportContext = nil
         detectedDocumentLanguage = .english
         pendingDocumentLanguage = .english
@@ -876,6 +947,7 @@ struct ContentView: View {
         isProcessingImport = false
         processingImportMessage = ""
         pendingImportContext = nil
+        translationCoordinator.cancel()
         detectedDocumentLanguage = .english
         pendingDocumentLanguage = .english
         isShowingImportLanguageSheet = false
