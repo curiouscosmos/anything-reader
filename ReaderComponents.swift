@@ -938,7 +938,8 @@ struct ReaderPlayerBarView: View {
     let isLoadingFirstChunk: Bool
     let readingStructureKind: ReadingStructureKind?
     let jumpTargets: [ReaderJumpTarget]
-    let onToggleRepeat: () -> Void
+    let canRewind: Bool
+    let canFastForward: Bool
     let onRewind: () -> Void
     let onTogglePlayPause: () -> Void
     let onFastForward: () -> Void
@@ -1034,11 +1035,7 @@ struct ReaderPlayerBarView: View {
     // Playback transport cluster plus seek information.
     private var controls: some View {
         HStack(spacing: 12) {
-            roundControlButton(icon: "repeat", isActive: playbackState.isRepeating, isProminent: false) {
-                onToggleRepeat()
-            }
-
-            roundControlButton(icon: "backward.fill") {
+            roundControlButton(icon: "backward.fill", isDisabled: !canRewind) {
                 onRewind()
             }
 
@@ -1046,7 +1043,7 @@ struct ReaderPlayerBarView: View {
                 onTogglePlayPause()
             }
 
-            roundControlButton(icon: "forward.fill") {
+            roundControlButton(icon: "forward.fill", isDisabled: !canFastForward) {
                 onFastForward()
             }
         }
@@ -1163,6 +1160,7 @@ struct ReaderPlayerBarView: View {
         icon: String,
         isActive: Bool = false,
         isProminent: Bool = false,
+        isDisabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1184,6 +1182,8 @@ struct ReaderPlayerBarView: View {
                 )
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.45 : 1)
     }
 
     // Base surface for the player chrome.

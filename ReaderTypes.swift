@@ -59,7 +59,6 @@ struct PlaybackState {
     var durationSeconds: Int = 1800
     var elapsedSeconds: Int = 0
     var isPlaying: Bool = false
-    var isRepeating: Bool = false
 
     var displayedReadingPositionText: String {
         readingPositionOverrideText ?? readingPositionText

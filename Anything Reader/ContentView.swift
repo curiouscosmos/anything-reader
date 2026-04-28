@@ -51,6 +51,7 @@ struct ContentView: View {
     @State private var viewerAlertMessage: String?
     @State private var playbackTask: Task<Void, Never>?
     @State private var playbackWarmupTask: Task<Void, Never>?
+    @State private var readingNavigationTask: Task<Void, Never>?
     @State private var playbackChunks: [String] = []
     @State private var playbackChunkIndex: Int = 0
     @State private var playbackSessionToken = UUID()
@@ -63,6 +64,11 @@ struct ContentView: View {
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
     @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
     @State private var translationCoordinator = DocumentTranslationCoordinator()
+
+    private enum ReadingNavigationDirection {
+        case backward
+        case forward
+    }
 
     private static let fallbackAvatars = [
         "waveform",
@@ -140,7 +146,8 @@ struct ContentView: View {
                     isLoadingFirstChunk: readerPlaybackService.isBufferingFirstChunk,
                     readingStructureKind: activeEntry?.readingStructureKind,
                     jumpTargets: activeEntry?.readingJumpTargets ?? [],
-                    onToggleRepeat: toggleRepeat,
+                    canRewind: canNavigateReadingTarget(.backward, in: activeEntry),
+                    canFastForward: canNavigateReadingTarget(.forward, in: activeEntry),
                     onRewind: rewindPlayback,
                     onTogglePlayPause: togglePlayback,
                     onFastForward: fastForwardPlayback,
@@ -359,6 +366,7 @@ struct ContentView: View {
         readerPlaybackService.stop()
         stopPlaybackTask()
         stopPlaybackWarmupTask()
+        cancelReadingNavigationTask()
         playbackState.isPlaying = true
         startPlayback(for: entry)
     }
@@ -1218,19 +1226,12 @@ struct ContentView: View {
             },
             onFinished: {
                 guard self.playbackSessionToken == sessionToken else { return }
-                if self.playbackState.isRepeating {
-                    self.playbackState.progress = 0
-                    self.playbackState.elapsedSeconds = 0
-                    self.playbackState.isPlaying = false
-                    self.startPlayback(for: entry)
-                } else {
-                    self.playbackState.progress = 0
-                    self.playbackState.elapsedSeconds = 0
-                    self.playbackState.isPlaying = false
-                    entry.progress = 0
-                    try? self.modelContext.save()
-                    self.persistPlayerProgress()
-                }
+                self.playbackState.progress = 0
+                self.playbackState.elapsedSeconds = 0
+                self.playbackState.isPlaying = false
+                entry.progress = 0
+                try? self.modelContext.save()
+                self.persistPlayerProgress()
             },
             onFailure: { message in
                 guard self.playbackSessionToken == sessionToken else { return }
@@ -1247,6 +1248,7 @@ struct ContentView: View {
             readerPlaybackService.stop()
             stopPlaybackTask()
             stopPlaybackWarmupTask()
+            cancelReadingNavigationTask()
         } else {
             if let entry = activeEntry {
                 startPlayback(for: entry)
@@ -1259,24 +1261,13 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func toggleRepeat() {
-        playbackState.isRepeating.toggle()
-    }
-
-    @MainActor
     private func rewindPlayback() {
-        playbackState.progress = max(0, playbackState.progress - 0.08)
-        playbackState.elapsedSeconds = max(0, Int((Double(playbackState.durationSeconds) * playbackState.progress).rounded()))
-        syncReadingPositionState(for: activeEntry, progress: playbackState.progress)
-        persistPlayerProgress()
+        scheduleReadingTargetNavigation(.backward)
     }
 
     @MainActor
     private func fastForwardPlayback() {
-        playbackState.progress = min(1, playbackState.progress + 0.08)
-        playbackState.elapsedSeconds = min(playbackState.durationSeconds, Int((Double(playbackState.durationSeconds) * playbackState.progress).rounded()))
-        syncReadingPositionState(for: activeEntry, progress: playbackState.progress)
-        persistPlayerProgress()
+        scheduleReadingTargetNavigation(.forward)
     }
 
     @MainActor
@@ -1297,6 +1288,28 @@ struct ContentView: View {
         entry.lastOpened = .now
         try? modelContext.save()
         startPlayback(for: entry)
+    }
+
+    @MainActor
+    private func scheduleReadingTargetNavigation(_ direction: ReadingNavigationDirection) {
+        guard let entry = activeEntry, canNavigateReadingTarget(direction, in: entry) else { return }
+
+        cancelReadingNavigationTask()
+
+        let entryID = entry.persistentModelID
+        readingNavigationTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            guard let currentEntry = activeEntry, currentEntry.persistentModelID == entryID else { return }
+            guard let target = adjacentReadingTarget(for: direction, in: currentEntry) else { return }
+
+            jumpToReadingTarget(target)
+        }
     }
 
     @MainActor
@@ -1424,6 +1437,48 @@ struct ContentView: View {
         let targets = entry.readingJumpTargets
         guard !targets.isEmpty else { return 0 }
         return ReaderPlaybackChunkService.progress(for: target.index, chunkCount: targets.count)
+    }
+
+    private func adjacentReadingTarget(for direction: ReadingNavigationDirection, in entry: LibraryEntry) -> ReaderJumpTarget? {
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else { return nil }
+
+        let currentIndex = readingTargetIndex(for: entry) ?? 0
+        let targetIndex: Int
+
+        switch direction {
+        case .backward:
+            targetIndex = currentIndex - 1
+        case .forward:
+            targetIndex = currentIndex + 1
+        }
+
+        guard targets.indices.contains(targetIndex) else { return nil }
+        return targets[targetIndex]
+    }
+
+    private func canNavigateReadingTarget(_ direction: ReadingNavigationDirection, in entry: LibraryEntry?) -> Bool {
+        guard let entry else { return false }
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else { return false }
+
+        let currentIndex = readingTargetIndex(for: entry) ?? 0
+
+        switch direction {
+        case .backward:
+            return currentIndex > 0
+        case .forward:
+            return currentIndex < targets.count - 1
+        }
+    }
+
+    private func readingTargetIndex(for entry: LibraryEntry) -> Int? {
+        entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: playbackState.progress)
+    }
+
+    private func cancelReadingNavigationTask() {
+        readingNavigationTask?.cancel()
+        readingNavigationTask = nil
     }
 }
 
