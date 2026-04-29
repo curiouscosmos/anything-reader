@@ -236,7 +236,7 @@ struct ReaderKokoroDownloadSheet: View {
             .navigationTitle("Download TTS Model")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(modelStore.isInstalled ? "Done" : "Keep Open") {
+                    Button(modelStore.isInstalled ? "Done" : "TTS Model Required") {
                         if modelStore.isInstalled {
                             onClose()
                         }
