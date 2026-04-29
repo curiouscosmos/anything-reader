@@ -435,6 +435,7 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             kokoroModelStatus: kokoroModelStore.status,
                             onPasteText: { isShowingPasteSheet = true },
+                            onUploadFile: { isShowingFileImporter = true },
                             onOpenLibrary: { selection = .recent },
                             onDownloadKokoro: openKokoroDownloadModal
                         )
@@ -498,6 +499,7 @@ struct ContentView: View {
                 .padding(.bottom, 110)
             }
             .scrollContentBackground(.hidden)
+            .navigationTitle("Anything Reader - Offline Text to Speech PDF")
             .navigationDestination(isPresented: isPresentingViewer) {
                 if let viewerEntry {
                     NormalizedTextViewerScreen(
@@ -872,7 +874,7 @@ struct ContentView: View {
 
             let entry = LibraryEntry(
                 title: ingest.title ?? sanitizedTitle(from: context.sourceURL.deletingPathExtension().lastPathComponent),
-                subtitle: "Normalized \(ingest.sourceKind.displayName) file ready to play.",
+                subtitle: "",
                 sourceKind: ingest.sourceKind,
                 fileExtension: context.fileExtension,
                 originalFileName: context.fileName,

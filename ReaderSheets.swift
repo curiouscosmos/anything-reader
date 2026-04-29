@@ -142,12 +142,8 @@ struct ReaderImportLanguageSheet: View {
                                 }
                             }
                             .pickerStyle(.menu)
-
-                            Text("Translation wiring comes next. This stores your preference for that flow.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
                         } else {
-                            Text("Translation is disabled for now.")
+                            Text("Document will be translated to your selected language.")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
@@ -427,7 +423,7 @@ struct ReaderNewCategorySheet: View {
         NavigationStack {
             Form {
                 Section("Category Name") {
-                    TextField("Chapters, Work, Study, etc.", text: $categoryName)
+                    TextField("", text: $categoryName)
                 }
 
                 Section {
@@ -435,6 +431,7 @@ struct ReaderNewCategorySheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .padding(16)
             .navigationTitle("New Category")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

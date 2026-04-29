@@ -28,10 +28,23 @@ struct ReaderSidebarView: View {
             }
 
             // User-generated categories.
-            Section("Your Categories") {
+            Section("Categories") {
                 if categories.isEmpty {
-                    Text("Create a category to organize books")
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button(action: onAddCategory) {
+                            Label("Category", systemImage: "plus")
+                                .foregroundStyle(Color.primary) // auto: black (light) / white (dark)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 6)
+                                .font(.system(size: 16))
+                        }
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.accentColor, lineWidth: 1.5)
+                        )
+                        .accessibility(hidden: true)
+                        .padding(.top, 8)
+                    }
                 } else {
                     ForEach(categories) { category in
                         Label(category.name, systemImage: "folder.fill")
@@ -39,10 +52,11 @@ struct ReaderSidebarView: View {
                     }
                 }
             }
+            .font(.system(size: 16))
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .navigationTitle("Anything Reader")
+        .navigationTitle("Anything Reader - Offline Text to Speech PDF")
         .toolbar {
             ToolbarItem {
                 Button(action: onAddCategory) {
@@ -151,19 +165,20 @@ struct ReaderHeroView: View {
     let preferredMode: AppearanceMode
     let kokoroModelStatus: KokoroModelStore.Status
     let onPasteText: () -> Void
+    let onUploadFile: () -> Void
     let onOpenLibrary: () -> Void
     let onDownloadKokoro: () -> Void
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            LinearGradient(colors: heroGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            heroBackgroundImage
 
             VStack(alignment: .leading, spacing: 14) {
-                Text("Listen to anything.")
+                Text("Listen to anything")
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(heroPrimaryTextColor)
 
-                Text("PDFs, ePubs, text files, or pasted notes flow into a Spotify-style reader with a persistent player and local library.")
+                Text("From documents to audio, instantly and beautifully.")
                     .font(.headline)
                     .foregroundStyle(heroSecondaryTextColor)
                     .frame(maxWidth: 560, alignment: .leading)
@@ -179,6 +194,16 @@ struct ReaderHeroView: View {
                     }
                     .buttonStyle(.plain)
 
+                    Button(action: onUploadFile) {
+                        Label("Upload", systemImage: "arrow.up.doc.fill")
+                            .font(.headline)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(heroPrimaryTextColor)
+                            .background(heroButtonBackground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    
                     Button(action: onDownloadKokoro) {
                         Label(kokoroButtonTitle, systemImage: kokoroButtonIcon)
                             .font(.headline)
@@ -189,16 +214,6 @@ struct ReaderHeroView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(kokoroButtonDisabled)
-
-                    Button(action: onOpenLibrary) {
-                        Label("Open Library", systemImage: "books.vertical.fill")
-                            .font(.headline)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .foregroundStyle(heroPrimaryTextColor)
-                            .background(heroButtonBackground, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
                 }
 
                 Text(kokoroStatusMessage)
@@ -211,26 +226,6 @@ struct ReaderHeroView: View {
             }
             .padding(28)
 
-            if let featured {
-                HStack {
-                    Spacer()
-                    VStack(alignment: .leading, spacing: 12) {
-                        ReaderAvatarView(symbolName: featured.avatarSymbolName, accentName: featured.accentName, preferredMode: preferredMode)
-                        Text(featured.title)
-                            .font(.headline)
-                            .foregroundStyle(heroPrimaryTextColor)
-                            .lineLimit(1)
-                        Text(featured.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(heroSecondaryTextColor)
-                            .lineLimit(2)
-                    }
-                    .padding(18)
-                    .frame(width: 260, alignment: .leading)
-                    .background(heroFeatureCardBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .padding(20)
-                }
-            }
         }
         .frame(maxWidth: .infinity, minHeight: 240, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
@@ -238,6 +233,43 @@ struct ReaderHeroView: View {
             RoundedRectangle(cornerRadius: 32, style: .continuous)
                 .strokeBorder(heroBorderColor, lineWidth: 1)
         )
+    }
+
+    private var heroBackgroundImage: some View {
+        ZStack(alignment: .trailing) {
+            // Background fallback
+            LinearGradient(
+                colors: [
+                        Color.black,
+                        Color.black.opacity(0.8)
+                    ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            if let image = bundledHeroImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 560) // control how much image shows
+                    .frame(maxHeight: .infinity)
+                    .clipped()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(heroTintOverlay)
+    }
+
+    private var heroTintOverlay: some View {
+        LinearGradient(
+            colors: [
+                Color.black.opacity(preferredMode == .light ? 0.01 : 0.01),
+                Color.black.opacity(preferredMode == .light ? 0.01 : 0.01)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .blendMode(.multiply)
     }
 
     private var heroGradientColors: [Color] {
@@ -257,6 +289,14 @@ struct ReaderHeroView: View {
         }
     }
 
+    private var bundledHeroImage: NSImage? {
+        guard let url = Bundle.main.url(forResource: "hero_image", withExtension: "png") else {
+            return nil
+        }
+
+        return NSImage(contentsOf: url)
+    }
+
     private var heroPrimaryTextColor: Color {
         preferredMode == .light ? .black : .white
     }
@@ -266,7 +306,7 @@ struct ReaderHeroView: View {
     }
 
     private var heroButtonBackground: Color {
-        preferredMode == .light ? Color.white.opacity(0.88) : Color.black.opacity(0.25)
+        Color.green.opacity(preferredMode == .light ? 0.4 : 0.5)
     }
 
     private var kokoroButtonBackground: Color {
@@ -348,10 +388,6 @@ struct ReaderHeroView: View {
         }
     }
 
-    private var heroFeatureCardBackground: Color {
-        preferredMode == .light ? Color.white.opacity(0.64) : Color.black.opacity(0.18)
-    }
-
     private var heroBorderColor: Color {
         preferredMode == .light ? Color.black.opacity(0.10) : Color.white.opacity(0.12)
     }
@@ -412,7 +448,8 @@ struct ReaderLibrarySectionView: View {
                     }
                 }
             }
-        }
+        } // Add space at the bottom
+        .padding(.bottom, 40)
     }
 
     private var emptyStateCard: some View {
@@ -490,11 +527,6 @@ struct ReaderLibraryCardView: View {
                             .font(.headline.weight(.bold))
                             .lineLimit(1)
                             .foregroundStyle(.white)
-
-                        Text(entry.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.82))
-                            .lineLimit(2)
                     }
 
                     HStack(spacing: 8) {
@@ -745,6 +777,7 @@ struct ReaderCardMenuPopoverView: View {
             }
         }
         .padding(.vertical, 12)
+        .padding(.horizontal, 12)
         .background(menuBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -777,7 +810,6 @@ struct ReaderCardMenuPopoverView: View {
             .padding(.vertical, 10)
             .background(menuButtonBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .buttonStyle(.plain)
     }
 
     // Menu surface tint that adapts to the selected appearance mode.
