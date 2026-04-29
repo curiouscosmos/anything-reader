@@ -539,6 +539,13 @@ struct ReaderLibraryCardView: View {
                                 .background(Color.white.opacity(0.16), in: Capsule())
                         }
 
+                        Text(entry.sourceKind.displayName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.18), in: Capsule())
+
                         if let extractionMode = entry.pdfExtractionMode, entry.sourceKind == .pdf {
                             Text(extractionMode.displayName)
                                 .font(.caption.weight(.semibold))
@@ -558,11 +565,6 @@ struct ReaderLibraryCardView: View {
                         }
 
                         Spacer()
-
-                        Text(entry.createdAt, format: .dateTime.day().month(.abbreviated).year())
-                            .font(.caption2)
-                            .italic()
-                            .foregroundStyle(.white.opacity(0.68))
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -595,14 +597,12 @@ struct ReaderLibraryCardView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Text(entry.sourceKind.displayName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.18), in: Capsule())
-
                         Spacer()
+
+                        Text(entry.createdAt, format: .dateTime.day().month(.abbreviated).year())
+                            .font(.caption2)
+                            .italic()
+                            .foregroundStyle(.white.opacity(0.68))
                     }
                 }
                 .padding(20)
