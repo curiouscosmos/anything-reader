@@ -415,6 +415,7 @@ struct ReaderLibrarySectionView: View {
     let onView: (LibraryEntry) -> Void
     let onRevealLocation: (LibraryEntry) -> Void
     let onGenerateAudio: (LibraryEntry) -> Void
+    let onStopAudioGeneration: (LibraryEntry) -> Void
     let onDeleteAudio: (LibraryEntry) -> Void
     let onClearCategory: (LibraryEntry) -> Void
     let onAssignCategory: (LibraryEntry, String) -> Void
@@ -452,6 +453,7 @@ struct ReaderLibrarySectionView: View {
                             onView: { onView(entry) },
                             onRevealLocation: { onRevealLocation(entry) },
                             onGenerateAudio: { onGenerateAudio(entry) },
+                            onStopAudioGeneration: { onStopAudioGeneration(entry) },
                             onDeleteAudio: { onDeleteAudio(entry) },
                             onClearCategory: { onClearCategory(entry) },
                             onAssignCategory: { categoryName in
@@ -504,6 +506,7 @@ struct ReaderLibraryCardView: View {
     let onView: () -> Void
     let onRevealLocation: () -> Void
     let onGenerateAudio: () -> Void
+    let onStopAudioGeneration: () -> Void
     let onDeleteAudio: () -> Void
     let onClearCategory: () -> Void
     let onAssignCategory: (String) -> Void
@@ -722,8 +725,10 @@ struct ReaderLibraryCardView: View {
                 onView: onView,
                 onRevealLocation: onRevealLocation,
                 onGenerateAudio: onGenerateAudio,
+                onStopAudioGeneration: onStopAudioGeneration,
                 onDeleteAudio: onDeleteAudio,
                 hasGeneratedAudio: hasGeneratedAudio,
+                isGeneratingAudio: isGeneratingAudio,
                 onClearCategory: onClearCategory,
                 onAssignCategory: onAssignCategory,
                 onDelete: {
@@ -819,8 +824,10 @@ struct ReaderCardMenuPopoverView: View {
     let onView: () -> Void
     let onRevealLocation: () -> Void
     let onGenerateAudio: () -> Void
+    let onStopAudioGeneration: () -> Void
     let onDeleteAudio: () -> Void
     let hasGeneratedAudio: Bool
+    let isGeneratingAudio: Bool
     let onClearCategory: () -> Void
     let onAssignCategory: (String) -> Void
     let onDelete: () -> Void
@@ -829,7 +836,10 @@ struct ReaderCardMenuPopoverView: View {
     var body: some View {
         // Keep the menu actions grouped and visually balanced.
         VStack(alignment: .leading, spacing: 10) {
-            if !isLoading {
+            if isGeneratingAudio {
+                menuButton(title: "Stop Audio generation", systemImage: "stop.fill", role: .destructive, action: onStopAudioGeneration)
+                Divider()
+            } else if !isLoading {
                 menuButton(title: "Play now", systemImage: "play.fill", action: onPlay)
                 menuButton(title: "View text", systemImage: "doc.text.magnifyingglass", action: onView)
                 menuButton(title: "Open file location", systemImage: "folder", action: onRevealLocation)

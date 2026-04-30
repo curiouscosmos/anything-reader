@@ -500,6 +500,7 @@ struct ContentView: View {
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
+                            onStopAudioGeneration: stopAudioGeneration(for:),
                             onDeleteAudio: openAudioDeletionConfirmation(for:),
                             onClearCategory: { assign($0, to: nil) },
                             onAssignCategory: { assign($0, to: $1) },
@@ -521,6 +522,7 @@ struct ContentView: View {
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
+                            onStopAudioGeneration: stopAudioGeneration(for:),
                             onDeleteAudio: openAudioDeletionConfirmation(for:),
                             onClearCategory: { assign($0, to: nil) },
                             onAssignCategory: { assign($0, to: $1) },
@@ -542,6 +544,7 @@ struct ContentView: View {
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
+                            onStopAudioGeneration: stopAudioGeneration(for:),
                             onDeleteAudio: openAudioDeletionConfirmation(for:),
                             onClearCategory: { assign($0, to: nil) },
                             onAssignCategory: { assign($0, to: $1) },
@@ -1501,6 +1504,12 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func stopAudioGeneration(for entry: LibraryEntry) {
+        cancelAudioGenerationIfNeeded(for: entry)
+        pendingAudioDeletionEntry = nil
+    }
+
+    @MainActor
     private func confirmPendingAudioGeneration(for entry: LibraryEntry) {
         guard audioGenerationTask == nil else { return }
 
@@ -1580,6 +1589,7 @@ struct ContentView: View {
             return
         }
 
+        cancelAudioGenerationIfNeeded(for: entry)
         pendingAudioDeletionEntry = entry
     }
 
@@ -1587,6 +1597,7 @@ struct ContentView: View {
     private func confirmAudioDeletion() {
         guard let entry = pendingAudioDeletionEntry else { return }
         pendingAudioDeletionEntry = nil
+        cancelAudioGenerationIfNeeded(for: entry)
 
         if let audioURL = entry.generatedAudioFileURL {
             try? FileManager.default.removeItem(at: audioURL)
@@ -1599,6 +1610,19 @@ struct ContentView: View {
         try? modelContext.save()
 
         successToastMessage = "Deleted generated audio for \(entry.title)."
+    }
+
+    @MainActor
+    private func cancelAudioGenerationIfNeeded(for entry: LibraryEntry) {
+        guard isEntryGeneratingAudio(entry) else { return }
+
+        audioGenerationTask?.cancel()
+        audioGenerationTask = nil
+        audioGenerationPrewarmTask?.cancel()
+        audioGenerationPrewarmTask = nil
+        pendingAudioGenerationEntry = nil
+        audioGenerationSheetEntry = nil
+        pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
     }
 
     @MainActor

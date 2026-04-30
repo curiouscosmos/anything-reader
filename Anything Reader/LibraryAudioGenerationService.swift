@@ -44,7 +44,22 @@ actor LibraryAudioGenerationService {
         }
 
         let destinationURL = try destinationURL(for: entryTitle, voice: voice)
-        try await writeAACFile(chunks: chunks, voice: voice, to: destinationURL)
+        let stagingURL = temporaryOutputURL(for: destinationURL)
+
+        do {
+            try await writeAACFile(chunks: chunks, voice: voice, to: stagingURL)
+
+            let fileManager = FileManager.default
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: destinationURL)
+            }
+
+            try fileManager.moveItem(at: stagingURL, to: destinationURL)
+        } catch {
+            try? FileManager.default.removeItem(at: stagingURL)
+            throw error
+        }
+
         return destinationURL
     }
 
@@ -187,6 +202,13 @@ actor LibraryAudioGenerationService {
         let timestamp = Self.filenameTimestampFormatter.string(from: .now)
         let baseName = sanitizedFileName("\(entryTitle) - \(voice.displayName) - \(timestamp)")
         return destinationDirectory.appendingPathComponent(baseName).appendingPathExtension("m4a")
+    }
+
+    private func temporaryOutputURL(for destinationURL: URL) -> URL {
+        let fileName = destinationURL.deletingPathExtension().lastPathComponent
+            + "-" + UUID().uuidString
+            + ".partial.m4a"
+        return FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
     }
 
     private func fallbackChunks(for text: String) -> [String] {
