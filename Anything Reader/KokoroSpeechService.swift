@@ -132,7 +132,7 @@ enum KokoroVoiceCatalog {
 final class KokoroSpeechService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = KokoroSpeechService()
 
-    private let runtime = RuntimeBackend()
+    private let runtime = KokoroSpeechRenderer()
     private var audioPlayer: AVAudioPlayer?
     @Published private(set) var isPlaying = false
 
@@ -182,12 +182,21 @@ final class KokoroSpeechService: NSObject, ObservableObject, AVAudioPlayerDelega
 
 // MARK: - Runtime backend
 
-private actor RuntimeBackend {
+actor KokoroSpeechRenderer {
     private var engineCache: [URL: KokoroTTS] = [:]
     private var voiceCache: [String: MLXArray] = [:]
     private let sampleRate: Double = 24_000
 
+    func prewarm(voice: KokoroVoiceOption) async throws {
+        _ = try await renderSamples(text: voice.sampleText, voice: voice)
+    }
+
     func synthesize(text: String, voice: KokoroVoiceOption) async throws -> URL {
+        let samples = try await renderSamples(text: text, voice: voice)
+        return try writeWaveFile(samples: samples)
+    }
+
+    func renderSamples(text: String, voice: KokoroVoiceOption) async throws -> [Float] {
         guard let modelURL = await MainActor.run(body: { KokoroModelStore.shared.modelURL() }) else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -202,7 +211,7 @@ private actor RuntimeBackend {
             speed: 1.0
         )
 
-        return try writeWaveFile(samples: audioSamples)
+        return audioSamples
     }
 
     private func engine(for modelURL: URL) throws -> KokoroTTS {

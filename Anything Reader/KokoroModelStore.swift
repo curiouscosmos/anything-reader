@@ -31,7 +31,7 @@ enum KokoroDownloadCatalog {
             localFileName: "kokoro_q8f16.safetensors",
             displayName: "Q8 F16",
             qualityLabel: "Highest quality",
-            downloadURL: URL(string: "https://huggingface.co/mlx-community/Kokoro-82M-bf16/resolve/main/kokoro-v1_0.safetensors?download=true")!,
+            downloadURL: URL(string: "https://sandalbar.s3.us-west-2.amazonaws.com/Kokoro/Kokoro-82M-bf16-mlx.safetensors")!,
             isRecommended: true,
             isRuntimeCompatible: true,
             qualityRank: 0

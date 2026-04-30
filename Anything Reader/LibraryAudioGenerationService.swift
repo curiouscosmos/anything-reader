@@ -2,8 +2,8 @@
 //  LibraryAudioGenerationService.swift
 //  Anything Reader
 //
-//  Exports a full normalized document as a single local audio file using the
-//  existing Kokoro synthesis stack.
+//  Exports a full normalized document as a compressed local audio file using
+//  Kokoro synthesis workers and direct AAC encoding.
 //
 
 import AVFoundation
@@ -12,7 +12,14 @@ import Foundation
 actor LibraryAudioGenerationService {
     static let shared = LibraryAudioGenerationService()
 
+    private let workers = (0..<2).map { _ in KokoroSpeechRenderer() }
+
     private init() {}
+
+    func prewarm(voice: KokoroVoiceOption) async {
+        let renderer = workers[0]
+        _ = try? await renderer.prewarm(voice: voice)
+    }
 
     func generateAudioFile(
         from normalizedTextFileURL: URL,
@@ -36,115 +43,172 @@ actor LibraryAudioGenerationService {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        let chunkAudioURLs = try await synthesizeAudioChunks(chunks, voice: voice)
-        let generatedURL = try mergeAudioChunks(chunkAudioURLs, entryTitle: entryTitle, voice: voice)
-        let destinationURL = try destinationURL(for: entryTitle, voice: voice, sourceURL: generatedURL)
-
-        let fileManager = FileManager.default
-        if fileManager.fileExists(atPath: destinationURL.path) {
-            try fileManager.removeItem(at: destinationURL)
-        }
-        try fileManager.copyItem(at: generatedURL, to: destinationURL)
-
-        cleanupTemporaryFiles([generatedURL] + chunkAudioURLs)
+        let destinationURL = try destinationURL(for: entryTitle, voice: voice)
+        try await writeAACFile(chunks: chunks, voice: voice, to: destinationURL)
         return destinationURL
     }
 
-    private func synthesizeAudioChunks(_ chunks: [String], voice: KokoroVoiceOption) async throws -> [URL] {
-        var audioURLs: [URL] = []
-        audioURLs.reserveCapacity(chunks.count)
-
-        for chunk in chunks {
-            try Task.checkCancellation()
-
-            let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedChunk.isEmpty else { continue }
-
-            let chunkURL = try await KokoroSpeechService.shared.synthesize(text: trimmedChunk, voice: voice)
-            audioURLs.append(chunkURL)
+    private func writeAACFile(chunks: [String], voice: KokoroVoiceOption, to outputURL: URL) async throws {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: outputURL.path) {
+            try fileManager.removeItem(at: outputURL)
         }
 
-        return audioURLs
-    }
+        let sampleRate: Double = 24_000
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        )!
 
-    private func mergeAudioChunks(_ chunkAudioURLs: [URL], entryTitle: String, voice: KokoroVoiceOption) throws -> URL {
-        guard let firstURL = chunkAudioURLs.first else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 64_000,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+        ]
 
-        let firstFile = try AVAudioFile(forReading: firstURL)
-        let outputFormat = firstFile.processingFormat
-        let outputURL = try stagingURL(for: entryTitle, voice: voice)
-        let outputFile = try AVAudioFile(forWriting: outputURL, settings: outputFormat.settings)
+        let audioFile = try AVAudioFile(
+            forWriting: outputURL,
+            settings: settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
 
-        for audioURL in chunkAudioURLs {
-            let inputFile = try AVAudioFile(forReading: audioURL)
-            guard inputFile.processingFormat.sampleRate == outputFormat.sampleRate else {
-                throw CocoaError(.fileWriteInapplicableStringEncoding)
+        try await withThrowingTaskGroup(of: ChunkSamples.self) { group in
+            var nextIndexToWrite = 0
+            var pendingChunks: [Int: [Float]] = [:]
+            var isFirstChunk = true
+
+            for (index, chunk) in chunks.enumerated() {
+                group.addTask {
+                    try Task.checkCancellation()
+
+                    let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmedChunk.isEmpty else {
+                        return ChunkSamples(index: index, samples: [])
+                    }
+
+                    let renderer = self.workers[index % self.workers.count]
+                    let samples = try await self.renderSamples(trimmedChunk, voice: voice, using: renderer)
+                    return ChunkSamples(index: index, samples: samples)
+                }
             }
 
-            try append(file: inputFile, to: outputFile)
-            try appendSilence(duration: 0.08, format: outputFormat, to: outputFile)
+            for try await item in group {
+                pendingChunks[item.index] = item.samples
+
+                while let samples = pendingChunks.removeValue(forKey: nextIndexToWrite) {
+                    if !samples.isEmpty {
+                        try writeSamples(samples, to: audioFile, format: format)
+
+                        if !isFirstChunk {
+                            try writeSilence(seconds: 0.08, to: audioFile, format: format)
+                        }
+                        isFirstChunk = false
+                    }
+
+                    nextIndexToWrite += 1
+                }
+            }
         }
-
-        return outputURL
     }
 
-    private func destinationURL(for entryTitle: String, voice: KokoroVoiceOption, sourceURL: URL) throws -> URL {
-        let destinationDirectory = try uploadedFilesDirectory()
-        let fileManager = FileManager.default
+    private func renderSamples(
+        _ text: String,
+        voice: KokoroVoiceOption,
+        using renderer: KokoroSpeechRenderer
+    ) async throws -> [Float] {
+        do {
+            return try await renderer.renderSamples(text: text, voice: voice)
+        } catch {
+            let fallbackChunks = fallbackChunks(for: text)
+            guard fallbackChunks.count > 1 else {
+                throw error
+            }
 
-        try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
-
-        let timestamp = Self.filenameTimestampFormatter.string(from: .now)
-        let baseName = sanitizedFileName("\(entryTitle) - \(voice.displayName) - \(timestamp)")
-        let fileExtension = sourceURL.pathExtension.isEmpty ? "wav" : sourceURL.pathExtension
-        return destinationDirectory.appendingPathComponent(baseName).appendingPathExtension(fileExtension)
+            var samples: [Float] = []
+            for fallbackChunk in fallbackChunks {
+                try Task.checkCancellation()
+                let nestedSamples = try await renderSamples(
+                    fallbackChunk,
+                    voice: voice,
+                    using: renderer
+                )
+                samples.append(contentsOf: nestedSamples)
+            }
+            return samples
+        }
     }
 
-    private func stagingURL(for entryTitle: String, voice: KokoroVoiceOption) throws -> URL {
-        let fileManager = FileManager.default
-        let temporaryDirectory = fileManager.temporaryDirectory
+    private func writeSamples(_ samples: [Float], to audioFile: AVAudioFile, format: AVAudioFormat) throws {
+        guard !samples.isEmpty else { return }
 
-        guard fileManager.fileExists(atPath: temporaryDirectory.path) else {
+        let frameCount = AVAudioFrameCount(samples.count)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
             throw CocoaError(.fileWriteUnknown)
         }
 
-        let timestamp = Self.filenameTimestampFormatter.string(from: .now)
-        let baseName = sanitizedFileName("\(entryTitle) - \(voice.displayName) - merged - \(timestamp)")
-        return temporaryDirectory.appendingPathComponent(baseName).appendingPathExtension("wav")
-    }
+        buffer.frameLength = frameCount
+        samples.withUnsafeBufferPointer { samplePointer in
+            guard let source = samplePointer.baseAddress,
+                  let channelData = buffer.floatChannelData?[0] else {
+                return
+            }
 
-    private func append(file: AVAudioFile, to outputFile: AVAudioFile) throws {
-        let bufferCapacity: AVAudioFrameCount = 4096
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: bufferCapacity) else {
-            throw CocoaError(.fileReadUnknown)
+            channelData.update(from: source, count: samples.count)
         }
 
-        while file.framePosition < file.length {
-            let remainingFrames = file.length - file.framePosition
-            let framesToRead = AVAudioFrameCount(min(Int64(bufferCapacity), remainingFrames))
-            try file.read(into: buffer, frameCount: framesToRead)
-            guard buffer.frameLength > 0 else { break }
-            try outputFile.write(from: buffer)
-        }
+        try audioFile.write(from: buffer)
     }
 
-    private func appendSilence(duration: TimeInterval, format: AVAudioFormat, to outputFile: AVAudioFile) throws {
-        let frameCount = AVAudioFrameCount(max(1, Int(duration * format.sampleRate)))
+    private func writeSilence(seconds: TimeInterval, to audioFile: AVAudioFile, format: AVAudioFormat) throws {
+        let frameCount = AVAudioFrameCount(max(1, Int(seconds * format.sampleRate)))
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
             throw CocoaError(.fileWriteUnknown)
         }
 
         buffer.frameLength = frameCount
 
-        if let channelData = buffer.floatChannelData {
-            for channel in 0..<Int(format.channelCount) {
-                channelData[channel].initialize(repeating: 0, count: Int(frameCount))
-            }
+        if let channelData = buffer.floatChannelData?[0] {
+            channelData.initialize(repeating: 0, count: Int(frameCount))
         }
 
-        try outputFile.write(from: buffer)
+        try audioFile.write(from: buffer)
+    }
+
+    private func destinationURL(for entryTitle: String, voice: KokoroVoiceOption) throws -> URL {
+        let destinationDirectory = try uploadedFilesDirectory()
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+
+        let timestamp = Self.filenameTimestampFormatter.string(from: .now)
+        let baseName = sanitizedFileName("\(entryTitle) - \(voice.displayName) - \(timestamp)")
+        return destinationDirectory.appendingPathComponent(baseName).appendingPathExtension("m4a")
+    }
+
+    private func fallbackChunks(for text: String) -> [String] {
+        let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard words.count > 1 else { return [text] }
+
+        let targetWordCount = max(1, min(words.count / 2, 40))
+        guard targetWordCount < words.count else { return [text] }
+
+        var chunks: [String] = []
+        var index = 0
+
+        while index < words.count {
+            let endIndex = min(index + targetWordCount, words.count)
+            let chunk = words[index..<endIndex].joined(separator: " ")
+            if !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                chunks.append(chunk)
+            }
+            index = endIndex
+        }
+
+        return chunks.isEmpty ? [text] : chunks
     }
 
     private func sanitizedFileName(_ name: String) -> String {
@@ -160,23 +224,6 @@ actor LibraryAudioGenerationService {
         return fileName.isEmpty ? "Generated Audio" : fileName
     }
 
-    private func cleanupTemporaryFiles(_ urls: [URL]) {
-        let fileManager = FileManager.default
-        for url in urls {
-            if fileManager.fileExists(atPath: url.path) {
-                try? fileManager.removeItem(at: url)
-            }
-        }
-    }
-
-    private static let filenameTimestampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyyMMdd_HHmmssSSS"
-        return formatter
-    }()
-
     private func uploadedFilesDirectory() throws -> URL {
         let fileManager = FileManager.default
         guard let supportDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
@@ -191,5 +238,18 @@ actor LibraryAudioGenerationService {
         }
 
         return uploadsDirectory
+    }
+
+    private static let filenameTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd_HHmmssSSS"
+        return formatter
+    }()
+
+    private struct ChunkSamples {
+        let index: Int
+        let samples: [Float]
     }
 }

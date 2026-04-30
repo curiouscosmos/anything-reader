@@ -58,6 +58,7 @@ struct ContentView: View {
     @State private var playbackWarmupTask: Task<Void, Never>?
     @State private var readingNavigationTask: Task<Void, Never>?
     @State private var audioGenerationTask: Task<Void, Never>?
+    @State private var audioGenerationPrewarmTask: Task<Void, Never>?
     @State private var playbackChunks: [String] = []
     @State private var playbackChunkIndex: Int = 0
     @State private var playbackSessionToken = UUID()
@@ -1492,6 +1493,11 @@ struct ContentView: View {
         pendingAudioGenerationEntry = entry
         pendingAudioVoiceName = kokoroVoiceName
         audioGenerationSheetEntry = entry
+        audioGenerationPrewarmTask?.cancel()
+        let voice = KokoroVoiceCatalog.voice(named: pendingAudioVoiceName)
+        audioGenerationPrewarmTask = Task {
+            await LibraryAudioGenerationService.shared.prewarm(voice: voice)
+        }
     }
 
     @MainActor
@@ -1511,6 +1517,8 @@ struct ContentView: View {
     private func discardPendingAudioGeneration() {
         audioGenerationTask?.cancel()
         audioGenerationTask = nil
+        audioGenerationPrewarmTask?.cancel()
+        audioGenerationPrewarmTask = nil
         pendingAudioGenerationEntry = nil
         audioGenerationSheetEntry = nil
         pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
