@@ -77,6 +77,7 @@ struct ReaderTopBarView: View {
     let onSettings: () -> Void
     let tint: Color
     let preferredMode: AppearanceMode
+    let isUploadDisabled: Bool
 
     var body: some View {
         HStack(spacing: 14) {
@@ -112,6 +113,8 @@ struct ReaderTopBarView: View {
                     .background(tint.opacity(preferredMode == .light ? 0.14 : 0.20), in: Capsule())
             }
             .buttonStyle(.plain)
+            .disabled(isUploadDisabled)
+            .opacity(isUploadDisabled ? 0.45 : 1)
 
             Button(action: onSettings) {
                 Image(systemName: "gearshape.fill")
@@ -168,6 +171,7 @@ struct ReaderHeroView: View {
     let onUploadFile: () -> Void
     let onOpenLibrary: () -> Void
     let onDownloadKokoro: () -> Void
+    let isUploadDisabled: Bool
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -203,6 +207,8 @@ struct ReaderHeroView: View {
                             .background(heroButtonBackground, in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    .disabled(isUploadDisabled)
+                    .opacity(isUploadDisabled ? 0.45 : 1)
                     
                     Button(action: onDownloadKokoro) {
                         Label(kokoroButtonTitle, systemImage: kokoroButtonIcon)
@@ -435,6 +441,7 @@ struct ReaderLibrarySectionView: View {
                             isCoverArtLoading: coverArtGenerationKeys.contains(entry.cacheIdentity),
                             preferredMode: preferredMode,
                             isPlaying: isEntryPlaying(entry),
+                            isImporting: entry.isImporting,
                             onPrimaryAction: { onPrimaryAction(entry) },
                             onPlay: { onPlay(entry) },
                             onView: { onView(entry) },
@@ -482,6 +489,7 @@ struct ReaderLibraryCardView: View {
     let isCoverArtLoading: Bool
     let preferredMode: AppearanceMode
     let isPlaying: Bool
+    let isImporting: Bool
     let onPrimaryAction: () -> Void
     let onPlay: () -> Void
     let onView: () -> Void
@@ -494,151 +502,13 @@ struct ReaderLibraryCardView: View {
     @State private var isShowingCardMenu = false
 
     var body: some View {
-
         ZStack(alignment: .topTrailing) {
-            ReaderCardArtworkView(
-                coverImagePath: entry.coverImageFilePath,
-                symbolName: entry.avatarSymbolName,
-                accentName: entry.accentName,
-                preferredMode: preferredMode,
-                isLoading: isCoverArtLoading
-            )
-            .frame(maxWidth: .infinity, minHeight: 320)
-            .clipped()
-
-            // Darken the lower half so footer content stays readable over artwork.
-            LinearGradient(
-                colors: [
-                    Color.clear,
-                    Color.black.opacity(preferredMode == .light ? 0.22 : 0.30),
-                    Color.black.opacity(preferredMode == .light ? 0.72 : 0.82)
-                ],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-
-            VStack(alignment: .leading, spacing: 10) {
-                Spacer(minLength: 0)
-
-                // Footer block for title, metadata chips, progress, and actions.
-                VStack(alignment: .leading, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(entry.title)
-                            .font(.headline.weight(.bold))
-                            .lineLimit(1)
-                            .foregroundStyle(.white)
-                    }
-
-                    HStack(spacing: 8) {
-                        if let textLanguage = entry.textLanguage {
-                            Text(textLanguage.displayName)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Color.white.opacity(0.16), in: Capsule())
-                        }
-
-                        Text(entry.sourceKind.displayName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.18), in: Capsule())
-
-                        if let extractionMode = entry.pdfExtractionMode, entry.sourceKind == .pdf {
-                            Text(extractionMode.displayName)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(pdfExtractionBadgeBackground(for: extractionMode), in: Capsule())
-                        }
-
-                        if let categoryName = entry.categoryName {
-                            Text(categoryName)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Color.white.opacity(0.12), in: Capsule())
-                        }
-
-                        Spacer()
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        ProgressView(value: entry.currentReadingProgressFraction)
-                            .tint(.white)
-
-                        if let currentReadingProgress = entry.currentReadingProgressSummaryText ?? entry.currentReadingPositionDisplayText {
-                            Text(currentReadingProgress)
-                                .font(.body.weight(.semibold))
-                                .lineLimit(1)
-                        }
-                    }
-
-                    HStack {
-                        Button(action: onPrimaryAction) {
-                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.black)
-                                .frame(width: 44, height: 44)
-                                .background(.white, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: onView) {
-                            Text("View")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .background(Color.white.opacity(0.16), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-
-                        Text(entry.createdAt, format: .dateTime.day().month(.abbreviated).year())
-                            .font(.caption2)
-                            .italic()
-                            .foregroundStyle(.white.opacity(0.68))
-                    }
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(TopRoundedRectangle(radius: 16).fill(metaBackground))
+            cardArtworkLayer
+            cardFooterLayer
+            if isImporting {
+                importOverlay
             }
-            .padding(.vertical, 2)
-
-            // Overflow actions live outside the footer so they remain reachable.
-            Button {
-                isShowingCardMenu.toggle()
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.headline)
-                    .padding(8)
-                    .foregroundStyle(.white)
-                    .background(Color.black.opacity(0.82), in: Circle())
-                    .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
-            }
-            .padding(12)
-            .popover(isPresented: $isShowingCardMenu, arrowEdge: .top) {
-                ReaderCardMenuPopoverView(
-                    categories: categories,
-                    preferredMode: preferredMode,
-                    onPlay: onPlay,
-                    onView: onView,
-                    onRevealLocation: onRevealLocation,
-                    onClearCategory: onClearCategory,
-                    onAssignCategory: onAssignCategory,
-                    onDelete: {
-                        isShowingDeleteConfirmation = true
-                    }
-                )
-                .frame(width: 240)
-                .padding(12)
-            }
+            cardMenuButton
         }
         .frame(maxWidth: .infinity, minHeight: 320, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -660,6 +530,184 @@ struct ReaderLibraryCardView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This will permanently remove the book/text from the local database.")
+        }
+    }
+
+    @ViewBuilder
+    private var cardArtworkLayer: some View {
+        ReaderCardArtworkView(
+            coverImagePath: entry.coverImageFilePath,
+            symbolName: entry.avatarSymbolName,
+            accentName: entry.accentName,
+            preferredMode: preferredMode,
+            isLoading: isCoverArtLoading
+        )
+        .frame(maxWidth: .infinity, minHeight: 320)
+        .clipped()
+
+        LinearGradient(
+            colors: [
+                Color.clear,
+                Color.black.opacity(preferredMode == .light ? 0.22 : 0.30),
+                Color.black.opacity(preferredMode == .light ? 0.72 : 0.82)
+            ],
+            startPoint: .center,
+            endPoint: .bottom
+        )
+    }
+
+    private var cardFooterLayer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(entry.title)
+                        .font(.headline.weight(.bold))
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                }
+
+                HStack(spacing: 8) {
+                    if let textLanguage = entry.textLanguage {
+                        Text(textLanguage.displayName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.16), in: Capsule())
+                    }
+
+                    Text(entry.sourceKind.displayName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.18), in: Capsule())
+
+                    if let extractionMode = entry.pdfExtractionMode, entry.sourceKind == .pdf {
+                        Text(extractionMode.displayName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(pdfExtractionBadgeBackground(for: extractionMode), in: Capsule())
+                    }
+
+                    if let categoryName = entry.categoryName {
+                        Text(categoryName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.12), in: Capsule())
+                    }
+
+                    Spacer()
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    ProgressView(value: entry.currentReadingProgressFraction)
+                        .tint(.white)
+
+                    if let currentReadingProgress = entry.currentReadingProgressSummaryText ?? entry.currentReadingPositionDisplayText {
+                        Text(currentReadingProgress)
+                            .font(.body.weight(.semibold))
+                            .lineLimit(1)
+                    }
+                }
+
+                HStack {
+                    Button(action: onPrimaryAction) {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.black)
+                            .frame(width: 44, height: 44)
+                            .background(.white, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isImporting)
+                    .opacity(isImporting ? 0.45 : 1)
+
+                    Button(action: onView) {
+                        Text("View")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.16), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isImporting)
+                    .opacity(isImporting ? 0.45 : 1)
+
+                    Spacer()
+
+                    Text(entry.createdAt, format: .dateTime.day().month(.abbreviated).year())
+                        .font(.caption2)
+                        .italic()
+                        .foregroundStyle(.white.opacity(0.68))
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(TopRoundedRectangle(radius: 16).fill(metaBackground))
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var importOverlay: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Text("Importing")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.35), in: Capsule())
+            }
+            ProgressView()
+                .controlSize(.large)
+                .tint(.white)
+            Text("Normalizing file...")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.top, 10)
+                .padding(.bottom, 24)
+        }
+        .padding(16)
+        .background(Color.black.opacity(0.15))
+    }
+
+    private var cardMenuButton: some View {
+        Button {
+            isShowingCardMenu.toggle()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.headline)
+                .padding(8)
+                .foregroundStyle(.white)
+                .background(Color.black.opacity(0.82), in: Circle())
+                .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+        }
+        .padding(12)
+        .disabled(isImporting)
+        .opacity(isImporting ? 0.45 : 1)
+        .popover(isPresented: $isShowingCardMenu, arrowEdge: .top) {
+            ReaderCardMenuPopoverView(
+                categories: categories,
+                preferredMode: preferredMode,
+                onPlay: onPlay,
+                onView: onView,
+                onRevealLocation: onRevealLocation,
+                onClearCategory: onClearCategory,
+                onAssignCategory: onAssignCategory,
+                onDelete: {
+                    isShowingDeleteConfirmation = true
+                }
+            )
+            .frame(width: 240)
+            .padding(12)
         }
     }
     

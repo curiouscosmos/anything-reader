@@ -51,6 +51,14 @@ enum ReadingStructureKind: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum LibraryEntryImportState: String, Codable, CaseIterable, Identifiable {
+    case importing
+    case ready
+    case failed
+
+    var id: String { rawValue }
+}
+
 enum PDFExtractionMode: String, Codable, CaseIterable, Identifiable {
     case directText
     case ocr
@@ -287,7 +295,8 @@ final class LibraryEntry {
     var readingStructureKindRawValue: String?
     var pageCount: Int
     var chapterCount: Int
-    var sectionCount: Int
+    var sectionCount: Int?
+    var importStateRawValue: String?
     var readingJumpTargetsData: Data?
     var currentReadingPositionIndex: Int?
     var currentReadingPositionTotalCount: Int?
@@ -316,6 +325,7 @@ final class LibraryEntry {
         pageCount: Int = 0,
         chapterCount: Int = 0,
         sectionCount: Int = 0,
+        importState: LibraryEntryImportState? = nil,
         readingJumpTargets: [ReaderJumpTarget] = [],
         currentReadingPositionIndex: Int? = nil,
         currentReadingPositionTotalCount: Int? = nil,
@@ -342,7 +352,8 @@ final class LibraryEntry {
         self.readingStructureKindRawValue = readingStructureKind?.rawValue
         self.pageCount = pageCount
         self.chapterCount = chapterCount
-        self.sectionCount = sectionCount
+        self.sectionCount = sectionCount > 0 ? sectionCount : nil
+        self.importStateRawValue = importState?.rawValue
         self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
         self.currentReadingPositionIndex = currentReadingPositionIndex
         self.currentReadingPositionTotalCount = currentReadingPositionTotalCount
@@ -373,6 +384,20 @@ final class LibraryEntry {
         set {
             readingStructureKindRawValue = newValue?.rawValue
         }
+    }
+
+    var importState: LibraryEntryImportState? {
+        get {
+            guard let importStateRawValue else { return nil }
+            return LibraryEntryImportState(rawValue: importStateRawValue)
+        }
+        set {
+            importStateRawValue = newValue?.rawValue
+        }
+    }
+
+    var isImporting: Bool {
+        importState == .importing
     }
 
     var textLanguage: TextLanguage? {

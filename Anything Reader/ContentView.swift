@@ -41,6 +41,7 @@ struct ContentView: View {
     @State private var successToastMessage: String?
     @State private var isProcessingImport = false
     @State private var pendingImportContext: PendingImportContext?
+    @State private var pendingImportEntry: LibraryEntry?
     @State private var detectedDocumentLanguage: TextLanguage = .english
     @State private var pendingDocumentLanguage: TextLanguage = .english
     @State private var isTranslateDocument = false
@@ -252,11 +253,6 @@ struct ContentView: View {
         .preferredColorScheme(preferredMode.colorScheme)
         .tint(.green)
         .overlay {
-            if isProcessingImport {
-                ReaderProcessingOverlayView(message: processingImportMessage)
-            }
-        }
-        .overlay {
             if readerPlaybackService.isBufferingFirstChunk {
                 ReaderPlaybackLoadingOverlayView(message: "Preparing first chunk")
             }
@@ -425,7 +421,8 @@ struct ContentView: View {
                         onUploadFile: { isShowingFileImporter = true },
                         onSettings: { isShowingSettings = true },
                         tint: ReaderStyle.accentColor(named: "emerald"),
-                        preferredMode: preferredMode
+                        preferredMode: preferredMode,
+                        isUploadDisabled: isImportInFlight
                     )
 
                     switch selection {
@@ -437,7 +434,8 @@ struct ContentView: View {
                             onPasteText: { isShowingPasteSheet = true },
                             onUploadFile: { isShowingFileImporter = true },
                             onOpenLibrary: { selection = .recent },
-                            onDownloadKokoro: openKokoroDownloadModal
+                            onDownloadKokoro: openKokoroDownloadModal,
+                            isUploadDisabled: isImportInFlight
                         )
 
                         ReaderLibrarySectionView(
@@ -791,6 +789,7 @@ struct ContentView: View {
         isShowingImportLanguageSheet = false
         isProcessingImport = true
         processingImportMessage = "Normalizing \(pendingImportContext?.fileName ?? "file")…"
+        createPendingImportEntry()
 
         let selectedLanguage = pendingDocumentLanguage
         Task {
@@ -798,8 +797,10 @@ struct ContentView: View {
         }
     }
 
+    @MainActor
     private func processPendingImport(documentLanguage: TextLanguage) async {
-        guard let context = await MainActor.run(body: { pendingImportContext }) else { return }
+        guard let context = pendingImportContext else { return }
+        guard let placeholderEntry = pendingImportEntry else { return }
 
         do {
             let draft = try await DocumentIngestService.shared.extractDraft(
@@ -872,49 +873,55 @@ struct ContentView: View {
                 processingImportMessage = "Saving \(context.fileName)…"
             }
 
-            let entry = LibraryEntry(
-                title: ingest.title ?? sanitizedTitle(from: context.sourceURL.deletingPathExtension().lastPathComponent),
-                subtitle: "",
-                sourceKind: ingest.sourceKind,
-                fileExtension: context.fileExtension,
-                originalFileName: context.fileName,
-                storedFilePath: context.stagedURL.path,
-                normalizedTextFilePath: ingest.normalizedTextFileURL.path,
-                coverImageFilePath: nil,
-                fileSizeBytes: ingest.fileSizeBytes,
-                categoryName: nil,
-                avatarSymbolName: avatarSymbol(for: ingest.sourceKind),
-                accentName: Self.accentPalette.randomElement() ?? "emerald",
-                phonemeText: nil,
-                phonemeUpdatedAt: nil,
-                textLanguage: ingest.textLanguage,
-                pdfExtractionMode: ingest.pdfExtractionMode,
-                readingStructureKind: ingest.readingStructureKind,
-                pageCount: ingest.pageCount,
-                chapterCount: ingest.chapterCount,
-                sectionCount: ingest.sectionCount,
-                readingJumpTargets: ingest.readingJumpTargets,
-                progress: 0,
-                lastOpened: .now
-            )
-
-            modelContext.insert(entry)
+            placeholderEntry.title = ingest.title ?? sanitizedTitle(from: context.sourceURL.deletingPathExtension().lastPathComponent)
+            placeholderEntry.subtitle = ""
+            placeholderEntry.sourceKindRawValue = ingest.sourceKind.rawValue
+            placeholderEntry.fileExtension = context.fileExtension
+            placeholderEntry.originalFileName = context.fileName
+            placeholderEntry.storedFilePath = context.stagedURL.path
+            placeholderEntry.normalizedTextFilePath = ingest.normalizedTextFileURL.path
+            placeholderEntry.coverImageFilePath = nil
+            placeholderEntry.fileSizeBytes = ingest.fileSizeBytes
+            placeholderEntry.categoryName = nil
+            placeholderEntry.avatarSymbolName = avatarSymbol(for: ingest.sourceKind)
+            placeholderEntry.accentName = placeholderEntry.accentName.isEmpty ? (Self.accentPalette.randomElement() ?? "emerald") : placeholderEntry.accentName
+            placeholderEntry.phonemeText = nil
+            placeholderEntry.phonemeUpdatedAt = nil
+            placeholderEntry.textLanguage = ingest.textLanguage
+            placeholderEntry.pdfExtractionMode = ingest.pdfExtractionMode
+            placeholderEntry.readingStructureKind = ingest.readingStructureKind
+            placeholderEntry.pageCount = ingest.pageCount
+            placeholderEntry.chapterCount = ingest.chapterCount
+            placeholderEntry.sectionCount = ingest.sectionCount > 0 ? ingest.sectionCount : nil
+            placeholderEntry.readingJumpTargets = ingest.readingJumpTargets
+            placeholderEntry.progress = 0
+            placeholderEntry.lastOpened = .now
+            placeholderEntry.importState = .ready
             try modelContext.save()
 
             await MainActor.run {
-                clearPendingImportState(showing: "\(entry.title) is ready to play.")
-                queueCoverArtGenerationIfNeeded(for: entry)
+                clearPendingImportState(showing: "\(placeholderEntry.title) is ready to play.")
+                queueCoverArtGenerationIfNeeded(for: placeholderEntry)
             }
         } catch {
             if error is CancellationError {
                 await MainActor.run {
+                    if let pendingImportEntry {
+                        modelContext.delete(pendingImportEntry)
+                        try? modelContext.save()
+                    }
                     isProcessingImport = false
+                    pendingImportEntry = nil
                 }
                 return
             }
 
             await MainActor.run {
                 isProcessingImport = false
+                if let pendingImportEntry {
+                    modelContext.delete(pendingImportEntry)
+                    try? modelContext.save()
+                }
                 importFailureMessage = error.localizedDescription
             }
         }
@@ -926,6 +933,7 @@ struct ContentView: View {
         importFailureMessage = nil
         isProcessingImport = true
         processingImportMessage = "Retrying normalization…"
+        createPendingImportEntry()
         Task { await processPendingImport(documentLanguage: pendingDocumentLanguage) }
     }
 
@@ -945,6 +953,11 @@ struct ContentView: View {
             }
         }
         translationCoordinator.cancel()
+        if let pendingImportEntry {
+            modelContext.delete(pendingImportEntry)
+            try? modelContext.save()
+        }
+        pendingImportEntry = nil
         pendingImportContext = nil
         detectedDocumentLanguage = .english
         pendingDocumentLanguage = .english
@@ -958,6 +971,7 @@ struct ContentView: View {
         isProcessingImport = false
         processingImportMessage = ""
         pendingImportContext = nil
+        pendingImportEntry = nil
         translationCoordinator.cancel()
         detectedDocumentLanguage = .english
         pendingDocumentLanguage = .english
@@ -970,6 +984,46 @@ struct ContentView: View {
         } else {
             successToastMessage = nil
         }
+    }
+
+    private var isImportInFlight: Bool {
+        isProcessingImport || pendingImportContext != nil
+    }
+
+    @MainActor
+    private func createPendingImportEntry() {
+        guard let context = pendingImportContext, pendingImportEntry == nil else { return }
+
+        let placeholder = LibraryEntry(
+            title: sanitizedTitle(from: context.sourceURL.deletingPathExtension().lastPathComponent),
+            subtitle: "Importing…",
+            sourceKind: context.sourceKind,
+            fileExtension: context.fileExtension,
+            originalFileName: context.fileName,
+            storedFilePath: context.stagedURL.path,
+            normalizedTextFilePath: nil,
+            coverImageFilePath: nil,
+            fileSizeBytes: 0,
+            categoryName: nil,
+            avatarSymbolName: avatarSymbol(for: context.sourceKind),
+            accentName: Self.accentPalette.randomElement() ?? "emerald",
+            phonemeText: nil,
+            phonemeUpdatedAt: nil,
+            textLanguage: pendingDocumentLanguage,
+            pdfExtractionMode: nil,
+            readingStructureKind: nil,
+            pageCount: 0,
+            chapterCount: 0,
+            sectionCount: 0,
+            importState: .importing,
+            readingJumpTargets: [],
+            progress: 0,
+            lastOpened: .now
+        )
+
+        modelContext.insert(placeholder)
+        try? modelContext.save()
+        pendingImportEntry = placeholder
     }
 
     private func stageImportedFile(from sourceURL: URL) throws -> URL {

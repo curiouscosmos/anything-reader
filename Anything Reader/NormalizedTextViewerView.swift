@@ -218,8 +218,9 @@ struct NormalizedTextViewerScreen: View {
             guard entry.chapterCount > 0 else { return nil }
             return "\(entry.chapterCount) chapters"
         case .section:
-            guard entry.sectionCount > 0 else { return nil }
-            return "\(entry.sectionCount) sections"
+            let sectionCount = entry.sectionCount ?? 0
+            guard sectionCount > 0 else { return nil }
+            return "\(sectionCount) sections"
         case .none:
             return nil
         }
