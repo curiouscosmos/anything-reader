@@ -24,7 +24,8 @@ actor LibraryAudioGenerationService {
     func generateAudioFile(
         from normalizedTextFileURL: URL,
         entryTitle: String,
-        voice: KokoroVoiceOption
+        voice: KokoroVoiceOption,
+        progressHandler: (@Sendable (Double) async -> Void)? = nil
     ) async throws -> URL {
         guard FileManager.default.fileExists(atPath: normalizedTextFileURL.path) else {
             throw CocoaError(.fileNoSuchFile)
@@ -47,7 +48,12 @@ actor LibraryAudioGenerationService {
         let stagingURL = temporaryOutputURL(for: destinationURL)
 
         do {
-            try await writeAACFile(chunks: chunks, voice: voice, to: stagingURL)
+            try await writeAACFile(
+                chunks: chunks,
+                voice: voice,
+                to: stagingURL,
+                progressHandler: progressHandler
+            )
 
             let fileManager = FileManager.default
             if fileManager.fileExists(atPath: destinationURL.path) {
@@ -63,7 +69,12 @@ actor LibraryAudioGenerationService {
         return destinationURL
     }
 
-    private func writeAACFile(chunks: [String], voice: KokoroVoiceOption, to outputURL: URL) async throws {
+    private func writeAACFile(
+        chunks: [String],
+        voice: KokoroVoiceOption,
+        to outputURL: URL,
+        progressHandler: (@Sendable (Double) async -> Void)? = nil
+    ) async throws {
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: outputURL.path) {
             try fileManager.removeItem(at: outputURL)
@@ -96,6 +107,7 @@ actor LibraryAudioGenerationService {
             var nextIndexToWrite = 0
             var pendingChunks: [Int: [Float]] = [:]
             var isFirstChunk = true
+            var writtenChunkCount = 0
 
             for (index, chunk) in chunks.enumerated() {
                 group.addTask {
@@ -126,8 +138,16 @@ actor LibraryAudioGenerationService {
                     }
 
                     nextIndexToWrite += 1
+                    writtenChunkCount += 1
+                    if let progressHandler {
+                        await progressHandler(min(1, Double(writtenChunkCount) / Double(chunks.count)))
+                    }
                 }
             }
+        }
+
+        if let progressHandler {
+            await progressHandler(1)
         }
     }
 

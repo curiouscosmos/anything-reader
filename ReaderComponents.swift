@@ -410,6 +410,7 @@ struct ReaderLibrarySectionView: View {
     let preferredMode: AppearanceMode
     let isEntryPlaying: (LibraryEntry) -> Bool
     let isEntryGeneratingAudio: (LibraryEntry) -> Bool
+    let audioGenerationProgressFraction: (LibraryEntry) -> Double?
     let onPrimaryAction: (LibraryEntry) -> Void
     let onPlay: (LibraryEntry) -> Void
     let onView: (LibraryEntry) -> Void
@@ -447,6 +448,7 @@ struct ReaderLibrarySectionView: View {
                             isPlaying: isEntryPlaying(entry),
                             isImporting: entry.isImporting,
                             isGeneratingAudio: isEntryGeneratingAudio(entry),
+                            audioGenerationProgressFraction: audioGenerationProgressFraction(entry),
                             hasGeneratedAudio: entry.generatedAudioFileURL != nil,
                             onPrimaryAction: { onPrimaryAction(entry) },
                             onPlay: { onPlay(entry) },
@@ -500,6 +502,7 @@ struct ReaderLibraryCardView: View {
     let isPlaying: Bool
     let isImporting: Bool
     let isGeneratingAudio: Bool
+    let audioGenerationProgressFraction: Double?
     let hasGeneratedAudio: Bool
     let onPrimaryAction: () -> Void
     let onPlay: () -> Void
@@ -526,7 +529,7 @@ struct ReaderLibraryCardView: View {
                     .zIndex(1)
             }
             if isGeneratingAudio {
-                importOverlay(text: "Generating audio...")
+                importOverlay(text: "Generating audio...", progress: audioGenerationProgressFraction)
                     .zIndex(1)
             }
             cardMenuButton
@@ -686,11 +689,21 @@ struct ReaderLibraryCardView: View {
         .padding(.vertical, 2)
     }
 
-    private func importOverlay(text: String) -> some View {
+    private func importOverlay(text: String, progress: Double? = nil) -> some View {
         VStack {
-            ProgressView()
-                .controlSize(.large)
-                .tint(.white)
+            if let progress {
+                ProgressView(value: progress)
+                    .tint(.white)
+                    .frame(maxWidth: 180)
+                Text("\(Int((progress * 100).rounded()))%")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.top, 4)
+            } else {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+            }
             Text(text)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)

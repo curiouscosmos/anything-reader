@@ -48,6 +48,7 @@ struct ContentView: View {
     @State private var detectedDocumentLanguage: TextLanguage = .english
     @State private var pendingDocumentLanguage: TextLanguage = .english
     @State private var pendingAudioVoiceName: String = KokoroVoiceCatalog.defaultVoiceName
+    @State private var audioGenerationProgressValue: Double?
     @State private var isTranslateDocument = false
     @State private var translateToLanguage: TextLanguage = .english
     @State private var playbackState = PlaybackState()
@@ -495,6 +496,7 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
+                            audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
                             onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
@@ -517,6 +519,7 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
+                            audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
                             onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
@@ -539,6 +542,7 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
+                            audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
                             onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
@@ -1482,6 +1486,12 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func audioGenerationProgressFraction(for entry: LibraryEntry) -> Double? {
+        guard isEntryGeneratingAudio(entry) else { return nil }
+        return audioGenerationProgressValue
+    }
+
+    @MainActor
     private func openAudioGenerationSheet(for entry: LibraryEntry) {
         guard audioGenerationTask == nil else {
             audioGenerationAlertMessage = "Finish the current audio export before starting another one."
@@ -1496,6 +1506,7 @@ struct ContentView: View {
         pendingAudioGenerationEntry = entry
         pendingAudioVoiceName = kokoroVoiceName
         audioGenerationSheetEntry = entry
+        audioGenerationProgressValue = nil
         audioGenerationPrewarmTask?.cancel()
         let voice = KokoroVoiceCatalog.voice(named: pendingAudioVoiceName)
         audioGenerationPrewarmTask = Task {
@@ -1515,6 +1526,7 @@ struct ContentView: View {
 
         pendingAudioGenerationEntry = entry
         audioGenerationSheetEntry = nil
+        audioGenerationProgressValue = 0
 
         let voiceName = pendingAudioVoiceName
         audioGenerationTask = Task {
@@ -1531,12 +1543,14 @@ struct ContentView: View {
         pendingAudioGenerationEntry = nil
         audioGenerationSheetEntry = nil
         pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+        audioGenerationProgressValue = nil
     }
 
     @MainActor
     private func processPendingAudioGeneration(for entry: LibraryEntry, voiceName: String) async {
         defer {
             audioGenerationTask = nil
+            audioGenerationProgressValue = nil
         }
 
         guard let normalizedTextFileURL = normalizedTextFileURL(for: entry) else {
@@ -1555,7 +1569,12 @@ struct ContentView: View {
             let audioFileURL = try await LibraryAudioGenerationService.shared.generateAudioFile(
                 from: normalizedTextFileURL,
                 entryTitle: entry.title,
-                voice: voice
+                voice: voice,
+                progressHandler: { fraction in
+                    await MainActor.run {
+                        audioGenerationProgressValue = fraction
+                    }
+                }
             )
 
             entry.generatedAudioFilePath = audioFileURL.path
@@ -1570,9 +1589,11 @@ struct ContentView: View {
         } catch is CancellationError {
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+            audioGenerationProgressValue = nil
         } catch {
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+            audioGenerationProgressValue = nil
             audioGenerationAlertMessage = error.localizedDescription
         }
     }
@@ -1623,6 +1644,7 @@ struct ContentView: View {
         pendingAudioGenerationEntry = nil
         audioGenerationSheetEntry = nil
         pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+        audioGenerationProgressValue = nil
     }
 
     @MainActor
