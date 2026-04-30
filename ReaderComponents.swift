@@ -621,6 +621,16 @@ struct ReaderLibraryCardView: View {
                             .background(Color.white.opacity(0.12), in: Capsule())
                     }
 
+                    if hasGeneratedAudio {
+                        Image(systemName: "person.wave.2.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.black)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.yellow, in: Capsule())
+                            .accessibilityLabel("Audio generated")
+                    }
+
                     Spacer()
                 }
 
@@ -641,7 +651,7 @@ struct ReaderLibraryCardView: View {
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(.black)
                             .frame(width: 44, height: 44)
-                            .background(.white, in: Circle())
+                            .background(hasGeneratedAudio ? Color.yellow : .white, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .disabled(isImporting)
