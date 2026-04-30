@@ -270,6 +270,10 @@ struct ReaderGenerateAudioSheet: View {
 
             Text("Anything Reader will synthesize the complete normalized document in the background and save the audio locally for later use.")
                 .foregroundStyle(.secondary)
+            
+            Text("Note: Depending on your system, this can take several miutes to hours.")
+                .font(.body.weight(.bold))
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
