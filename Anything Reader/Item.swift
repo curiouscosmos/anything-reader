@@ -297,6 +297,10 @@ final class LibraryEntry {
     var chapterCount: Int
     var sectionCount: Int?
     var importStateRawValue: String?
+    var generatedAudioFilePath: String?
+    var generatedAudioFileName: String?
+    var generatedAudioVoiceName: String?
+    var generatedAudioUpdatedAt: Date?
     var readingJumpTargetsData: Data?
     var currentReadingPositionIndex: Int?
     var currentReadingPositionTotalCount: Int?
@@ -326,6 +330,10 @@ final class LibraryEntry {
         chapterCount: Int = 0,
         sectionCount: Int = 0,
         importState: LibraryEntryImportState? = nil,
+        generatedAudioFilePath: String? = nil,
+        generatedAudioFileName: String? = nil,
+        generatedAudioVoiceName: String? = nil,
+        generatedAudioUpdatedAt: Date? = nil,
         readingJumpTargets: [ReaderJumpTarget] = [],
         currentReadingPositionIndex: Int? = nil,
         currentReadingPositionTotalCount: Int? = nil,
@@ -354,6 +362,10 @@ final class LibraryEntry {
         self.chapterCount = chapterCount
         self.sectionCount = sectionCount > 0 ? sectionCount : nil
         self.importStateRawValue = importState?.rawValue
+        self.generatedAudioFilePath = generatedAudioFilePath
+        self.generatedAudioFileName = generatedAudioFileName
+        self.generatedAudioVoiceName = generatedAudioVoiceName
+        self.generatedAudioUpdatedAt = generatedAudioUpdatedAt
         self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
         self.currentReadingPositionIndex = currentReadingPositionIndex
         self.currentReadingPositionTotalCount = currentReadingPositionTotalCount
@@ -398,6 +410,11 @@ final class LibraryEntry {
 
     var isImporting: Bool {
         importState == .importing
+    }
+
+    var generatedAudioFileURL: URL? {
+        guard let generatedAudioFilePath else { return nil }
+        return URL(fileURLWithPath: generatedAudioFilePath)
     }
 
     var textLanguage: TextLanguage? {

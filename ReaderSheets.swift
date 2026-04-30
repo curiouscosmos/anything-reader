@@ -209,6 +209,92 @@ struct ReaderImportLanguageSheet: View {
     }
 }
 
+// Audio export sheet shown before the full normalized file is rendered to a local audio file.
+struct ReaderGenerateAudioSheet: View {
+    @Binding var voiceName: String
+
+    let voiceOptions: [KokoroVoiceOption]
+    let onGenerate: () -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    headerSection
+
+                    formSection(title: "Voice") {
+                        Picker("Default Voice", selection: $voiceName) {
+                            ForEach(voiceOptions, id: \.voiceName) { voice in
+                                Text("\(voice.genderSymbol) \(voice.dropdownLabel)")
+                                    .tag(voice.voiceName)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Text("The selected voice will be used to synthesize the complete normalized document into a local audio export.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle("Generate Audio file")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        onCancel()
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Generate Audio file") {
+                        onGenerate()
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .interactiveDismissDisabled(true)
+    }
+
+    @ViewBuilder
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Export the whole file")
+                .font(.title2.weight(.bold))
+
+            Text("Anything Reader will synthesize the complete normalized document in the background and save the audio locally for later use.")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(.thinMaterial, in: Rectangle())
+    }
+
+    @ViewBuilder
+    private func formSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(.thinMaterial, in: Rectangle())
+        }
+    }
+}
+
 // Modal for Kokoro model downloads.
 struct ReaderKokoroDownloadSheet: View {
     @ObservedObject var modelStore: KokoroModelStore

@@ -32,6 +32,8 @@ struct ContentView: View {
     @State private var isShowingCategorySheet = false
     @State private var isShowingFileImporter = false
     @State private var isShowingImportLanguageSheet = false
+    @State private var audioGenerationSheetEntry: LibraryEntry?
+    @State private var pendingAudioDeletionEntry: LibraryEntry?
     @State private var newCategoryName = ""
     @State private var pastedTitle = ""
     @State private var pastedText = ""
@@ -42,8 +44,10 @@ struct ContentView: View {
     @State private var isProcessingImport = false
     @State private var pendingImportContext: PendingImportContext?
     @State private var pendingImportEntry: LibraryEntry?
+    @State private var pendingAudioGenerationEntry: LibraryEntry?
     @State private var detectedDocumentLanguage: TextLanguage = .english
     @State private var pendingDocumentLanguage: TextLanguage = .english
+    @State private var pendingAudioVoiceName: String = KokoroVoiceCatalog.defaultVoiceName
     @State private var isTranslateDocument = false
     @State private var translateToLanguage: TextLanguage = .english
     @State private var playbackState = PlaybackState()
@@ -53,6 +57,7 @@ struct ContentView: View {
     @State private var playbackTask: Task<Void, Never>?
     @State private var playbackWarmupTask: Task<Void, Never>?
     @State private var readingNavigationTask: Task<Void, Never>?
+    @State private var audioGenerationTask: Task<Void, Never>?
     @State private var playbackChunks: [String] = []
     @State private var playbackChunkIndex: Int = 0
     @State private var playbackSessionToken = UUID()
@@ -61,6 +66,7 @@ struct ContentView: View {
     @State private var coverArtGenerationKeys: Set<String> = []
     @State private var didBackfillMissingCoverArt = false
     @State private var didPresentKokoroDownloadGate = false
+    @State private var audioGenerationAlertMessage: String?
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
     @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
@@ -200,6 +206,16 @@ struct ContentView: View {
                 onCancel: discardPendingImport
             )
         }
+        .sheet(item: $audioGenerationSheetEntry) { entry in
+            ReaderGenerateAudioSheet(
+                voiceName: $pendingAudioVoiceName,
+                voiceOptions: KokoroVoiceCatalog.allVoices,
+                onGenerate: {
+                    confirmPendingAudioGeneration(for: entry)
+                },
+                onCancel: discardPendingAudioGeneration
+            )
+        }
         .fileImporter(
             isPresented: $isShowingFileImporter,
             allowedContentTypes: uploadAllowedContentTypes,
@@ -249,6 +265,37 @@ struct ContentView: View {
             }
         } message: {
             Text(viewerAlertMessage ?? "The normalized TXT file could not be opened.")
+        }
+        .confirmationDialog(
+            "Delete audio file?",
+            isPresented: Binding(
+                get: { pendingAudioDeletionEntry != nil },
+                set: { if !$0 { pendingAudioDeletionEntry = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete audio file", role: .destructive) {
+                confirmAudioDeletion()
+            }
+
+            Button("Cancel", role: .cancel) {
+                pendingAudioDeletionEntry = nil
+            }
+        } message: {
+            Text("This will remove the generated audio export from the local library and delete the file from disk.")
+        }
+        .alert(
+            "Audio Generation Failed",
+            isPresented: Binding(
+                get: { audioGenerationAlertMessage != nil },
+                set: { if !$0 { audioGenerationAlertMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                audioGenerationAlertMessage = nil
+            }
+        } message: {
+            Text(audioGenerationAlertMessage ?? "The audio file could not be generated.")
         }
         .preferredColorScheme(preferredMode.colorScheme)
         .tint(.green)
@@ -446,10 +493,13 @@ struct ContentView: View {
                             coverArtGenerationKeys: coverArtGenerationKeys,
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
+                            isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
                             onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
+                            onGenerateAudio: openAudioGenerationSheet(for:),
+                            onDeleteAudio: openAudioDeletionConfirmation(for:),
                             onClearCategory: { assign($0, to: nil) },
                             onAssignCategory: { assign($0, to: $1) },
                             onDelete: deleteEntry
@@ -464,10 +514,13 @@ struct ContentView: View {
                             coverArtGenerationKeys: coverArtGenerationKeys,
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
+                            isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
                             onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
+                            onGenerateAudio: openAudioGenerationSheet(for:),
+                            onDeleteAudio: openAudioDeletionConfirmation(for:),
                             onClearCategory: { assign($0, to: nil) },
                             onAssignCategory: { assign($0, to: $1) },
                             onDelete: deleteEntry
@@ -482,10 +535,13 @@ struct ContentView: View {
                             coverArtGenerationKeys: coverArtGenerationKeys,
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
+                            isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             onPrimaryAction: handlePrimaryCardAction(for:),
                             onPlay: { entry in startPlayback(for: entry) },
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
+                            onGenerateAudio: openAudioGenerationSheet(for:),
+                            onDeleteAudio: openAudioDeletionConfirmation(for:),
                             onClearCategory: { assign($0, to: nil) },
                             onAssignCategory: { assign($0, to: $1) },
                             onDelete: deleteEntry
@@ -1412,6 +1468,129 @@ struct ContentView: View {
         guard let activeEntry else { return false }
         return activeEntry.persistentModelID == entry.persistentModelID
             && playbackState.isPlaying
+    }
+
+    @MainActor
+    private func isEntryGeneratingAudio(_ entry: LibraryEntry) -> Bool {
+        guard audioGenerationTask != nil else { return false }
+        guard let pendingAudioGenerationEntry else { return false }
+        return pendingAudioGenerationEntry.persistentModelID == entry.persistentModelID
+    }
+
+    @MainActor
+    private func openAudioGenerationSheet(for entry: LibraryEntry) {
+        guard audioGenerationTask == nil else {
+            audioGenerationAlertMessage = "Finish the current audio export before starting another one."
+            return
+        }
+
+        guard normalizedTextFileURL(for: entry) != nil else {
+            audioGenerationAlertMessage = "This item does not have a normalized file to export."
+            return
+        }
+
+        pendingAudioGenerationEntry = entry
+        pendingAudioVoiceName = kokoroVoiceName
+        audioGenerationSheetEntry = entry
+    }
+
+    @MainActor
+    private func confirmPendingAudioGeneration(for entry: LibraryEntry) {
+        guard audioGenerationTask == nil else { return }
+
+        pendingAudioGenerationEntry = entry
+        audioGenerationSheetEntry = nil
+
+        let voiceName = pendingAudioVoiceName
+        audioGenerationTask = Task {
+            await processPendingAudioGeneration(for: entry, voiceName: voiceName)
+        }
+    }
+
+    @MainActor
+    private func discardPendingAudioGeneration() {
+        audioGenerationTask?.cancel()
+        audioGenerationTask = nil
+        pendingAudioGenerationEntry = nil
+        audioGenerationSheetEntry = nil
+        pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+    }
+
+    @MainActor
+    private func processPendingAudioGeneration(for entry: LibraryEntry, voiceName: String) async {
+        defer {
+            audioGenerationTask = nil
+        }
+
+        guard let normalizedTextFileURL = normalizedTextFileURL(for: entry) else {
+            pendingAudioGenerationEntry = nil
+            audioGenerationAlertMessage = "This item does not have a normalized file to export."
+            return
+        }
+
+        guard let voice = KokoroVoiceCatalog.allVoices.first(where: { $0.voiceName == voiceName }) else {
+            pendingAudioGenerationEntry = nil
+            audioGenerationAlertMessage = "The selected voice could not be found."
+            return
+        }
+
+        do {
+            let audioFileURL = try await LibraryAudioGenerationService.shared.generateAudioFile(
+                from: normalizedTextFileURL,
+                entryTitle: entry.title,
+                voice: voice
+            )
+
+            entry.generatedAudioFilePath = audioFileURL.path
+            entry.generatedAudioFileName = audioFileURL.lastPathComponent
+            entry.generatedAudioVoiceName = voice.voiceName
+            entry.generatedAudioUpdatedAt = .now
+            try? modelContext.save()
+
+            pendingAudioGenerationEntry = nil
+            pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+            successToastMessage = "\(entry.title) audio file is ready."
+        } catch is CancellationError {
+            pendingAudioGenerationEntry = nil
+            pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+        } catch {
+            pendingAudioGenerationEntry = nil
+            pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+            audioGenerationAlertMessage = error.localizedDescription
+        }
+    }
+
+    private func normalizedTextFileURL(for entry: LibraryEntry) -> URL? {
+        guard let normalizedTextFilePath = entry.normalizedTextFilePath else { return nil }
+        return URL(fileURLWithPath: normalizedTextFilePath)
+    }
+
+    @MainActor
+    private func openAudioDeletionConfirmation(for entry: LibraryEntry) {
+        guard entry.generatedAudioFileURL != nil else {
+            audioGenerationAlertMessage = "This item does not have a generated audio file to delete."
+            return
+        }
+
+        pendingAudioDeletionEntry = entry
+    }
+
+    @MainActor
+    private func confirmAudioDeletion() {
+        guard let entry = pendingAudioDeletionEntry else { return }
+        pendingAudioDeletionEntry = nil
+
+        if let audioURL = entry.generatedAudioFileURL {
+            try? FileManager.default.removeItem(at: audioURL)
+        }
+
+        entry.generatedAudioFilePath = nil
+        entry.generatedAudioFileName = nil
+        entry.generatedAudioVoiceName = nil
+        entry.generatedAudioUpdatedAt = nil
+        try? modelContext.save()
+
+        successToastMessage = "Deleted generated audio for \(entry.title)."
     }
 
     @MainActor

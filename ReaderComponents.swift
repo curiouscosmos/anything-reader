@@ -409,10 +409,13 @@ struct ReaderLibrarySectionView: View {
     let coverArtGenerationKeys: Set<String>
     let preferredMode: AppearanceMode
     let isEntryPlaying: (LibraryEntry) -> Bool
+    let isEntryGeneratingAudio: (LibraryEntry) -> Bool
     let onPrimaryAction: (LibraryEntry) -> Void
     let onPlay: (LibraryEntry) -> Void
     let onView: (LibraryEntry) -> Void
     let onRevealLocation: (LibraryEntry) -> Void
+    let onGenerateAudio: (LibraryEntry) -> Void
+    let onDeleteAudio: (LibraryEntry) -> Void
     let onClearCategory: (LibraryEntry) -> Void
     let onAssignCategory: (LibraryEntry, String) -> Void
     let onDelete: (LibraryEntry) -> Void
@@ -442,10 +445,14 @@ struct ReaderLibrarySectionView: View {
                             preferredMode: preferredMode,
                             isPlaying: isEntryPlaying(entry),
                             isImporting: entry.isImporting,
+                            isGeneratingAudio: isEntryGeneratingAudio(entry),
+                            hasGeneratedAudio: entry.generatedAudioFileURL != nil,
                             onPrimaryAction: { onPrimaryAction(entry) },
                             onPlay: { onPlay(entry) },
                             onView: { onView(entry) },
                             onRevealLocation: { onRevealLocation(entry) },
+                            onGenerateAudio: { onGenerateAudio(entry) },
+                            onDeleteAudio: { onDeleteAudio(entry) },
                             onClearCategory: { onClearCategory(entry) },
                             onAssignCategory: { categoryName in
                                 onAssignCategory(entry, categoryName)
@@ -490,10 +497,14 @@ struct ReaderLibraryCardView: View {
     let preferredMode: AppearanceMode
     let isPlaying: Bool
     let isImporting: Bool
+    let isGeneratingAudio: Bool
+    let hasGeneratedAudio: Bool
     let onPrimaryAction: () -> Void
     let onPlay: () -> Void
     let onView: () -> Void
     let onRevealLocation: () -> Void
+    let onGenerateAudio: () -> Void
+    let onDeleteAudio: () -> Void
     let onClearCategory: () -> Void
     let onAssignCategory: (String) -> Void
     let onDelete: () -> Void
@@ -504,16 +515,23 @@ struct ReaderLibraryCardView: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             cardArtworkLayer
-            cardFooterLayer
+            if !isImporting && !isGeneratingAudio {
+                cardFooterLayer
+            }
             if isImporting {
-                importOverlay
+                importOverlay(text: "Preparing file...")
+                    .zIndex(1)
+            }
+            if isGeneratingAudio {
+                importOverlay(text: "Generating audio...")
+                    .zIndex(1)
             }
             cardMenuButton
         }
-        .frame(maxWidth: .infinity, minHeight: 320, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 380, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 0, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 0, style: .continuous)
                 .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.14 : 0.10), lineWidth: 1)
         )
         .shadow(color: .black.opacity(preferredMode == .light ? 0.10 : 0.22), radius: 14, y: 8)
@@ -655,28 +673,21 @@ struct ReaderLibraryCardView: View {
         .padding(.vertical, 2)
     }
 
-    private var importOverlay: some View {
+    private func importOverlay(text: String) -> some View {
         VStack {
-            HStack {
-                Spacer()
-                Text("Importing")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.35), in: Capsule())
-            }
             ProgressView()
                 .controlSize(.large)
                 .tint(.white)
-            Text("Normalizing file...")
-                .font(.caption.weight(.semibold))
+            Text(text)
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
                 .padding(.top, 10)
                 .padding(.bottom, 24)
         }
-        .padding(16)
-        .background(Color.black.opacity(0.15))
+        .padding(EdgeInsets(top: 24, leading: 44, bottom: 8, trailing: 44))
+        .background(Color.black.opacity(0.42))
+        .cornerRadius(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var cardMenuButton: some View {
@@ -691,8 +702,8 @@ struct ReaderLibraryCardView: View {
                 .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
         }
         .padding(12)
-        .disabled(isImporting)
-        .opacity(isImporting ? 0.45 : 1)
+        // .disabled(isImporting || isGeneratingAudio)
+        // .opacity((isImporting || isGeneratingAudio) ? 0.45 : 1)
         .popover(isPresented: $isShowingCardMenu, arrowEdge: .top) {
             ReaderCardMenuPopoverView(
                 categories: categories,
@@ -700,13 +711,17 @@ struct ReaderLibraryCardView: View {
                 onPlay: onPlay,
                 onView: onView,
                 onRevealLocation: onRevealLocation,
+                onGenerateAudio: onGenerateAudio,
+                onDeleteAudio: onDeleteAudio,
+                hasGeneratedAudio: hasGeneratedAudio,
                 onClearCategory: onClearCategory,
                 onAssignCategory: onAssignCategory,
                 onDelete: {
                     isShowingDeleteConfirmation = true
-                }
+                },
+                isLoading: isImporting || isGeneratingAudio
             )
-            .frame(width: 240)
+            .frame(width: 260)
             .padding(12)
         }
     }
@@ -793,18 +808,29 @@ struct ReaderCardMenuPopoverView: View {
     let onPlay: () -> Void
     let onView: () -> Void
     let onRevealLocation: () -> Void
+    let onGenerateAudio: () -> Void
+    let onDeleteAudio: () -> Void
+    let hasGeneratedAudio: Bool
     let onClearCategory: () -> Void
     let onAssignCategory: (String) -> Void
     let onDelete: () -> Void
+    let isLoading: Bool
 
     var body: some View {
         // Keep the menu actions grouped and visually balanced.
         VStack(alignment: .leading, spacing: 10) {
-            menuButton(title: "Play now", systemImage: "play.fill", action: onPlay)
-            menuButton(title: "View text", systemImage: "doc.text.magnifyingglass", action: onView)
-            menuButton(title: "Open file location", systemImage: "folder", action: onRevealLocation)
+            if !isLoading {
+                menuButton(title: "Play now", systemImage: "play.fill", action: onPlay)
+                menuButton(title: "View text", systemImage: "doc.text.magnifyingglass", action: onView)
+                menuButton(title: "Open file location", systemImage: "folder", action: onRevealLocation)
+                if hasGeneratedAudio {
+                    menuButton(title: "Delete audio file", systemImage: "trash", role: .destructive, action: onDeleteAudio)
+                } else {
+                    menuButton(title: "Generate Audio file", systemImage: "waveform.circle.fill", action: onGenerateAudio)
+                }
 
-            Divider()
+                Divider()
+            }
 
             menuButton(title: "Clear category", systemImage: "tag.slash", action: onClearCategory)
             menuButton(title: "Delete", systemImage: "trash", role: .destructive, action: onDelete)
@@ -848,11 +874,11 @@ struct ReaderCardMenuPopoverView: View {
                     .frame(width: 18)
 
                 Text(title)
-                    .font(.subheadline.weight(.medium))
+                    .font(.body.weight(.medium))
 
                 Spacer()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: 260, alignment: .leading)
             .foregroundStyle(role == .destructive ? .red : primaryTextColor)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
