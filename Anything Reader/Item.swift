@@ -301,6 +301,7 @@ final class LibraryEntry {
     var generatedAudioFileName: String?
     var generatedAudioVoiceName: String?
     var generatedAudioUpdatedAt: Date?
+    var generatedAudioPlaybackPositionSeconds: Int?
     var readingJumpTargetsData: Data?
     var currentReadingPositionIndex: Int?
     var currentReadingPositionTotalCount: Int?
@@ -334,6 +335,7 @@ final class LibraryEntry {
         generatedAudioFileName: String? = nil,
         generatedAudioVoiceName: String? = nil,
         generatedAudioUpdatedAt: Date? = nil,
+        generatedAudioPlaybackPositionSeconds: Int? = nil,
         readingJumpTargets: [ReaderJumpTarget] = [],
         currentReadingPositionIndex: Int? = nil,
         currentReadingPositionTotalCount: Int? = nil,
@@ -366,6 +368,7 @@ final class LibraryEntry {
         self.generatedAudioFileName = generatedAudioFileName
         self.generatedAudioVoiceName = generatedAudioVoiceName
         self.generatedAudioUpdatedAt = generatedAudioUpdatedAt
+        self.generatedAudioPlaybackPositionSeconds = generatedAudioPlaybackPositionSeconds
         self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
         self.currentReadingPositionIndex = currentReadingPositionIndex
         self.currentReadingPositionTotalCount = currentReadingPositionTotalCount
@@ -415,6 +418,10 @@ final class LibraryEntry {
     var generatedAudioFileURL: URL? {
         guard let generatedAudioFilePath else { return nil }
         return URL(fileURLWithPath: generatedAudioFilePath)
+    }
+
+    var generatedAudioPlaybackPosition: TimeInterval {
+        TimeInterval(generatedAudioPlaybackPositionSeconds ?? 0)
     }
 
     var textLanguage: TextLanguage? {

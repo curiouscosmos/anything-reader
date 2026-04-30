@@ -53,8 +53,10 @@ struct ContentView: View {
     @State private var translateToLanguage: TextLanguage = .english
     @State private var importAwakeAssertion: NSObjectProtocol?
     @State private var audioGenerationAwakeAssertion: NSObjectProtocol?
+    @State private var generatedAudioAlertMessage: String?
     @State private var playbackState = PlaybackState()
     @State private var activeEntry: LibraryEntry?
+    @State private var activeGeneratedAudioEntry: LibraryEntry?
     @State private var viewerEntry: LibraryEntry?
     @State private var viewerAlertMessage: String?
     @State private var playbackTask: Task<Void, Never>?
@@ -74,6 +76,7 @@ struct ContentView: View {
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
     @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
+    @StateObject private var generatedAudioPlaybackService = GeneratedAudioPlaybackService.shared
     @State private var translationCoordinator = DocumentTranslationCoordinator()
 
     private enum ReadingNavigationDirection {
@@ -151,7 +154,30 @@ struct ContentView: View {
             .navigationSplitViewStyle(.balanced)
         }
         .safeAreaInset(edge: .bottom) {
-            if shouldShowPlayerBar {
+            if shouldShowGeneratedAudioPlayerBar, let entry = activeGeneratedAudioEntry {
+                GeneratedAudioPlayerBarView(
+                    title: entry.title,
+                    subtitle: entry.generatedAudioFileName ?? entry.originalFileName ?? entry.fileExtension.uppercased(),
+                    avatarSymbol: entry.avatarSymbolName,
+                    accentName: entry.accentName,
+                    isPlaying: generatedAudioPlaybackService.isPlaying,
+                    elapsedSeconds: generatedAudioPlaybackService.currentElapsedSeconds,
+                    durationSeconds: generatedAudioPlaybackService.currentDurationSeconds,
+                    volume: Binding(
+                        get: { generatedAudioPlaybackService.volume },
+                        set: { generatedAudioPlaybackService.setVolume($0) }
+                    ),
+                    playbackSpeed: Binding(
+                        get: { generatedAudioPlaybackService.playbackSpeed },
+                        set: { generatedAudioPlaybackService.setPlaybackSpeed($0) }
+                    ),
+                    preferredMode: preferredMode,
+                    onTogglePlayPause: toggleGeneratedAudioPlayback,
+                    onStop: stopGeneratedAudioPlayback
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            } else if shouldShowPlayerBar {
                 ReaderPlayerBarView(
                     playbackState: $playbackState,
                     volume: Binding(
@@ -306,6 +332,19 @@ struct ContentView: View {
         } message: {
             Text(audioGenerationAlertMessage ?? "The audio file could not be generated.")
         }
+        .alert(
+            "Audio Playback Failed",
+            isPresented: Binding(
+                get: { generatedAudioAlertMessage != nil },
+                set: { if !$0 { generatedAudioAlertMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                generatedAudioAlertMessage = nil
+            }
+        } message: {
+            Text(generatedAudioAlertMessage ?? "The generated audio file could not be played.")
+        }
         .preferredColorScheme(preferredMode.colorScheme)
         .tint(.green)
         .overlay {
@@ -402,6 +441,10 @@ struct ContentView: View {
 
     private var shouldShowPlayerBar: Bool {
         activeEntry != nil && !readerPlaybackService.isBufferingFirstChunk
+    }
+
+    private var shouldShowGeneratedAudioPlayerBar: Bool {
+        activeGeneratedAudioEntry != nil && generatedAudioPlaybackService.hasLoadedAudio
     }
 
     private func playKokoroVoiceSample(_ voice: KokoroVoiceOption) {
@@ -504,8 +547,8 @@ struct ContentView: View {
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
-                            onPrimaryAction: handlePrimaryCardAction(for:),
-                            onPlay: { entry in startPlayback(for: entry) },
+                            onPrimaryAction: playLibraryEntry(_:),
+                            onPlay: playLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
@@ -527,8 +570,8 @@ struct ContentView: View {
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
-                            onPrimaryAction: handlePrimaryCardAction(for:),
-                            onPlay: { entry in startPlayback(for: entry) },
+                            onPrimaryAction: playLibraryEntry(_:),
+                            onPlay: playLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
@@ -550,8 +593,8 @@ struct ContentView: View {
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
-                            onPrimaryAction: handlePrimaryCardAction(for:),
-                            onPlay: { entry in startPlayback(for: entry) },
+                            onPrimaryAction: playLibraryEntry(_:),
+                            onPlay: playLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
@@ -679,6 +722,10 @@ struct ContentView: View {
             playbackState = PlaybackState()
             playbackChunks = []
             playbackChunkIndex = 0
+        }
+
+        if activeGeneratedAudioEntry?.persistentModelID == entry.persistentModelID {
+            stopGeneratedAudioPlayback()
         }
 
         if viewerEntry?.persistentModelID == entry.persistentModelID {
@@ -1311,7 +1358,26 @@ struct ContentView: View {
     // MARK: - Playback
 
     @MainActor
+    private func playLibraryEntry(_ entry: LibraryEntry) {
+        if let generatedAudioURL = entry.generatedAudioFileURL {
+            if generatedAudioPlaybackService.hasLoadedAudio(for: generatedAudioURL) {
+                toggleGeneratedAudioPlayback()
+            } else {
+                startGeneratedAudioPlayback(for: entry, fileURL: generatedAudioURL)
+            }
+            return
+        }
+
+        if isEntryPlaying(entry) {
+            togglePlayback()
+        } else {
+            startPlayback(for: entry)
+        }
+    }
+
+    @MainActor
     private func startPlayback(for entry: LibraryEntry, readingPositionOverrideText: String? = nil) {
+        stopGeneratedAudioPlayback()
         playbackSessionToken = UUID()
         let sessionToken = playbackSessionToken
         let resumeProgress = playbackResumeProgress(for: entry)
@@ -1380,6 +1446,42 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func startGeneratedAudioPlayback(for entry: LibraryEntry, fileURL: URL) {
+        readerPlaybackService.stop()
+        stopPlaybackTask()
+        stopPlaybackWarmupTask()
+        cancelReadingNavigationTask()
+        playbackState = PlaybackState()
+        activeEntry = nil
+        playbackChunks = []
+        playbackChunkIndex = 0
+        playbackSessionToken = UUID()
+
+        activeGeneratedAudioEntry = entry
+        entry.lastOpened = .now
+        try? modelContext.save()
+
+        let resumeTime = entry.generatedAudioPlaybackPosition
+
+        generatedAudioPlaybackService.play(
+            fileURL: fileURL,
+            title: entry.title,
+            startingTime: resumeTime,
+            onProgress: { elapsedSeconds, _ in
+                self.persistGeneratedAudioPlaybackProgress(for: entry, elapsedSeconds: elapsedSeconds)
+            },
+            onFinished: {
+                self.persistGeneratedAudioPlaybackProgress(for: entry, elapsedSeconds: 0)
+                self.stopGeneratedAudioPlayback()
+            },
+            onFailure: { message in
+                self.stopGeneratedAudioPlayback()
+                self.generatedAudioAlertMessage = message
+            }
+        )
+    }
+
+    @MainActor
     private func togglePlayback() {
         if playbackState.isPlaying {
             playbackState.isPlaying = false
@@ -1396,6 +1498,28 @@ struct ContentView: View {
         }
 
         persistPlayerProgress()
+    }
+
+    @MainActor
+    private func toggleGeneratedAudioPlayback() {
+        guard activeGeneratedAudioEntry != nil else { return }
+        generatedAudioPlaybackService.togglePlayback()
+    }
+
+    @MainActor
+    private func stopGeneratedAudioPlayback() {
+        generatedAudioPlaybackService.stop()
+        if let activeGeneratedAudioEntry {
+            activeGeneratedAudioEntry.lastOpened = .now
+        }
+        activeGeneratedAudioEntry = nil
+    }
+
+    @MainActor
+    private func persistGeneratedAudioPlaybackProgress(for entry: LibraryEntry, elapsedSeconds: Int) {
+        entry.generatedAudioPlaybackPositionSeconds = max(0, elapsedSeconds)
+        entry.lastOpened = .now
+        try? modelContext.save()
     }
 
     @MainActor
@@ -1487,6 +1611,11 @@ struct ContentView: View {
 
     @MainActor
     private func isEntryPlaying(_ entry: LibraryEntry) -> Bool {
+        if let generatedAudioURL = entry.generatedAudioFileURL,
+           generatedAudioPlaybackService.isPlayingAudio(for: generatedAudioURL) {
+            return true
+        }
+
         guard let activeEntry else { return false }
         return activeEntry.persistentModelID == entry.persistentModelID
             && playbackState.isPlaying
@@ -1597,6 +1726,7 @@ struct ContentView: View {
             entry.generatedAudioFileName = audioFileURL.lastPathComponent
             entry.generatedAudioVoiceName = voice.voiceName
             entry.generatedAudioUpdatedAt = .now
+            entry.generatedAudioPlaybackPositionSeconds = 0
             try? modelContext.save()
 
             pendingAudioGenerationEntry = nil
@@ -1637,6 +1767,10 @@ struct ContentView: View {
         pendingAudioDeletionEntry = nil
         cancelAudioGenerationIfNeeded(for: entry)
 
+        if activeGeneratedAudioEntry?.persistentModelID == entry.persistentModelID {
+            stopGeneratedAudioPlayback()
+        }
+
         if let audioURL = entry.generatedAudioFileURL {
             try? FileManager.default.removeItem(at: audioURL)
         }
@@ -1645,6 +1779,7 @@ struct ContentView: View {
         entry.generatedAudioFileName = nil
         entry.generatedAudioVoiceName = nil
         entry.generatedAudioUpdatedAt = nil
+        entry.generatedAudioPlaybackPositionSeconds = nil
         try? modelContext.save()
 
         successToastMessage = "Deleted generated audio for \(entry.title)."
@@ -1711,11 +1846,7 @@ struct ContentView: View {
 
     @MainActor
     private func handlePrimaryCardAction(for entry: LibraryEntry) {
-        if isEntryPlaying(entry) {
-            togglePlayback()
-        } else {
-            startPlayback(for: entry)
-        }
+        playLibraryEntry(entry)
     }
 
     private func readingPositionText(for entry: LibraryEntry, progress: Double) -> String {

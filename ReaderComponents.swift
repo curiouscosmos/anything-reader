@@ -1358,6 +1358,180 @@ struct ReaderPlayerBarView: View {
     }
 }
 
+// MARK: - Generated Audio Player
+// Separate playback surface for exported .m4a files so Kokoro playback stays isolated.
+struct GeneratedAudioPlayerBarView: View {
+    let title: String
+    let subtitle: String
+    let avatarSymbol: String
+    let accentName: String
+    let isPlaying: Bool
+    let elapsedSeconds: Int
+    let durationSeconds: Int
+    @Binding var volume: Double
+    @Binding var playbackSpeed: Double
+    let preferredMode: AppearanceMode
+    let onTogglePlayPause: () -> Void
+    let onStop: () -> Void
+
+    var body: some View {
+        ZStack {
+            ViewThatFits(in: .horizontal) {
+                horizontalLayout
+                verticalLayout
+            }
+        }
+        .padding(16)
+        .background(panelBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(elevatedBackground, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(preferredMode == .light ? 0.12 : 0.35), radius: 20, y: 8)
+    }
+
+    private var horizontalLayout: some View {
+            HStack(spacing: 16) {
+            mediaInfo
+            Spacer()
+            VStack(alignment: .trailing, spacing: 14) {
+                controls
+                VStack(spacing: 10) {
+                    ReaderPlaybackSpeedControlView(
+                        playbackSpeed: $playbackSpeed,
+                        preferredMode: preferredMode
+                    )
+                    ReaderVolumeControlView(
+                        volume: $volume,
+                        preferredMode: preferredMode
+                    )
+                }
+                .frame(width: 240)
+            }
+        }
+    }
+
+    private var verticalLayout: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            mediaInfo
+            controls
+            VStack(spacing: 10) {
+                ReaderPlaybackSpeedControlView(
+                    playbackSpeed: $playbackSpeed,
+                    preferredMode: preferredMode
+                )
+                ReaderVolumeControlView(
+                    volume: $volume,
+                    preferredMode: preferredMode
+                )
+            }
+        }
+    }
+
+    private var mediaInfo: some View {
+        HStack(spacing: 16) {
+            ReaderAvatarView(symbolName: avatarSymbol, accentName: accentName, preferredMode: preferredMode)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .foregroundStyle(primaryTextColor)
+
+                Text(subtitle)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .foregroundStyle(secondaryTextColor)
+
+                HStack(spacing: 10) {
+                    seekBar
+                        .frame(maxWidth: 520)
+
+                    Text(playbackTimeText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(secondaryTextColor)
+                        .frame(minWidth: 84, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 12) {
+            roundControlButton(icon: "stop.fill") {
+                onStop()
+            }
+
+            roundControlButton(icon: isPlaying ? "pause.fill" : "play.fill", isProminent: true) {
+                onTogglePlayPause()
+            }
+        }
+    }
+
+    private var seekBar: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(seekTrackColor)
+                Capsule()
+                    .fill(ReaderStyle.accentColor(named: accentName))
+                    .frame(width: max(10, geometry.size.width * playbackProgress))
+            }
+        }
+        .frame(height: 8)
+    }
+
+    private var playbackProgress: Double {
+        guard durationSeconds > 0 else { return 0 }
+        return min(max(Double(elapsedSeconds) / Double(durationSeconds), 0), 1)
+    }
+
+    private var playbackTimeText: String {
+        "\(ReaderStyle.formattedTime(elapsedSeconds)) / \(ReaderStyle.formattedTime(durationSeconds))"
+    }
+
+    private func roundControlButton(
+        icon: String,
+        isProminent: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: isProminent ? 18 : 15, weight: .semibold))
+                .foregroundStyle(isProminent ? Color.white : primaryTextColor)
+                .frame(width: isProminent ? 50 : 40, height: isProminent ? 50 : 40)
+                .background(
+                    Circle()
+                        .fill(
+                            isProminent
+                                ? ReaderStyle.accentColor(named: accentName)
+                                : elevatedBackground
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var panelBackground: Color {
+        preferredMode == .light ? Color.white.opacity(0.72) : Color.black.opacity(0.85)
+    }
+
+    private var elevatedBackground: Color {
+        preferredMode == .light ? Color.black.opacity(0.05) : Color.white.opacity(0.08)
+    }
+
+    private var seekTrackColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.14) : Color.white.opacity(0.18)
+    }
+
+    private var secondaryTextColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.72)
+    }
+
+    private var primaryTextColor: Color {
+        preferredMode == .light ? .black : .white
+    }
+}
+
 // MARK: - Processing Overlay
 // Full-screen overlay shown while an import is being normalized.
 struct ReaderProcessingOverlayView: View {

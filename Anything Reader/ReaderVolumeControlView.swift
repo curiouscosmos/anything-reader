@@ -53,3 +53,36 @@ struct ReaderVolumeControlView: View {
         preferredMode == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.72)
     }
 }
+
+struct ReaderPlaybackSpeedControlView: View {
+    @Binding var playbackSpeed: Double
+    let preferredMode: AppearanceMode
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speedometer")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(secondaryTextColor)
+                .frame(width: 18)
+
+            Slider(value: $playbackSpeed, in: 0.5...2.0, step: 0.1)
+                .tint(ReaderStyle.accentColor(named: "amber"))
+
+            Text("\(playbackSpeed, specifier: "%.1fx")")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(secondaryTextColor)
+                .frame(width: 40, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(surfaceColor, in: Rectangle())
+    }
+
+    private var surfaceColor: Color {
+        preferredMode == .light ? Color.white.opacity(0.56) : Color.white.opacity(0.07)
+    }
+
+    private var secondaryTextColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.72)
+    }
+}
