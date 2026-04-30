@@ -2,8 +2,10 @@
 //  GeneratedAudioPlaybackService.swift
 //  Anything Reader
 //
+//  Audio Player
 //  Plays exported library audio files without touching the Kokoro playback
-//  pipeline. This keeps generated-audio playback isolated from live TTS.
+//  pipeline. This keeps generated-audio playback isolated from live TTS and
+//  lets the app resume already rendered audio independently from narration.
 //
 
 import AVFoundation
@@ -63,6 +65,8 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
     func setPlaybackSpeed(_ newValue: Double) {
         let clamped = Self.clampPlaybackSpeed(newValue)
         playbackSpeed = clamped
+        // AVAudioPlayer can speed up already rendered audio directly, so the
+        // generated-audio player keeps speed control local to this service.
         player?.enableRate = true
         player?.rate = Float(clamped)
         UserDefaults.standard.set(clamped, forKey: Self.playbackSpeedStorageKey)
@@ -76,6 +80,8 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         onFinished: @escaping () -> Void,
         onFailure: @escaping (String) -> Void
     ) {
+        // Reuse an already loaded file when possible so resume, speed, and
+        // volume state stay intact across play/pause toggles.
         if hasLoadedAudio(for: fileURL), let player {
             self.onProgress = onProgress
             self.onFinished = onFinished
@@ -140,6 +146,8 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         guard let player, currentFileURL != nil else { return }
 
         if player.isPlaying {
+            // Pause preserves the current file URL and elapsed time so resume
+            // uses the same audio file without reloading it.
             updateProgress()
             player.pause()
             isPlaying = false
@@ -154,6 +162,8 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
     }
 
     func stop() {
+        // Stop clears all ephemeral playback state but does not delete the
+        // exported audio file on disk.
         updateProgress()
         stopProgressTimer()
         player?.stop()

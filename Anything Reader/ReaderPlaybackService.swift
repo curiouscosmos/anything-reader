@@ -2,6 +2,7 @@
 //  ReaderPlaybackService.swift
 //  Anything Reader
 //
+//  Narration player
 //  Queued Kokoro playback controller for library entries.
 //  It synthesizes chunked audio ahead of time and schedules it on a single
 //  AVAudioPlayerNode so the handoff between chunks stays gap-free.
@@ -12,7 +13,7 @@ import Combine
 import Foundation
 import SwiftData
 
-// Lightweight progress payload for the player UI.
+// Lightweight progress payload for the narration player UI.
 struct ReaderPlaybackUpdate {
     let elapsedSeconds: Int
     let durationSeconds: Int
@@ -22,6 +23,8 @@ struct ReaderPlaybackUpdate {
 }
 
 // Drives one library entry at a time through Kokoro-backed chunked playback.
+// This service stays focused on live narration so generated-audio playback can
+// remain in its own isolated player service.
 @MainActor
 final class ReaderPlaybackService: NSObject, ObservableObject {
     static let shared = ReaderPlaybackService()
@@ -92,6 +95,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         onFinished: @escaping () -> Void,
         onFailure: @escaping (String) -> Void
     ) {
+        // Starting a new narration session resets any previously scheduled
+        // chunk queue so the player can resume from the selected reading target.
         stop()
         stopRequested = false
         playbackSessionID = UUID()
@@ -127,18 +132,18 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             let estimatedTotalDuration = Self.estimatedDuration(for: chunks)
             let initialElapsed = Self.elapsedEstimate(for: chunks, upTo: startIndex)
 
-                await MainActor.run {
-                    guard self.playbackSessionID == sessionID else { return }
-                    onProgress(
-                        ReaderPlaybackUpdate(
-                            elapsedSeconds: initialElapsed,
-                            durationSeconds: estimatedTotalDuration,
-                            progress: ReaderPlaybackChunkService.progress(for: startIndex, chunkCount: chunks.count),
-                            chunkIndex: startIndex,
-                            isPlaying: true
-                        )
+            await MainActor.run {
+                guard self.playbackSessionID == sessionID else { return }
+                onProgress(
+                    ReaderPlaybackUpdate(
+                        elapsedSeconds: initialElapsed,
+                        durationSeconds: estimatedTotalDuration,
+                        progress: ReaderPlaybackChunkService.progress(for: startIndex, chunkCount: chunks.count),
+                        chunkIndex: startIndex,
+                        isPlaying: true
                     )
-                }
+                )
+            }
 
             await MainActor.run {
                 guard self.playbackSessionID == sessionID else { return }
@@ -234,8 +239,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     }
                 }
 
-                // Keep a rolling audio queue warm so the next chunk is already being
-                // synthesized while the current chunk is playing.
+                // Keep a rolling audio queue warm so the next narration chunk is
+                // already being synthesized while the current chunk is playing.
                 await primeAudioPrefetch(for: entry, chunks: chunks, voice: voice, startingAt: chunkIndex + 1, sessionID: sessionID)
             }
 
