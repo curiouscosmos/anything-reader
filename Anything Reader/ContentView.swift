@@ -51,6 +51,8 @@ struct ContentView: View {
     @State private var audioGenerationProgressValue: Double?
     @State private var isTranslateDocument = false
     @State private var translateToLanguage: TextLanguage = .english
+    @State private var importAwakeAssertion: NSObjectProtocol?
+    @State private var audioGenerationAwakeAssertion: NSObjectProtocol?
     @State private var playbackState = PlaybackState()
     @State private var activeEntry: LibraryEntry?
     @State private var viewerEntry: LibraryEntry?
@@ -77,6 +79,11 @@ struct ContentView: View {
     private enum ReadingNavigationDirection {
         case backward
         case forward
+    }
+
+    private enum IdleSleepAssertionKind {
+        case importing
+        case audio
     }
 
     private static let fallbackAvatars = [
@@ -853,6 +860,7 @@ struct ContentView: View {
         isShowingImportLanguageSheet = false
         isProcessingImport = true
         processingImportMessage = "Normalizing \(pendingImportContext?.fileName ?? "file")…"
+        beginIdleSleepAssertion(for: .importing)
         createPendingImportEntry()
 
         let selectedLanguage = pendingDocumentLanguage
@@ -865,6 +873,9 @@ struct ContentView: View {
     private func processPendingImport(documentLanguage: TextLanguage) async {
         guard let context = pendingImportContext else { return }
         guard let placeholderEntry = pendingImportEntry else { return }
+        defer {
+            endIdleSleepAssertion(for: .importing)
+        }
 
         do {
             let draft = try await DocumentIngestService.shared.extractDraft(
@@ -997,6 +1008,7 @@ struct ContentView: View {
         importFailureMessage = nil
         isProcessingImport = true
         processingImportMessage = "Retrying normalization…"
+        beginIdleSleepAssertion(for: .importing)
         createPendingImportEntry()
         Task { await processPendingImport(documentLanguage: pendingDocumentLanguage) }
     }
@@ -1037,6 +1049,7 @@ struct ContentView: View {
         pendingImportContext = nil
         pendingImportEntry = nil
         translationCoordinator.cancel()
+        endIdleSleepAssertion(for: .importing)
         detectedDocumentLanguage = .english
         pendingDocumentLanguage = .english
         isShowingImportLanguageSheet = false
@@ -1527,6 +1540,7 @@ struct ContentView: View {
         pendingAudioGenerationEntry = entry
         audioGenerationSheetEntry = nil
         audioGenerationProgressValue = 0
+        beginIdleSleepAssertion(for: .audio)
 
         let voiceName = pendingAudioVoiceName
         audioGenerationTask = Task {
@@ -1551,6 +1565,7 @@ struct ContentView: View {
         defer {
             audioGenerationTask = nil
             audioGenerationProgressValue = nil
+            endIdleSleepAssertion(for: .audio)
         }
 
         guard let normalizedTextFileURL = normalizedTextFileURL(for: entry) else {
@@ -1645,6 +1660,43 @@ struct ContentView: View {
         audioGenerationSheetEntry = nil
         pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
         audioGenerationProgressValue = nil
+        endIdleSleepAssertion(for: .audio)
+    }
+
+    @MainActor
+    private func beginIdleSleepAssertion(for kind: IdleSleepAssertionKind) {
+        let activity: NSObjectProtocol
+
+        switch kind {
+        case .importing:
+            if importAwakeAssertion != nil { return }
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: [.idleSystemSleepDisabled],
+                reason: "Normalizing file"
+            )
+            importAwakeAssertion = activity
+        case .audio:
+            if audioGenerationAwakeAssertion != nil { return }
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: [.idleSystemSleepDisabled],
+                reason: "Generating audio"
+            )
+            audioGenerationAwakeAssertion = activity
+        }
+    }
+
+    @MainActor
+    private func endIdleSleepAssertion(for kind: IdleSleepAssertionKind) {
+        switch kind {
+        case .importing:
+            guard let activity = importAwakeAssertion else { return }
+            ProcessInfo.processInfo.endActivity(activity)
+            importAwakeAssertion = nil
+        case .audio:
+            guard let activity = audioGenerationAwakeAssertion else { return }
+            ProcessInfo.processInfo.endActivity(activity)
+            audioGenerationAwakeAssertion = nil
+        }
     }
 
     @MainActor
