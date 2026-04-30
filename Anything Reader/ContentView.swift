@@ -1058,6 +1058,7 @@ struct ContentView: View {
 
         if let message {
             successToastMessage = message
+            playSuccessTone()
         } else {
             successToastMessage = nil
         }
@@ -1601,6 +1602,7 @@ struct ContentView: View {
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
             successToastMessage = "\(entry.title) audio file is ready."
+            playSuccessTone()
         } catch is CancellationError {
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
@@ -1696,6 +1698,14 @@ struct ContentView: View {
             guard let activity = audioGenerationAwakeAssertion else { return }
             ProcessInfo.processInfo.endActivity(activity)
             audioGenerationAwakeAssertion = nil
+        }
+    }
+
+    private func playSuccessTone() {
+        if let sound = NSSound(named: NSSound.Name("Glass")) {
+            sound.play()
+        } else {
+            NSSound.beep()
         }
     }
 
