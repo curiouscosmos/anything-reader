@@ -46,6 +46,7 @@ enum ReaderSourceKind: String, CaseIterable, Identifiable {
 enum ReadingStructureKind: String, Codable, CaseIterable, Identifiable {
     case page
     case chapter
+    case section
 
     var id: String { rawValue }
 }
@@ -286,6 +287,7 @@ final class LibraryEntry {
     var readingStructureKindRawValue: String?
     var pageCount: Int
     var chapterCount: Int
+    var sectionCount: Int
     var readingJumpTargetsData: Data?
     var currentReadingPositionIndex: Int?
     var currentReadingPositionTotalCount: Int?
@@ -313,6 +315,7 @@ final class LibraryEntry {
         readingStructureKind: ReadingStructureKind? = nil,
         pageCount: Int = 0,
         chapterCount: Int = 0,
+        sectionCount: Int = 0,
         readingJumpTargets: [ReaderJumpTarget] = [],
         currentReadingPositionIndex: Int? = nil,
         currentReadingPositionTotalCount: Int? = nil,
@@ -339,6 +342,7 @@ final class LibraryEntry {
         self.readingStructureKindRawValue = readingStructureKind?.rawValue
         self.pageCount = pageCount
         self.chapterCount = chapterCount
+        self.sectionCount = sectionCount
         self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
         self.currentReadingPositionIndex = currentReadingPositionIndex
         self.currentReadingPositionTotalCount = currentReadingPositionTotalCount
@@ -446,6 +450,11 @@ final class LibraryEntry {
                 return "Chapter \(position)/\(total)"
             }
             return "Chapter \(position)/\(total) · \(label)"
+        case .section:
+            if label.isEmpty {
+                return "Section \(position)/\(total)"
+            }
+            return "Section \(position)/\(total) · \(label)"
         case .none:
             return label.isEmpty ? "Item \(position)/\(total)" : "\(label)"
         }
@@ -473,6 +482,8 @@ final class LibraryEntry {
             unitLabel = "Pages"
         case .chapter:
             unitLabel = "Chapters"
+        case .section:
+            unitLabel = "Sections"
         case .none:
             unitLabel = "Items"
         }

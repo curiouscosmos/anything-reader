@@ -22,6 +22,7 @@ struct IngestedDocument {
     let readingStructureKind: ReadingStructureKind?
     let pageCount: Int
     let chapterCount: Int
+    let sectionCount: Int
     let readingJumpTargets: [ReaderJumpTarget]
 }
 
@@ -35,6 +36,7 @@ struct IngestedDocumentDraft {
     let readingStructureKind: ReadingStructureKind?
     let pageCount: Int
     let chapterCount: Int
+    let sectionCount: Int
     let readingJumpTargets: [ReaderJumpTarget]
 }
 
@@ -138,24 +140,14 @@ actor DocumentIngestService {
             guard let text = String(data: fileData, encoding: .utf8) else {
                 throw DocumentIngestError.unreadableDocument
             }
-            rawText = text
-            extractedTitle = bestTitleCandidate(from: rawText)
+            rawText = TXTReadingMetadataService.sectionedText(from: text)
+            extractedTitle = bestTitleCandidate(from: text)
             pdfExtractionMode = nil
-            readingMetadata = ReadingMetadata(
-                readingStructureKind: nil,
-                pageCount: 0,
-                chapterCount: 0,
-                readingJumpTargets: []
-            )
+            readingMetadata = TXTReadingMetadataService.readingMetadata(from: rawText)
         }
 
         let resolvedReadingMetadata: ReadingMetadata
-        switch sourceKind {
-        case .text, .pastedText:
-            resolvedReadingMetadata = TXTReadingMetadataService.readingMetadata(from: rawText)
-        default:
-            resolvedReadingMetadata = readingMetadata
-        }
+        resolvedReadingMetadata = readingMetadata
 
         return IngestedDocumentDraft(
             title: extractedTitle,
@@ -167,6 +159,7 @@ actor DocumentIngestService {
             readingStructureKind: resolvedReadingMetadata.readingStructureKind,
             pageCount: resolvedReadingMetadata.pageCount,
             chapterCount: resolvedReadingMetadata.chapterCount,
+            sectionCount: resolvedReadingMetadata.sectionCount,
             readingJumpTargets: resolvedReadingMetadata.readingJumpTargets
         )
     }
@@ -200,6 +193,7 @@ actor DocumentIngestService {
             readingStructureKind: draft.readingStructureKind,
             pageCount: draft.pageCount,
             chapterCount: draft.chapterCount,
+            sectionCount: draft.sectionCount,
             readingJumpTargets: draft.readingJumpTargets
         )
     }
@@ -292,6 +286,7 @@ private struct ReadingMetadata {
     let readingStructureKind: ReadingStructureKind?
     let pageCount: Int
     let chapterCount: Int
+    let sectionCount: Int
     let readingJumpTargets: [ReaderJumpTarget]
 }
 
@@ -430,6 +425,7 @@ private enum PDFTextExtractionService {
                 readingStructureKind: nil,
                 pageCount: 0,
                 chapterCount: 0,
+                sectionCount: 0,
                 readingJumpTargets: []
             )
         }
@@ -443,6 +439,7 @@ private enum PDFTextExtractionService {
             readingStructureKind: .page,
             pageCount: pageCount,
             chapterCount: 0,
+            sectionCount: 0,
             readingJumpTargets: jumpTargets
         )
     }
@@ -919,7 +916,7 @@ private enum EPUBTextExtractionService {
         let chapters = try chapterSections(from: document, archive: archive, opfPath: opfPath)
 
         let orderedSections = chapters.map(\.text).filter { !$0.isEmpty }
-        let extracted = orderedSections.joined(separator: "\n\n")
+        let extracted = orderedSections.joined(separator: "\n\n[[EPUB_CHAPTER_BREAK]]\n\n")
         guard !extracted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw DocumentIngestError.extractionFailed
         }
@@ -928,6 +925,7 @@ private enum EPUBTextExtractionService {
             readingStructureKind: .chapter,
             pageCount: chapters.count,
             chapterCount: chapters.count,
+            sectionCount: 0,
             readingJumpTargets: chapters.enumerated().map { index, chapter in
                 ReaderJumpTarget(index: index, title: chapter.title)
             }
@@ -1188,19 +1186,29 @@ private struct EPUBManifestItem {
 }
 
 private enum TXTReadingMetadataService {
-    nonisolated static func readingMetadata(from normalizedText: String) -> ReadingMetadata {
-        let pageChunks = splitIntoPages(from: normalizedText)
+    nonisolated static func readingMetadata(from text: String) -> ReadingMetadata {
+        let sections = splitIntoSections(from: text)
         return ReadingMetadata(
-            readingStructureKind: pageChunks.isEmpty ? nil : .page,
-            pageCount: pageChunks.count,
+            readingStructureKind: sections.isEmpty ? nil : .section,
+            pageCount: 0,
             chapterCount: 0,
-            readingJumpTargets: pageChunks.enumerated().map { index, _ in
-                ReaderJumpTarget(index: index, title: "Page \(index + 1)")
+            sectionCount: sections.count,
+            readingJumpTargets: sections.enumerated().map { index, section in
+                ReaderJumpTarget(index: index, title: section.title)
             }
         )
     }
 
-    nonisolated private static func splitIntoPages(from text: String) -> [String] {
+    nonisolated static func sectionedText(from text: String) -> String {
+        if text.contains("[[TXT_SECTION_BREAK]]") {
+            return text
+        }
+
+        let sections = splitIntoSections(from: text)
+        return sections.map(\.text).joined(separator: "\n\n[[TXT_SECTION_BREAK]]\n\n")
+    }
+
+    nonisolated private static func splitIntoSections(from text: String) -> [TXTSection] {
         let cleaned = text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -1208,10 +1216,41 @@ private enum TXTReadingMetadataService {
 
         guard !cleaned.isEmpty else { return [] }
 
-        let targetCharacterCount = 2_200
+        if cleaned.contains("[[TXT_SECTION_BREAK]]") {
+            return cleaned
+                .components(separatedBy: "[[TXT_SECTION_BREAK]]")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { TXTSection(text: $0, title: "") }
+        }
+
         let paragraphs = cleaned.components(separatedBy: "\n\n")
-        var pages: [String] = []
-        var buffer = ""
+        var sections: [TXTSection] = []
+        var buffer: [String] = []
+        var sectionTitle: String?
+
+        func flushBuffer() {
+            let sectionText = buffer
+                .joined(separator: "\n\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !sectionText.isEmpty else {
+                buffer.removeAll(keepingCapacity: true)
+                sectionTitle = nil
+                return
+            }
+
+            let splitChunks = splitOversizedSection(sectionText)
+            if splitChunks.count == 1 {
+                sections.append(TXTSection(text: sectionText, title: sectionTitle ?? ""))
+            } else {
+                for (index, chunk) in splitChunks.enumerated() {
+                    sections.append(TXTSection(text: chunk, title: index == 0 ? (sectionTitle ?? "") : ""))
+                }
+            }
+
+            buffer.removeAll(keepingCapacity: true)
+            sectionTitle = nil
+        }
 
         for paragraph in paragraphs {
             let paragraphText = paragraph
@@ -1219,21 +1258,92 @@ private enum TXTReadingMetadataService {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !paragraphText.isEmpty else { continue }
 
+            if isHeadingLike(paragraphText), !buffer.isEmpty {
+                flushBuffer()
+            }
+
             if buffer.isEmpty {
-                buffer = paragraphText
-            } else if buffer.count + 2 + paragraphText.count <= targetCharacterCount {
-                buffer += "\n\n"
-                buffer += paragraphText
+                sectionTitle = isHeadingLike(paragraphText) ? cleanedHeadingTitle(from: paragraphText) : nil
+                buffer.append(paragraphText)
+                continue
+            }
+
+            let candidateLength = buffer.joined(separator: "\n\n").count + 2 + paragraphText.count
+            if candidateLength <= 2_400 {
+                buffer.append(paragraphText)
             } else {
-                pages.append(buffer)
-                buffer = paragraphText
+                flushBuffer()
+                sectionTitle = isHeadingLike(paragraphText) ? cleanedHeadingTitle(from: paragraphText) : nil
+                buffer.append(paragraphText)
+            }
+        }
+
+        flushBuffer()
+        return sections
+    }
+
+    nonisolated private static func splitOversizedSection(_ text: String) -> [String] {
+        guard text.count > 2_400 else { return [text] }
+
+        let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard !words.isEmpty else { return [text] }
+
+        var sections: [String] = []
+        var buffer = ""
+
+        for word in words {
+            if buffer.isEmpty {
+                buffer = word
+                continue
+            }
+
+            if buffer.count + 1 + word.count <= 2_400 {
+                buffer += " "
+                buffer += word
+            } else {
+                sections.append(buffer)
+                buffer = word
             }
         }
 
         if !buffer.isEmpty {
-            pages.append(buffer)
+            sections.append(buffer)
         }
 
-        return pages
+        return sections.isEmpty ? [text] : sections
+    }
+
+    nonisolated private static func isHeadingLike(_ paragraph: String) -> Bool {
+        let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 120 else { return false }
+
+        let wordCount = trimmed.split(whereSeparator: { $0.isWhitespace }).count
+        if wordCount == 0 || wordCount > 12 {
+            return false
+        }
+
+        let lowercased = trimmed.lowercased()
+        if lowercased.range(of: #"^(chapter|part|book|section)\s+\d+"#, options: .regularExpression) != nil {
+            return true
+        }
+
+        if trimmed == trimmed.uppercased() {
+            return true
+        }
+
+        let hasSentencePunctuation = trimmed.contains(".") || trimmed.contains("!") || trimmed.contains("?")
+        return !hasSentencePunctuation && wordCount <= 8
+    }
+
+    nonisolated private static func cleanedHeadingTitle(from paragraph: String) -> String {
+        paragraph
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private struct TXTSection {
+        let text: String
+        let title: String
     }
 }

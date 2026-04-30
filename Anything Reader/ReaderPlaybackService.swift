@@ -17,6 +17,7 @@ struct ReaderPlaybackUpdate {
     let elapsedSeconds: Int
     let durationSeconds: Int
     let progress: Double
+    let chunkIndex: Int
     let isPlaying: Bool
 }
 
@@ -39,6 +40,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private var synthesizedAudioURLs: [Int: URL] = [:]
     private var synthesisTasks: [Int: Task<URL, Error>] = [:]
     private var playbackSessionID = UUID()
+    private var activeChunkIndex = 0
 
     private static let volumeStorageKey = "readerPlaybackVolume"
 
@@ -71,6 +73,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         isPlaying = false
         isBufferingFirstChunk = false
         activePlaybackIdentity = nil
+        activeChunkIndex = 0
     }
 
     func setVolume(_ newValue: Double) {
@@ -84,6 +87,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         entry: LibraryEntry,
         voice: KokoroVoiceOption,
         startingProgress: Double,
+        startingChunkIndex: Int? = nil,
         onProgress: @escaping (ReaderPlaybackUpdate) -> Void,
         onFinished: @escaping () -> Void,
         onFailure: @escaping (String) -> Void
@@ -95,6 +99,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         isPlaying = true
         isBufferingFirstChunk = true
         activePlaybackIdentity = entry.cacheIdentity
+        activeChunkIndex = max(startingChunkIndex ?? 0, 0)
         playerNode.volume = Float(volume)
 
         playbackTask = Task { [weak self] in
@@ -112,21 +117,28 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 return
             }
 
-            let startIndex = ReaderPlaybackChunkService.chunkIndex(for: startingProgress, chunkCount: chunks.count)
+            let startIndex = min(
+                max(
+                    startingChunkIndex ?? ReaderPlaybackChunkService.chunkIndex(for: startingProgress, chunkCount: chunks.count),
+                    0
+                ),
+                max(chunks.count - 1, 0)
+            )
             let estimatedTotalDuration = Self.estimatedDuration(for: chunks)
             let initialElapsed = Self.elapsedEstimate(for: chunks, upTo: startIndex)
 
-            await MainActor.run {
-                guard self.playbackSessionID == sessionID else { return }
-                onProgress(
-                    ReaderPlaybackUpdate(
-                        elapsedSeconds: initialElapsed,
-                        durationSeconds: estimatedTotalDuration,
-                        progress: ReaderPlaybackChunkService.progress(for: startIndex, chunkCount: chunks.count),
-                        isPlaying: true
+                await MainActor.run {
+                    guard self.playbackSessionID == sessionID else { return }
+                    onProgress(
+                        ReaderPlaybackUpdate(
+                            elapsedSeconds: initialElapsed,
+                            durationSeconds: estimatedTotalDuration,
+                            progress: ReaderPlaybackChunkService.progress(for: startIndex, chunkCount: chunks.count),
+                            chunkIndex: startIndex,
+                            isPlaying: true
+                        )
                     )
-                )
-            }
+                }
 
             await MainActor.run {
                 guard self.playbackSessionID == sessionID else { return }
@@ -142,6 +154,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     self.isPlaying = false
                     self.isBufferingFirstChunk = false
                     self.activePlaybackIdentity = nil
+                    self.activeChunkIndex = 0
                     onFailure(error.localizedDescription)
                 }
                 return
@@ -167,6 +180,9 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
                 let chunkText = chunks[chunkIndex].trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !chunkText.isEmpty else { continue }
+                await MainActor.run {
+                    self.activeChunkIndex = chunkIndex
+                }
 
                 if await PhonemeCacheService.shared.cachedPhonemes(for: entry, chunkIndex: chunkIndex) == nil {
                     let phonemes = await KokoroG2PService.shared.phonemize(chunkText)
@@ -190,6 +206,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                         self.isPlaying = false
                         self.isBufferingFirstChunk = false
                         self.activePlaybackIdentity = nil
+                        self.activeChunkIndex = 0
                         onFailure(error.localizedDescription)
                     }
                     return
@@ -228,6 +245,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     self.isPlaying = false
                     self.isBufferingFirstChunk = false
                     self.activePlaybackIdentity = nil
+                    self.activeChunkIndex = 0
                     onFailure("No readable audio could be generated for this file.")
                 }
                 return
@@ -436,6 +454,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                                 elapsedSeconds: snapshot.1,
                                 durationSeconds: totalDuration,
                                 progress: snapshot.2,
+                                chunkIndex: self.activeChunkIndex,
                                 isPlaying: true
                             )
                         )

@@ -217,6 +217,9 @@ struct NormalizedTextViewerScreen: View {
         case .chapter:
             guard entry.chapterCount > 0 else { return nil }
             return "\(entry.chapterCount) chapters"
+        case .section:
+            guard entry.sectionCount > 0 else { return nil }
+            return "\(entry.sectionCount) sections"
         case .none:
             return nil
         }
@@ -243,6 +246,11 @@ struct NormalizedTextViewerScreen: View {
                 return "Chapter \(index + 1) of \(targets.count)"
             }
             return "Chapter \(index + 1) of \(targets.count) · \(title)"
+        case .section:
+            if title.isEmpty {
+                return "Section \(index + 1) of \(targets.count)"
+            }
+            return "Section \(index + 1) of \(targets.count) · \(title)"
         }
     }
 
@@ -317,7 +325,19 @@ struct NormalizedTextViewerScreen: View {
         case .page:
             return pageText(for: entry, normalizedText: normalizedText, progress: entry.progress)
         case .chapter:
-            return chapterText(from: normalizedText, targets: targets, progress: entry.progress)
+            return chapterText(
+                from: normalizedText,
+                marker: ReaderPlaybackChunkService.epubChapterBreakMarker,
+                sectionLabel: "Chapter",
+                targets: targets,
+                progress: entry.progress
+            )
+        case .section:
+            return sectionText(
+                from: normalizedText,
+                targets: targets,
+                progress: entry.progress
+            )
         }
     }
 
@@ -368,9 +388,19 @@ struct NormalizedTextViewerScreen: View {
         )
     }
 
-    private static func chapterText(from normalizedText: String, targets: [ReaderJumpTarget], progress: Double) -> ViewerRenderResult {
+    private static func chapterText(
+        from normalizedText: String,
+        marker: String,
+        sectionLabel: String,
+        targets: [ReaderJumpTarget],
+        progress: Double
+    ) -> ViewerRenderResult {
+        guard normalizedText.contains(marker) else {
+            return ViewerRenderResult(text: normalizedText, focusRange: nil)
+        }
+
         let sections = normalizedText
-            .components(separatedBy: "\n\n")
+            .components(separatedBy: marker)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
@@ -387,7 +417,12 @@ struct NormalizedTextViewerScreen: View {
         var currentLocation = 0
 
         for index in 0..<sectionCount {
-            let heading = chapterHeadingText(for: targets[index], fallbackIndex: index, total: total)
+            let heading = structureHeadingText(
+                for: targets[index],
+                sectionLabel: sectionLabel,
+                fallbackIndex: index,
+                total: total
+            )
             let segment = [heading, sections[index]].joined(separator: "\n\n")
             if index == currentIndex {
                 focusRange = NSRange(location: currentLocation, length: 0)
@@ -419,12 +454,27 @@ struct NormalizedTextViewerScreen: View {
         )
     }
 
-    private static func chapterHeadingText(for target: ReaderJumpTarget, fallbackIndex: Int, total: Int) -> String {
+    private static func sectionText(from normalizedText: String, targets: [ReaderJumpTarget], progress: Double) -> ViewerRenderResult {
+        chapterText(
+            from: normalizedText,
+            marker: ReaderPlaybackChunkService.txtSectionBreakMarker,
+            sectionLabel: "Section",
+            targets: targets,
+            progress: progress
+        )
+    }
+
+    private static func structureHeadingText(
+        for target: ReaderJumpTarget,
+        sectionLabel: String,
+        fallbackIndex: Int,
+        total: Int
+    ) -> String {
         let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty {
-            return "Chapter \(fallbackIndex + 1) of \(total)"
+            return "\(sectionLabel) \(fallbackIndex + 1) of \(total)"
         }
-        return "Chapter \(fallbackIndex + 1) of \(total): \(title)"
+        return "\(sectionLabel) \(fallbackIndex + 1) of \(total): \(title)"
     }
 }
 

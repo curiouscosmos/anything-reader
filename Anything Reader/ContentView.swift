@@ -892,6 +892,7 @@ struct ContentView: View {
                 readingStructureKind: ingest.readingStructureKind,
                 pageCount: ingest.pageCount,
                 chapterCount: ingest.chapterCount,
+                sectionCount: ingest.sectionCount,
                 readingJumpTargets: ingest.readingJumpTargets,
                 progress: 0,
                 lastOpened: .now
@@ -1181,6 +1182,9 @@ struct ContentView: View {
     private func startPlayback(for entry: LibraryEntry, readingPositionOverrideText: String? = nil) {
         playbackSessionToken = UUID()
         let sessionToken = playbackSessionToken
+        let resumeProgress = playbackResumeProgress(for: entry)
+        let resumeTargetIndex = entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: resumeProgress)
+        let startingChunkIndex = resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) } ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: ReaderPlaybackChunkService.chunks(for: entry).count)
 
         readerPlaybackService.stop()
         stopPlaybackTask()
@@ -1191,29 +1195,28 @@ struct ContentView: View {
         entry.lastOpened = .now
 
         playbackChunks = ReaderPlaybackChunkService.chunks(for: entry)
-        playbackChunkIndex = ReaderPlaybackChunkService.chunkIndex(
-            for: entry.progress,
-            chunkCount: playbackChunks.count
-        )
+        playbackChunkIndex = startingChunkIndex
 
         let normalizedText = normalizedTextSnippet(for: entry) ?? ""
         let duration = max(600, min(10800, normalizedText.isEmpty ? 1800 : max(600, normalizedText.count / 12)))
-        let elapsedSeconds = Int((Double(duration) * entry.progress).rounded())
+        let elapsedSeconds = Int((Double(duration) * resumeProgress).rounded())
 
         playbackState = PlaybackState(
             title: entry.title,
             subtitle: entry.subtitle,
-            readingPositionText: entry.currentReadingPositionDisplayText ?? readingPositionText(for: entry, progress: entry.progress),
+            readingPositionText: entry.currentReadingPositionDisplayText ?? readingPositionText(for: entry, progress: resumeProgress),
             readingPositionOverrideText: nil,
-            readingPositionIndexOverride: entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: entry.progress),
+            readingPositionIndexOverride: entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: resumeProgress),
             readingPositionTotalCount: entry.currentReadingPositionTotalCount ?? (entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count),
             avatarSymbol: entry.avatarSymbolName,
             accentName: entry.accentName,
-            progress: entry.progress,
+            progress: resumeProgress,
             durationSeconds: duration,
             elapsedSeconds: elapsedSeconds,
             isPlaying: true
         )
+
+        entry.progress = resumeProgress
 
         try? modelContext.save()
 
@@ -1221,7 +1224,8 @@ struct ContentView: View {
         readerPlaybackService.play(
             entry: entry,
             voice: voice,
-            startingProgress: entry.progress,
+            startingProgress: resumeProgress,
+            startingChunkIndex: startingChunkIndex,
             onProgress: { update in
                 guard self.playbackSessionToken == sessionToken else { return }
                 self.applyPlaybackUpdate(update, to: entry)
@@ -1342,7 +1346,7 @@ struct ContentView: View {
         playbackState.elapsedSeconds = update.elapsedSeconds
         playbackState.durationSeconds = update.durationSeconds
         playbackState.progress = update.progress
-        syncReadingPositionState(for: entry, progress: update.progress)
+        syncReadingPositionState(for: entry, progress: update.progress, chunkIndex: update.chunkIndex)
         playbackState.isPlaying = update.isPlaying
         entry.progress = update.progress
         entry.lastOpened = .now
@@ -1386,6 +1390,11 @@ struct ContentView: View {
                 return "Chapter \(index + 1) of \(targets.count)"
             }
             return "Chapter \(index + 1) of \(targets.count) · \(title)"
+        case .section:
+            if title.isEmpty {
+                return "Section \(index + 1) of \(targets.count)"
+            }
+            return "Section \(index + 1) of \(targets.count) · \(title)"
         }
     }
 
@@ -1410,6 +1419,11 @@ struct ContentView: View {
                 return "Chapter \(index + 1) of \(targets.count)"
             }
             return "Chapter \(index + 1) of \(targets.count) · \(title)"
+        case .section:
+            if title.isEmpty {
+                return "Section \(index + 1) of \(targets.count)"
+            }
+            return "Section \(index + 1) of \(targets.count) · \(title)"
         }
     }
 
@@ -1419,11 +1433,18 @@ struct ContentView: View {
         return ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: targets.count)
     }
 
-    private func syncReadingPositionState(for entry: LibraryEntry?, progress: Double) {
+    private func readingPositionIndex(for entry: LibraryEntry, chunkIndex: Int) -> Int? {
+        let targets = entry.readingJumpTargets
+        guard !targets.isEmpty else { return nil }
+        return ReaderPlaybackChunkService.readingTargetIndex(forChunkIndex: chunkIndex, in: entry)
+    }
+
+    private func syncReadingPositionState(for entry: LibraryEntry?, progress: Double, chunkIndex: Int? = nil) {
         guard let entry else { return }
 
         let totalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
-        let index = playbackState.readingPositionIndexOverride
+        let index = chunkIndex.flatMap { readingPositionIndex(for: entry, chunkIndex: $0) }
+            ?? playbackState.readingPositionIndexOverride
             ?? entry.currentReadingPositionIndex
             ?? readingPositionIndex(for: entry, progress: progress)
 
@@ -1439,6 +1460,16 @@ struct ContentView: View {
         let targets = entry.readingJumpTargets
         guard !targets.isEmpty else { return 0 }
         return ReaderPlaybackChunkService.progress(for: target.index, chunkCount: targets.count)
+    }
+
+    private func playbackResumeProgress(for entry: LibraryEntry) -> Double {
+        if let currentIndex = entry.currentReadingPositionIndex,
+           let totalCount = entry.currentReadingPositionTotalCount,
+           totalCount > 0 {
+            return ReaderPlaybackChunkService.progress(for: currentIndex, chunkCount: totalCount)
+        }
+
+        return entry.progress
     }
 
     private func adjacentReadingTarget(for direction: ReadingNavigationDirection, in entry: LibraryEntry) -> ReaderJumpTarget? {

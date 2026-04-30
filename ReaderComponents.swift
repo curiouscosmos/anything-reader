@@ -1111,6 +1111,9 @@ struct ReaderPlayerBarView: View {
 
     private var currentJumpTargetIndex: Int? {
         guard !jumpTargets.isEmpty else { return nil }
+        if let override = playbackState.readingPositionIndexOverride {
+            return min(max(override, 0), jumpTargets.count - 1)
+        }
         return ReaderPlaybackChunkService.chunkIndex(
             for: playbackState.progress,
             chunkCount: jumpTargets.count
@@ -1132,6 +1135,11 @@ struct ReaderPlayerBarView: View {
                 return "Chapter \(displayIndex)"
             }
             return "Chapter \(displayIndex) - \(title)"
+        case .section:
+            if title.isEmpty {
+                return "Section \(displayIndex)"
+            }
+            return "Section \(displayIndex) - \(title)"
         case .none:
             return title.isEmpty ? "Item \(displayIndex)" : title
         }
@@ -1143,6 +1151,8 @@ struct ReaderPlayerBarView: View {
             return "Jump Page"
         case .chapter:
             return "Jump Chapter"
+        case .section:
+            return "Jump Section"
         case .none:
             return "Jump"
         }

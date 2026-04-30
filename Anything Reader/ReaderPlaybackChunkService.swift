@@ -13,6 +13,8 @@ struct ReaderPlaybackChunkService {
     static let preferredChunkLength = 420
     static let prefetchChunkCount = 3
     static let pdfPageBreakMarker = "[[PDF_PAGE_BREAK]]"
+    static let epubChapterBreakMarker = "[[EPUB_CHAPTER_BREAK]]"
+    static let txtSectionBreakMarker = "[[TXT_SECTION_BREAK]]"
 
     static func normalizedText(for entry: LibraryEntry) -> String? {
         if let path = entry.normalizedTextFilePath {
@@ -32,16 +34,27 @@ struct ReaderPlaybackChunkService {
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
 
         if entry.sourceKind == .pdf {
-            if text.contains(pdfPageBreakMarker) {
-                let pdfPages = text
-                    .components(separatedBy: pdfPageBreakMarker)
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                // Keep page navigation exact, but split each page into smaller
-                // TTS-friendly chunks so long PDFs do not trip the model.
-                return pdfPages.flatMap { pageText in
-                    chunks(from: pageText, language: language)
-                }
-            }
+            return structuredChunks(
+                from: text,
+                marker: pdfPageBreakMarker,
+                language: language
+            ) ?? chunks(from: text, language: language)
+        }
+
+        if entry.sourceKind == .epub {
+            return structuredChunks(
+                from: text,
+                marker: epubChapterBreakMarker,
+                language: language
+            ) ?? chunks(from: text, language: language)
+        }
+
+        if entry.sourceKind == .text || entry.sourceKind == .pastedText {
+            return structuredChunks(
+                from: text,
+                marker: txtSectionBreakMarker,
+                language: language
+            ) ?? chunks(from: text, language: language)
         }
 
         return chunks(from: text, language: language)
@@ -118,9 +131,24 @@ struct ReaderPlaybackChunkService {
         guard let text = normalizedText(for: entry) else { return [] }
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
 
-        if text.contains(pdfPageBreakMarker) {
+        if entry.sourceKind == .pdf,
+           text.contains(pdfPageBreakMarker) {
             return text
                 .components(separatedBy: pdfPageBreakMarker)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        }
+
+        if entry.sourceKind == .epub,
+           text.contains(epubChapterBreakMarker) {
+            return text
+                .components(separatedBy: epubChapterBreakMarker)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        }
+
+        if (entry.sourceKind == .text || entry.sourceKind == .pastedText),
+           text.contains(txtSectionBreakMarker) {
+            return text
+                .components(separatedBy: txtSectionBreakMarker)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         }
 
@@ -128,6 +156,67 @@ struct ReaderPlaybackChunkService {
         guard !cleaned.isEmpty else { return [] }
 
         return chunks(from: cleaned, language: language)
+    }
+
+    static func chunkIndex(for readingTargetIndex: Int, in entry: LibraryEntry) -> Int? {
+        guard let text = normalizedText(for: entry), !entry.readingJumpTargets.isEmpty else { return nil }
+
+        let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
+        let targetIndex = min(max(readingTargetIndex, 0), entry.readingJumpTargets.count - 1)
+        let marker: String? = {
+            switch entry.sourceKind {
+            case .pdf:
+                return pdfPageBreakMarker
+            case .epub:
+                return epubChapterBreakMarker
+            case .text, .pastedText:
+                return txtSectionBreakMarker
+            }
+        }()
+
+        if let startIndices = structuredChunkStartIndices(from: text, marker: marker, language: language),
+           startIndices.indices.contains(targetIndex) {
+            return startIndices[targetIndex]
+        }
+
+        return chunkIndex(
+            for: Double(targetIndex) / Double(max(entry.readingJumpTargets.count, 1)),
+            chunkCount: chunks(for: entry).count
+        )
+    }
+
+    static func readingTargetIndex(forChunkIndex chunkIndex: Int, in entry: LibraryEntry) -> Int? {
+        guard let text = normalizedText(for: entry), !entry.readingJumpTargets.isEmpty else { return nil }
+
+        let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
+        let marker: String? = {
+            switch entry.sourceKind {
+            case .pdf:
+                return pdfPageBreakMarker
+            case .epub:
+                return epubChapterBreakMarker
+            case .text, .pastedText:
+                return txtSectionBreakMarker
+            }
+        }()
+
+        if let startIndices = structuredChunkStartIndices(from: text, marker: marker, language: language),
+           !startIndices.isEmpty {
+            let boundedChunkIndex = max(chunkIndex, 0)
+            var currentTargetIndex = 0
+
+            for (index, startIndex) in startIndices.enumerated() {
+                if boundedChunkIndex >= startIndex {
+                    currentTargetIndex = index
+                } else {
+                    break
+                }
+            }
+
+            return currentTargetIndex
+        }
+
+        return Self.chunkIndex(for: Double(chunkIndex), chunkCount: entry.readingJumpTargets.count)
     }
 
     static func chunkIndex(for progress: Double, chunkCount: Int) -> Int {
@@ -217,6 +306,46 @@ struct ReaderPlaybackChunkService {
         }
 
         return chunks
+    }
+
+    private static func structuredChunks(
+        from text: String,
+        marker: String,
+        language: TextLanguage
+    ) -> [String]? {
+        guard text.contains(marker) else { return nil }
+
+        let sections = text
+            .components(separatedBy: marker)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        let flattenedChunks = sections.flatMap { section in
+            chunks(from: section, language: language)
+        }
+
+        return flattenedChunks.isEmpty ? nil : flattenedChunks
+    }
+
+    private static func structuredChunkStartIndices(
+        from text: String,
+        marker: String?,
+        language: TextLanguage
+    ) -> [Int]? {
+        guard let marker, text.contains(marker) else { return nil }
+
+        let sections = text
+            .components(separatedBy: marker)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        var startIndices: [Int] = []
+        var runningIndex = 0
+
+        for section in sections {
+            startIndices.append(runningIndex)
+            runningIndex += chunks(from: section, language: language).count
+        }
+
+        return startIndices
     }
 
     private static func breakLongWord(_ word: String) -> [String] {
