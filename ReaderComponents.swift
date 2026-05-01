@@ -689,6 +689,8 @@ struct ReaderLibraryCardView: View {
         .padding(.vertical, 2)
     }
 
+    // Covers the card while an item is importing or generating audio so users
+    // get an immediate visual indication that the file is still being processed.
     private func importOverlay(text: String, progress: Double? = nil) -> some View {
         VStack {
             if let progress {
@@ -757,6 +759,8 @@ struct ReaderLibraryCardView: View {
     struct TopRoundedRectangle: Shape {
         var radius: CGFloat = 16
 
+        // Builds a top-rounded rectangle so the card footer can sit flush
+        // against the artwork while only the upper corners stay rounded.
         func path(in rect: CGRect) -> Path {
             var path = Path()
 
@@ -814,6 +818,8 @@ struct ReaderLibraryCardView: View {
         preferredMode == .light ? .black : .white
     }
 
+    // Chooses a badge tint that makes the PDF extraction mode readable while
+    // still fitting the card's existing color language.
     private func pdfExtractionBadgeBackground(for mode: PDFExtractionMode) -> Color {
         switch mode {
         case .directText:
@@ -895,6 +901,7 @@ struct ReaderCardMenuPopoverView: View {
 
     // Reusable row button used for every menu action.
     @ViewBuilder
+    // Wraps a single menu action in the shared card popover styling.
     private func menuButton(
         title: String,
         systemImage: String,
@@ -958,6 +965,8 @@ struct ReaderCardArtworkView: View {
 
     // Real cover art rendering path.
     @ViewBuilder
+    // Renders the resolved cover art using the same crop and emphasis settings
+    // that the rest of the card uses for its artwork surface.
     private func coverImage(_ image: NSImage) -> some View {
         Image(nsImage: image)
             .resizable()
@@ -1227,6 +1236,8 @@ struct ReaderPlayerBarView: View {
         )
     }
 
+    // Converts a resolved reading target into the user-facing label shown in
+    // the Kokoro narration jump menu.
     private func jumpTargetLabel(for target: ReaderJumpTarget) -> String {
         let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayIndex = target.index + 1
@@ -1305,6 +1316,7 @@ struct ReaderPlayerBarView: View {
         "\(ReaderStyle.formattedTime(playbackState.elapsedSeconds)) / \(ReaderStyle.formattedTime(playbackState.durationSeconds))"
     }
 
+    // Builds the circular transport button used by the narration player bar.
     private func roundControlButton(
         icon: String,
         isActive: Bool = false,
@@ -1395,7 +1407,6 @@ struct GeneratedAudioPlayerBarView: View {
             mediaInfo
             Spacer()
             VStack(alignment: .trailing, spacing: 14) {
-                controls
                 VStack(spacing: 10) {
                     ReaderPlaybackSpeedControlView(
                         playbackSpeed: $playbackSpeed,
@@ -1414,7 +1425,6 @@ struct GeneratedAudioPlayerBarView: View {
     private var verticalLayout: some View {
         VStack(alignment: .leading, spacing: 14) {
             mediaInfo
-            controls
             VStack(spacing: 10) {
                 ReaderPlaybackSpeedControlView(
                     playbackSpeed: $playbackSpeed,
@@ -1430,8 +1440,7 @@ struct GeneratedAudioPlayerBarView: View {
 
     private var mediaInfo: some View {
         HStack(spacing: 16) {
-            ReaderAvatarView(symbolName: avatarSymbol, accentName: accentName, preferredMode: preferredMode)
-
+            controls
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
@@ -1458,10 +1467,6 @@ struct GeneratedAudioPlayerBarView: View {
 
     private var controls: some View {
         HStack(spacing: 12) {
-            roundControlButton(icon: "stop.fill") {
-                onStop()
-            }
-
             roundControlButton(icon: isPlaying ? "pause.fill" : "play.fill", isProminent: true) {
                 onTogglePlayPause()
             }
@@ -1489,6 +1494,7 @@ struct GeneratedAudioPlayerBarView: View {
         "\(ReaderStyle.formattedTime(elapsedSeconds)) / \(ReaderStyle.formattedTime(durationSeconds))"
     }
 
+    // Builds the circular transport button used by the generated-audio player.
     private func roundControlButton(
         icon: String,
         isProminent: Bool = false,
