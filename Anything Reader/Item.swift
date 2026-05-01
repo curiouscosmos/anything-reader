@@ -13,6 +13,7 @@ enum ReaderSourceKind: String, CaseIterable, Identifiable {
     case epub
     case text
     case pastedText
+    case image
 
     var id: String { rawValue }
 
@@ -26,6 +27,8 @@ enum ReaderSourceKind: String, CaseIterable, Identifiable {
             return "Text"
         case .pastedText:
             return "Paste"
+        case .image:
+            return "Image"
         }
     }
 
@@ -39,6 +42,8 @@ enum ReaderSourceKind: String, CaseIterable, Identifiable {
             return "doc.text.fill"
         case .pastedText:
             return "doc.on.clipboard.fill"
+        case .image:
+            return "doc.text.image"
         }
     }
 }

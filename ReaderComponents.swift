@@ -605,14 +605,14 @@ struct ReaderLibraryCardView: View {
                             .background(Color.white.opacity(0.16), in: Capsule())
                     }
 
-                    Text(entry.sourceKind.displayName)
+                    Text(sourceKindBadgeText)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.18), in: Capsule())
+                        .background(sourceKindBadgeBackground, in: Capsule())
 
-                    if let extractionMode = entry.pdfExtractionMode, entry.sourceKind == .pdf {
+                    if let extractionMode = extractionBadgeMode {
                         Text(extractionMode.displayName)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.white)
@@ -819,6 +819,26 @@ struct ReaderLibraryCardView: View {
 
     private var primaryTextColor: Color {
         preferredMode == .light ? .black : .white
+    }
+
+    private var sourceKindBadgeText: String {
+        return entry.sourceKind.displayName
+    }
+
+    private var sourceKindBadgeBackground: Color {
+        return Color.white.opacity(0.18)
+    }
+
+    private var extractionBadgeMode: PDFExtractionMode? {
+        if entry.sourceKind == .image {
+            return .ocr
+        }
+
+        if entry.sourceKind == .pdf {
+            return entry.pdfExtractionMode
+        }
+
+        return nil
     }
 
     // Chooses a badge tint that makes the PDF extraction mode readable while

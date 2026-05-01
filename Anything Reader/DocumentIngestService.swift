@@ -2,13 +2,15 @@
 //  DocumentIngestService.swift
 //  Anything Reader
 //
-//  Handles PDF, TXT, and ePub extraction plus normalization.
+//  Handles PDF, image, TXT, and ePub extraction plus normalization.
 //
 
 import AppKit
 import Foundation
+import ImageIO
 import PDFKit
 import Vision
+import UniformTypeIdentifiers
 import ZIPFoundation
 
 struct IngestedDocument {
@@ -136,6 +138,20 @@ actor DocumentIngestService {
             extractedTitle = bestTitleCandidate(from: rawText)
             pdfExtractionMode = nil
             readingMetadata = epubTextExtraction.readingMetadata
+        case .image:
+            rawText = try ImageTextExtractionService.extractText(
+                from: stagedFileURL,
+                preferredLanguage: resolvedLanguage
+            )
+            extractedTitle = bestTitleCandidate(from: rawText)
+            pdfExtractionMode = .ocr
+            readingMetadata = ReadingMetadata(
+                readingStructureKind: nil,
+                pageCount: 0,
+                chapterCount: 0,
+                sectionCount: 0,
+                readingJumpTargets: []
+            )
         case .text, .pastedText:
             guard let text = String(data: fileData, encoding: .utf8) else {
                 throw DocumentIngestError.unreadableDocument
@@ -256,6 +272,15 @@ actor DocumentIngestService {
             }
             let detected = TextNormalizationService.detectLanguage(for: text)
             return detected == .unknown ? .english : detected
+        case _ where UTType(filenameExtension: fileExtension)?.conforms(to: .image) == true:
+            guard let text = try? ImageTextExtractionService.extractText(
+                from: stagedFileURL,
+                preferredLanguage: nil
+            ) else {
+                return .english
+            }
+            let detected = TextNormalizationService.detectLanguage(for: text)
+            return detected == .unknown ? .english : detected
         case "txt":
             guard let data = try? Data(contentsOf: stagedFileURL),
                   let text = String(data: data, encoding: .utf8) else {
@@ -269,6 +294,10 @@ actor DocumentIngestService {
     }
 
     private func readerSourceKind(for fileExtension: String) -> ReaderSourceKind {
+        if UTType(filenameExtension: fileExtension)?.conforms(to: .image) == true {
+            return .image
+        }
+
         switch fileExtension.lowercased() {
         case "pdf":
             return .pdf
@@ -899,6 +928,173 @@ private enum PDFTextExtractionService {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count <= 4 else { return false }
         return trimmed.unicodeScalars.allSatisfy { CharacterSet.decimalDigits.contains($0) || CharacterSet.punctuationCharacters.contains($0) }
+    }
+}
+
+private enum ImageTextExtractionService {
+    nonisolated static func extractText(
+        from url: URL,
+        preferredLanguage: TextLanguage?
+    ) throws -> String {
+        guard let cgImage = cgImage(from: url) else {
+            throw DocumentIngestError.unreadableDocument
+        }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.automaticallyDetectsLanguage = false
+        request.usesLanguageCorrection = true
+        request.recognitionLanguages = ocrLanguageHints(preferredLanguage: preferredLanguage)
+
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
+            throw DocumentIngestError.extractionFailed
+        }
+
+        guard let observations = request.results, !observations.isEmpty else {
+            throw DocumentIngestError.extractionFailed
+        }
+
+        let recognizedLines = observations
+            .sorted { lhs, rhs in
+                if lhs.boundingBox.midY == rhs.boundingBox.midY {
+                    return lhs.boundingBox.minX < rhs.boundingBox.minX
+                }
+                return lhs.boundingBox.midY > rhs.boundingBox.midY
+            }
+            .compactMap { $0.topCandidates(1).first?.string }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let merged = recognizedLines.joined(separator: "\n")
+        guard !merged.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw DocumentIngestError.extractionFailed
+        }
+
+        return merged
+    }
+
+    nonisolated private static func cgImage(from url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return nil
+        }
+
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    nonisolated private static func ocrLanguageHints(preferredLanguage: TextLanguage?) -> [String] {
+        var identifiers: [String] = [
+            "en-US",
+            "fr-FR",
+            "es-ES",
+            "de-DE",
+            "it-IT",
+            "pt-PT",
+            "nl-NL",
+            "sv-SE",
+            "tr-TR",
+            "pl-PL",
+            "ro-RO",
+            "ru-RU",
+            "uk-UA",
+            "el-GR",
+            "ar-SA",
+            "he-IL",
+            "fa-IR",
+            "ur-PK",
+            "hi-IN",
+            "mr-IN",
+            "bn-BD",
+            "pa-IN",
+            "ta-IN",
+            "te-IN",
+            "vi-VN",
+            "th-TH",
+            "id-ID",
+            "ms-MY",
+            "ko-KR",
+            "ja-JP",
+            "zh-Hans"
+        ]
+
+        if let preferredLanguage {
+            let preferredIdentifier: String?
+            switch preferredLanguage {
+            case .english:
+                preferredIdentifier = "en-US"
+            case .french:
+                preferredIdentifier = "fr-FR"
+            case .spanish:
+                preferredIdentifier = "es-ES"
+            case .german:
+                preferredIdentifier = "de-DE"
+            case .mandarin:
+                preferredIdentifier = "zh-Hans"
+            case .italian:
+                preferredIdentifier = "it-IT"
+            case .portuguese:
+                preferredIdentifier = "pt-PT"
+            case .dutch:
+                preferredIdentifier = "nl-NL"
+            case .swedish:
+                preferredIdentifier = "sv-SE"
+            case .turkish:
+                preferredIdentifier = "tr-TR"
+            case .polish:
+                preferredIdentifier = "pl-PL"
+            case .romanian:
+                preferredIdentifier = "ro-RO"
+            case .russian:
+                preferredIdentifier = "ru-RU"
+            case .ukrainian:
+                preferredIdentifier = "uk-UA"
+            case .greek:
+                preferredIdentifier = "el-GR"
+            case .arabic:
+                preferredIdentifier = "ar-SA"
+            case .hebrew:
+                preferredIdentifier = "he-IL"
+            case .persian:
+                preferredIdentifier = "fa-IR"
+            case .urdu:
+                preferredIdentifier = "ur-PK"
+            case .hindi:
+                preferredIdentifier = "hi-IN"
+            case .marathi:
+                preferredIdentifier = "mr-IN"
+            case .bengali:
+                preferredIdentifier = "bn-BD"
+            case .punjabi:
+                preferredIdentifier = "pa-IN"
+            case .tamil:
+                preferredIdentifier = "ta-IN"
+            case .telugu:
+                preferredIdentifier = "te-IN"
+            case .vietnamese:
+                preferredIdentifier = "vi-VN"
+            case .thai:
+                preferredIdentifier = "th-TH"
+            case .indonesian:
+                preferredIdentifier = "id-ID"
+            case .malay:
+                preferredIdentifier = "ms-MY"
+            case .korean:
+                preferredIdentifier = "ko-KR"
+            case .japanese:
+                preferredIdentifier = "ja-JP"
+            case .unknown:
+                preferredIdentifier = nil
+            }
+
+            if let preferredIdentifier {
+                identifiers.removeAll { $0 == preferredIdentifier }
+                identifiers.insert(preferredIdentifier, at: 0)
+            }
+        }
+
+        return identifiers
     }
 }
 

@@ -127,7 +127,7 @@ struct ContentView: View {
     }()
 
     private var uploadAllowedContentTypes: [UTType] {
-        [UTType.pdf, UTType.plainText, UTType.epub]
+        [UTType.pdf, UTType.plainText, UTType.epub, UTType.image]
     }
 
     private struct PendingImportContext {
@@ -1023,7 +1023,7 @@ struct ContentView: View {
             placeholderEntry.originalFileName = context.fileName
             placeholderEntry.storedFilePath = context.stagedURL.path
             placeholderEntry.normalizedTextFilePath = ingest.normalizedTextFileURL.path
-            placeholderEntry.coverImageFilePath = nil
+            placeholderEntry.coverImageFilePath = context.sourceKind == .image ? context.stagedURL.path : nil
             placeholderEntry.fileSizeBytes = ingest.fileSizeBytes
             placeholderEntry.categoryName = nil
             placeholderEntry.avatarSymbolName = avatarSymbol(for: ingest.sourceKind)
@@ -1178,7 +1178,7 @@ struct ContentView: View {
         }
 
         let extensionName = sourceURL.pathExtension.lowercased()
-        guard ["pdf", "txt", "epub"].contains(extensionName) else {
+        guard isSupportedUploadFileExtension(extensionName) else {
             throw UploadError.unsupportedFileType
         }
 
@@ -1349,14 +1349,30 @@ struct ContentView: View {
     }
 
     private func readerSourceKind(for fileExtension: String) -> ReaderSourceKind {
+        if UTType(filenameExtension: fileExtension)?.conforms(to: .image) == true {
+            return .image
+        }
+
         switch fileExtension.lowercased() {
         case "pdf":
             return .pdf
         case "epub":
             return .epub
+        case "txt":
+            return .text
         default:
             return .text
         }
+    }
+
+    private func isSupportedUploadFileExtension(_ fileExtension: String) -> Bool {
+        guard !fileExtension.isEmpty else { return false }
+
+        if ["pdf", "txt", "epub"].contains(fileExtension) {
+            return true
+        }
+
+        return UTType(filenameExtension: fileExtension)?.conforms(to: .image) == true
     }
 
     private func avatarSymbol(for sourceKind: ReaderSourceKind) -> String {
@@ -1365,6 +1381,8 @@ struct ContentView: View {
             return "doc.richtext.fill"
         case .epub:
             return "book.fill"
+        case .image:
+            return "doc.text.image"
         case .text, .pastedText:
             return "doc.text.fill"
         }
@@ -1384,7 +1402,7 @@ struct ContentView: View {
             case .invalidFile:
                 return "The selected file is missing, empty, or unreadable."
             case .unsupportedFileType:
-                return "Please choose a PDF, TXT, or ePub file."
+                return "Please choose a PDF, TXT, ePub, or image file."
             }
         }
     }
