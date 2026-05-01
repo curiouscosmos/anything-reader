@@ -131,7 +131,7 @@ actor PhonemeCacheService {
             return cached
         }
 
-        guard let sourceText = nonEmptySourceText(for: entry) else {
+        guard let sourceText = await nonEmptySourceText(for: entry) else {
             return nil
         }
 
@@ -172,6 +172,7 @@ actor PhonemeCacheService {
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 
+    @MainActor
     private func nonEmptySourceText(for entry: LibraryEntry) -> String? {
         let text = ReaderPlaybackChunkService.normalizedText(for: entry)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return text.isEmpty ? nil : text

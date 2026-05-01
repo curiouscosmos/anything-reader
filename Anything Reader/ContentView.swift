@@ -174,6 +174,7 @@ struct ContentView: View {
                     ),
                     preferredMode: preferredMode,
                     onTogglePlayPause: toggleGeneratedAudioPlayback,
+                    onSeek: { fraction in generatedAudioPlaybackService.seek(to: fraction) },
                     onStop: stopGeneratedAudioPlayback
                 )
                 .padding(.horizontal, 16)
@@ -365,7 +366,7 @@ struct ContentView: View {
         .task {
             cleanupGeneratedDemoContentIfNeeded()
             backfillMissingCoverArtIfNeeded()
-            backfillGeneratedAudioMetadataIfNeeded()
+            await backfillGeneratedAudioMetadataIfNeeded()
             validateSelectedKokoroVoice()
             kokoroModelStore.refreshInstallationStatus()
             promptForKokoroDownloadIfNeeded()
@@ -795,9 +796,17 @@ struct ContentView: View {
         }
     }
 
-    private func generatedAudioDurationSeconds(for fileURL: URL) -> Int {
+    private func generatedAudioDurationSeconds(for fileURL: URL) async -> Int {
         let asset = AVURLAsset(url: fileURL)
-        let durationSeconds = asset.duration.seconds
+
+        let duration: CMTime
+        do {
+            duration = try await asset.load(.duration)
+        } catch {
+            return 0
+        }
+
+        let durationSeconds = duration.seconds
         guard durationSeconds.isFinite, durationSeconds > 0 else { return 0 }
         return Int(durationSeconds.rounded())
     }
@@ -1270,13 +1279,13 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func backfillGeneratedAudioMetadataIfNeeded() {
+    private func backfillGeneratedAudioMetadataIfNeeded() async {
         for entry in libraryEntries {
             guard let generatedAudioURL = entry.generatedAudioFileURL else { continue }
             guard entry.generatedAudioDurationSeconds == nil else { continue }
             guard FileManager.default.fileExists(atPath: generatedAudioURL.path) else { continue }
 
-            entry.generatedAudioDurationSeconds = generatedAudioDurationSeconds(for: generatedAudioURL)
+            entry.generatedAudioDurationSeconds = await generatedAudioDurationSeconds(for: generatedAudioURL)
         }
 
         try? modelContext.save()
@@ -1485,9 +1494,12 @@ struct ContentView: View {
         activeGeneratedAudioEntry = entry
         entry.lastOpened = .now
         if entry.generatedAudioDurationSeconds == nil {
-            entry.generatedAudioDurationSeconds = generatedAudioDurationSeconds(for: fileURL)
+            Task { @MainActor in
+                guard entry.generatedAudioDurationSeconds == nil else { return }
+                entry.generatedAudioDurationSeconds = await generatedAudioDurationSeconds(for: fileURL)
+                try? modelContext.save()
+            }
         }
-        try? modelContext.save()
 
         let resumeTime = entry.generatedAudioPlaybackPosition
 
@@ -1547,7 +1559,11 @@ struct ContentView: View {
     private func persistGeneratedAudioPlaybackProgress(for entry: LibraryEntry, elapsedSeconds: Int) {
         entry.generatedAudioPlaybackPositionSeconds = max(0, elapsedSeconds)
         if entry.generatedAudioDurationSeconds == nil, let generatedAudioURL = entry.generatedAudioFileURL {
-            entry.generatedAudioDurationSeconds = generatedAudioDurationSeconds(for: generatedAudioURL)
+            Task { @MainActor in
+                guard entry.generatedAudioDurationSeconds == nil else { return }
+                entry.generatedAudioDurationSeconds = await generatedAudioDurationSeconds(for: generatedAudioURL)
+                try? modelContext.save()
+            }
         }
         entry.lastOpened = .now
         try? modelContext.save()
@@ -1770,7 +1786,7 @@ struct ContentView: View {
             entry.generatedAudioFileName = audioFileURL.lastPathComponent
             entry.generatedAudioVoiceName = voice.voiceName
             entry.generatedAudioUpdatedAt = .now
-            entry.generatedAudioDurationSeconds = generatedAudioDurationSeconds(for: audioFileURL)
+            entry.generatedAudioDurationSeconds = await generatedAudioDurationSeconds(for: audioFileURL)
             entry.generatedAudioPlaybackPositionSeconds = 0
             try? modelContext.save()
 

@@ -26,6 +26,7 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
 
     private var player: AVAudioPlayer?
     private var progressTimer: Timer?
+    private var seekDebounceTask: Task<Void, Never>?
     private var onProgress: ((Int, Int) -> Void)?
     private var onFinished: (() -> Void)?
     private var onFailure: ((String) -> Void)?
@@ -161,9 +162,22 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         }
     }
 
+    func seek(to progressFraction: Double) {
+        seekDebounceTask?.cancel()
+
+        let clampedFraction = min(max(progressFraction, 0), 1)
+        seekDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            self.applySeek(to: clampedFraction)
+        }
+    }
+
     func stop() {
         // Stop clears all ephemeral playback state but does not delete the
         // exported audio file on disk.
+        seekDebounceTask?.cancel()
+        seekDebounceTask = nil
         updateProgress()
         stopProgressTimer()
         player?.stop()
@@ -251,6 +265,27 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         currentElapsedSeconds = max(0, Int(player.currentTime.rounded()))
         currentDurationSeconds = max(0, Int(player.duration.rounded()))
         onProgress?(currentElapsedSeconds, currentDurationSeconds)
+    }
+
+    private func applySeek(to progressFraction: Double) {
+        guard let player else { return }
+        guard player.duration > 0 else { return }
+
+        let targetTime = player.duration * progressFraction
+        let shouldResumePlaying = player.isPlaying
+
+        player.currentTime = targetTime
+        currentElapsedSeconds = max(0, Int(targetTime.rounded()))
+        currentDurationSeconds = max(0, Int(player.duration.rounded()))
+        onProgress?(currentElapsedSeconds, currentDurationSeconds)
+
+        if shouldResumePlaying {
+            player.enableRate = true
+            player.rate = Float(playbackSpeed)
+            player.play()
+            isPlaying = true
+            startProgressTimer()
+        }
     }
 
     private static func clampPlaybackSpeed(_ value: Double) -> Double {

@@ -185,7 +185,7 @@ struct ReaderHeroView: View {
                 Text("From documents to audio, instantly and beautifully.")
                     .font(.headline)
                     .foregroundStyle(heroSecondaryTextColor)
-                    .frame(maxWidth: 560, alignment: .leading)
+                    .frame(maxWidth: 800, alignment: .leading)
 
                 HStack(spacing: 12) {
                     Button(action: onPasteText) {
@@ -257,7 +257,7 @@ struct ReaderHeroView: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 560) // control how much image shows
+                    .frame(width: 800) // control how much image shows
                     .frame(maxHeight: .infinity)
                     .clipped()
             }
@@ -1387,6 +1387,7 @@ struct GeneratedAudioPlayerBarView: View {
     @Binding var playbackSpeed: Double
     let preferredMode: AppearanceMode
     let onTogglePlayPause: () -> Void
+    let onSeek: (Double) -> Void
     let onStop: () -> Void
 
     var body: some View {
@@ -1455,7 +1456,7 @@ struct GeneratedAudioPlayerBarView: View {
                     .lineLimit(1)
                     .foregroundStyle(secondaryTextColor)
 
-                HStack(spacing: 10) {
+                    HStack(spacing: 10) {
                     seekBar
                         .frame(maxWidth: 520)
 
@@ -1484,6 +1485,15 @@ struct GeneratedAudioPlayerBarView: View {
                     .fill(ReaderStyle.accentColor(named: accentName))
                     .frame(width: max(10, geometry.size.width * playbackProgress))
             }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard geometry.size.width > 0 else { return }
+                        let fraction = min(max(value.location.x / geometry.size.width, 0), 1)
+                        onSeek(fraction)
+                    }
+            )
         }
         .frame(height: 8)
     }
