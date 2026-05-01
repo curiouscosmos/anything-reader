@@ -91,6 +91,7 @@ struct ReaderTopBarView: View {
                     .background(elevatedBackground, in: Capsule())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("topbar-home-button")
 
             searchField
 
@@ -103,6 +104,7 @@ struct ReaderTopBarView: View {
                     .background(tint.opacity(preferredMode == .light ? 0.14 : 0.20), in: Capsule())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("topbar-paste-text-button")
 
             Button(action: onUploadFile) {
                 Label("Upload", systemImage: "arrow.up.doc.fill")
@@ -115,6 +117,7 @@ struct ReaderTopBarView: View {
             .buttonStyle(.plain)
             .disabled(isUploadDisabled)
             .opacity(isUploadDisabled ? 0.45 : 1)
+            .accessibilityIdentifier("topbar-upload-button")
 
             Button(action: onSettings) {
                 Image(systemName: "gearshape.fill")
@@ -124,6 +127,8 @@ struct ReaderTopBarView: View {
                     .background(elevatedBackground, in: Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Settings")
+            .accessibilityIdentifier("topbar-settings-button")
         }
     }
 
@@ -197,6 +202,7 @@ struct ReaderHeroView: View {
                             .background(heroButtonBackground, in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("hero-paste-text-button")
 
                     Button(action: onUploadFile) {
                         Label("Upload", systemImage: "arrow.up.doc.fill")
@@ -209,6 +215,7 @@ struct ReaderHeroView: View {
                     .buttonStyle(.plain)
                     .disabled(isUploadDisabled)
                     .opacity(isUploadDisabled ? 0.45 : 1)
+                    .accessibilityIdentifier("hero-upload-button")
                     
                     Button(action: onDownloadKokoro) {
                         Label(kokoroButtonTitle, systemImage: kokoroButtonIcon)
@@ -220,6 +227,7 @@ struct ReaderHeroView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(kokoroButtonDisabled)
+                    .accessibilityIdentifier("hero-download-tts-button")
                 }
 
                 Text(kokoroStatusMessage)

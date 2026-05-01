@@ -2,42 +2,68 @@
 //  Anything_ReaderUITests.swift
 //  Anything ReaderUITests
 //
-//  Created by Daman Mehta on 2026-04-24.
-//
 
 import XCTest
 
 final class Anything_ReaderUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
+    func testHomeScreenShowsCoreControls() throws {
+        let app = launchApp()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
+        XCTAssertTrue(app.staticTexts["Listen to anything"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["topbar-home-button"].exists)
+        XCTAssertTrue(app.buttons["topbar-paste-text-button"].exists)
+        XCTAssertTrue(app.buttons["topbar-upload-button"].exists)
+        XCTAssertTrue(app.buttons["topbar-settings-button"].exists)
+        XCTAssertTrue(app.textFields["Search books, text, categories"].exists)
+        XCTAssertTrue(app.buttons["hero-download-tts-button"].exists)
+    }
+
+    @MainActor
+    func testSettingsSheetOpensAndCloses() throws {
+        let app = launchApp()
+
+        app.buttons["topbar-settings-button"].tap()
+
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Appearance"].exists)
+        XCTAssertTrue(app.staticTexts["Kokoro Voice"].exists)
+
+        app.buttons["Done"].tap()
+
+        XCTAssertFalse(app.navigationBars["Settings"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor
+    func testPasteSheetOpensAndCancels() throws {
+        let app = launchApp()
+
+        app.buttons["topbar-paste-text-button"].tap()
+
+        XCTAssertTrue(app.navigationBars["Paste Text"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Paste text to listen"].exists)
+        XCTAssertTrue(app.buttons["Play"].exists)
+
+        app.buttons["Cancel"].tap()
+
+        XCTAssertFalse(app.navigationBars["Paste Text"].waitForExistence(timeout: 2))
     }
 
     @MainActor
     func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
+            _ = launchApp()
         }
+    }
+
+    private func launchApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launch()
+        return app
     }
 }
