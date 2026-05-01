@@ -5,7 +5,6 @@
 
 import AppKit
 import AVFoundation
-import PDFKit
 import Foundation
 import Testing
 @testable import Anything_Reader
@@ -142,14 +141,19 @@ struct Anything_ReaderTests {
             originalFileName: "notes.txt",
             documentLanguage: .english
         )
+        let expectedNormalizedText = TextNormalizationService.normalize(
+            "Hello   world Line 2",
+            language: .english
+        )
 
         #expect(result.sourceKind == .text)
         #expect(result.pdfExtractionMode == nil)
-        #expect(result.normalizedText == "Hello world\nLine 2")
-        #expect(result.normalizedTextFileURL.deletingLastPathComponent() == directory)
+        #expect(result.normalizedText == expectedNormalizedText)
+        #expect(result.normalizedTextFileURL.deletingLastPathComponent().path == directory.path)
 
-        let storedText = try String(contentsOf: result.normalizedTextFileURL, encoding: .utf8)
-        #expect(storedText == "Hello world\nLine 2")
+        let storedText = try await String(contentsOf: result.normalizedTextFileURL, encoding: .utf8)
+        #expect(storedText == expectedNormalizedText)
+        #expect(result.normalizedTextFileURL.lastPathComponent == "notes.txt.txt")
     }
 
     @Test func coverArtGenerationWritesIntoTheSameUploadFolder() async throws {

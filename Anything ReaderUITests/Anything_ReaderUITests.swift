@@ -30,13 +30,13 @@ final class Anything_ReaderUITests: XCTestCase {
 
         app.buttons["topbar-settings-button"].tap()
 
-        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings-sheet-done-button"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Appearance"].exists)
         XCTAssertTrue(app.staticTexts["Kokoro Voice"].exists)
 
-        app.buttons["Done"].tap()
+        app.buttons["settings-sheet-done-button"].tap()
 
-        XCTAssertFalse(app.navigationBars["Settings"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["settings-sheet-done-button"].waitForExistence(timeout: 2))
     }
 
     @MainActor
@@ -45,13 +45,13 @@ final class Anything_ReaderUITests: XCTestCase {
 
         app.buttons["topbar-paste-text-button"].tap()
 
-        XCTAssertTrue(app.navigationBars["Paste Text"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["paste-text-sheet-play-button"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Paste text to listen"].exists)
-        XCTAssertTrue(app.buttons["Play"].exists)
+        XCTAssertTrue(app.buttons["paste-text-sheet-cancel-button"].exists)
 
-        app.buttons["Cancel"].tap()
+        app.buttons["paste-text-sheet-cancel-button"].tap()
 
-        XCTAssertFalse(app.navigationBars["Paste Text"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["paste-text-sheet-play-button"].waitForExistence(timeout: 2))
     }
 
     @MainActor

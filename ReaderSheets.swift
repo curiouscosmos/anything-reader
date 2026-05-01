@@ -59,10 +59,12 @@ struct ReaderSettingsSheet: View {
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .accessibilityIdentifier("settings-sheet")
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                        .accessibilityIdentifier("settings-sheet-done-button")
                 }
             }
         }
@@ -152,6 +154,7 @@ struct ReaderImportLanguageSheet: View {
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .accessibilityIdentifier("import-language-sheet")
             .navigationTitle("Import Options")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -159,6 +162,7 @@ struct ReaderImportLanguageSheet: View {
                         onCancel()
                         dismiss()
                     }
+                    .accessibilityIdentifier("import-language-sheet-cancel-button")
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
@@ -166,6 +170,7 @@ struct ReaderImportLanguageSheet: View {
                         onImport()
                         dismiss()
                     }
+                    .accessibilityIdentifier("import-language-sheet-import-button")
                 }
             }
         }
@@ -242,6 +247,7 @@ struct ReaderGenerateAudioSheet: View {
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .accessibilityIdentifier("generate-audio-sheet")
             .navigationTitle("Generate Audio file")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -249,6 +255,7 @@ struct ReaderGenerateAudioSheet: View {
                         onCancel()
                         dismiss()
                     }
+                    .accessibilityIdentifier("generate-audio-sheet-cancel-button")
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
@@ -256,6 +263,7 @@ struct ReaderGenerateAudioSheet: View {
                         onGenerate()
                         dismiss()
                     }
+                    .accessibilityIdentifier("generate-audio-sheet-generate-button")
                 }
             }
         }
@@ -522,15 +530,18 @@ struct ReaderNewCategorySheet: View {
                 }
             }
             .padding(16)
+            .accessibilityIdentifier("new-category-sheet")
             .navigationTitle("New Category")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("new-category-sheet-cancel-button")
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { onCreate() }
                         .disabled(categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("new-category-sheet-create-button")
                 }
             }
         }
@@ -576,15 +587,18 @@ struct ReaderPasteTextSheet: View {
             }
             .padding(20)
             .frame(minWidth: 440, minHeight: 340)
+            .accessibilityIdentifier("paste-text-sheet")
             .navigationTitle("Paste Text")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("paste-text-sheet-cancel-button")
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Play") { onPlay() }
                         .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("paste-text-sheet-play-button")
                 }
             }
         }
