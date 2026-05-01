@@ -7,6 +7,7 @@
 
 import Foundation
 import AppKit
+import AVFoundation
 import SwiftData
 import SwiftUI
 import Translation
@@ -364,6 +365,7 @@ struct ContentView: View {
         .task {
             cleanupGeneratedDemoContentIfNeeded()
             backfillMissingCoverArtIfNeeded()
+            backfillGeneratedAudioMetadataIfNeeded()
             validateSelectedKokoroVoice()
             kokoroModelStore.refreshInstallationStatus()
             promptForKokoroDownloadIfNeeded()
@@ -547,6 +549,7 @@ struct ContentView: View {
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
+                            generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
@@ -570,6 +573,7 @@ struct ContentView: View {
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
+                            generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
@@ -593,6 +597,7 @@ struct ContentView: View {
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
+                            generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
@@ -788,6 +793,13 @@ struct ContentView: View {
                 try? fileManager.removeItem(at: fileURL)
             }
         }
+    }
+
+    private func generatedAudioDurationSeconds(for fileURL: URL) -> Int {
+        let asset = AVURLAsset(url: fileURL)
+        let durationSeconds = asset.duration.seconds
+        guard durationSeconds.isFinite, durationSeconds > 0 else { return 0 }
+        return Int(durationSeconds.rounded())
     }
 
     // MARK: - Paste Text
@@ -1258,6 +1270,19 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func backfillGeneratedAudioMetadataIfNeeded() {
+        for entry in libraryEntries {
+            guard let generatedAudioURL = entry.generatedAudioFileURL else { continue }
+            guard entry.generatedAudioDurationSeconds == nil else { continue }
+            guard FileManager.default.fileExists(atPath: generatedAudioURL.path) else { continue }
+
+            entry.generatedAudioDurationSeconds = generatedAudioDurationSeconds(for: generatedAudioURL)
+        }
+
+        try? modelContext.save()
+    }
+
+    @MainActor
     private func backfillMissingCoverArtIfNeeded() {
         guard !didBackfillMissingCoverArt else { return }
         didBackfillMissingCoverArt = true
@@ -1459,6 +1484,9 @@ struct ContentView: View {
 
         activeGeneratedAudioEntry = entry
         entry.lastOpened = .now
+        if entry.generatedAudioDurationSeconds == nil {
+            entry.generatedAudioDurationSeconds = generatedAudioDurationSeconds(for: fileURL)
+        }
         try? modelContext.save()
 
         let resumeTime = entry.generatedAudioPlaybackPosition
@@ -1518,6 +1546,9 @@ struct ContentView: View {
     @MainActor
     private func persistGeneratedAudioPlaybackProgress(for entry: LibraryEntry, elapsedSeconds: Int) {
         entry.generatedAudioPlaybackPositionSeconds = max(0, elapsedSeconds)
+        if entry.generatedAudioDurationSeconds == nil, let generatedAudioURL = entry.generatedAudioFileURL {
+            entry.generatedAudioDurationSeconds = generatedAudioDurationSeconds(for: generatedAudioURL)
+        }
         entry.lastOpened = .now
         try? modelContext.save()
     }
@@ -1634,6 +1665,19 @@ struct ContentView: View {
         return audioGenerationProgressValue
     }
 
+    private func generatedAudioProgressFraction(for entry: LibraryEntry) -> Double? {
+        guard let generatedAudioURL = entry.generatedAudioFileURL else { return nil }
+
+        if generatedAudioPlaybackService.hasLoadedAudio(for: generatedAudioURL) {
+            let duration = generatedAudioPlaybackService.currentDurationSeconds
+            guard duration > 0 else { return nil }
+            return min(max(Double(generatedAudioPlaybackService.currentElapsedSeconds) / Double(duration), 0), 1)
+        }
+
+        let savedFraction = entry.generatedAudioProgressFraction
+        return entry.generatedAudioDurationSeconds == nil && savedFraction == 0 ? nil : savedFraction
+    }
+
     @MainActor
     private func openAudioGenerationSheet(for entry: LibraryEntry) {
         guard audioGenerationTask == nil else {
@@ -1726,6 +1770,7 @@ struct ContentView: View {
             entry.generatedAudioFileName = audioFileURL.lastPathComponent
             entry.generatedAudioVoiceName = voice.voiceName
             entry.generatedAudioUpdatedAt = .now
+            entry.generatedAudioDurationSeconds = generatedAudioDurationSeconds(for: audioFileURL)
             entry.generatedAudioPlaybackPositionSeconds = 0
             try? modelContext.save()
 

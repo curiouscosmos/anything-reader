@@ -411,6 +411,7 @@ struct ReaderLibrarySectionView: View {
     let isEntryPlaying: (LibraryEntry) -> Bool
     let isEntryGeneratingAudio: (LibraryEntry) -> Bool
     let audioGenerationProgressFraction: (LibraryEntry) -> Double?
+    let generatedAudioProgressFraction: (LibraryEntry) -> Double?
     let onPrimaryAction: (LibraryEntry) -> Void
     let onPlay: (LibraryEntry) -> Void
     let onView: (LibraryEntry) -> Void
@@ -449,6 +450,7 @@ struct ReaderLibrarySectionView: View {
                             isImporting: entry.isImporting,
                             isGeneratingAudio: isEntryGeneratingAudio(entry),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(entry),
+                            generatedAudioProgressFraction: generatedAudioProgressFraction(entry),
                             hasGeneratedAudio: entry.generatedAudioFileURL != nil,
                             onPrimaryAction: { onPrimaryAction(entry) },
                             onPlay: { onPlay(entry) },
@@ -503,6 +505,7 @@ struct ReaderLibraryCardView: View {
     let isImporting: Bool
     let isGeneratingAudio: Bool
     let audioGenerationProgressFraction: Double?
+    let generatedAudioProgressFraction: Double?
     let hasGeneratedAudio: Bool
     let onPrimaryAction: () -> Void
     let onPlay: () -> Void
@@ -641,7 +644,7 @@ struct ReaderLibraryCardView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: entry.currentReadingProgressFraction)
+                    ProgressView(value: generatedAudioProgressFraction ?? entry.generatedAudioProgressFraction)
                         .tint(.white)
 
                     if let currentReadingProgress = entry.currentReadingProgressSummaryText ?? entry.currentReadingPositionDisplayText {

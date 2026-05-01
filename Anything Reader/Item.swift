@@ -301,6 +301,7 @@ final class LibraryEntry {
     var generatedAudioFileName: String?
     var generatedAudioVoiceName: String?
     var generatedAudioUpdatedAt: Date?
+    var generatedAudioDurationSeconds: Int?
     var generatedAudioPlaybackPositionSeconds: Int?
     var readingJumpTargetsData: Data?
     var currentReadingPositionIndex: Int?
@@ -335,6 +336,7 @@ final class LibraryEntry {
         generatedAudioFileName: String? = nil,
         generatedAudioVoiceName: String? = nil,
         generatedAudioUpdatedAt: Date? = nil,
+        generatedAudioDurationSeconds: Int? = nil,
         generatedAudioPlaybackPositionSeconds: Int? = nil,
         readingJumpTargets: [ReaderJumpTarget] = [],
         currentReadingPositionIndex: Int? = nil,
@@ -368,6 +370,7 @@ final class LibraryEntry {
         self.generatedAudioFileName = generatedAudioFileName
         self.generatedAudioVoiceName = generatedAudioVoiceName
         self.generatedAudioUpdatedAt = generatedAudioUpdatedAt
+        self.generatedAudioDurationSeconds = generatedAudioDurationSeconds
         self.generatedAudioPlaybackPositionSeconds = generatedAudioPlaybackPositionSeconds
         self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
         self.currentReadingPositionIndex = currentReadingPositionIndex
@@ -422,6 +425,15 @@ final class LibraryEntry {
 
     var generatedAudioPlaybackPosition: TimeInterval {
         TimeInterval(generatedAudioPlaybackPositionSeconds ?? 0)
+    }
+
+    var generatedAudioDuration: TimeInterval {
+        TimeInterval(generatedAudioDurationSeconds ?? 0)
+    }
+
+    var generatedAudioProgressFraction: Double {
+        guard let duration = generatedAudioDurationSeconds, duration > 0 else { return 0 }
+        return min(max(Double(generatedAudioPlaybackPositionSeconds ?? 0) / Double(duration), 0), 1)
     }
 
     var textLanguage: TextLanguage? {
