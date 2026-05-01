@@ -132,6 +132,7 @@ struct ContentView: View {
 
     private struct PendingImportContext {
         let sourceURL: URL
+        let uploadDirectoryURL: URL
         let stagedURL: URL
         let fileName: String
         let fileExtension: String
@@ -788,11 +789,24 @@ struct ContentView: View {
 
     private func removeAssociatedFiles(for entry: LibraryEntry) {
         let fileManager = FileManager.default
-        [entry.storedFilePath, entry.normalizedTextFilePath, entry.coverImageFilePath].compactMap { $0 }.forEach { path in
-            let fileURL = URL(fileURLWithPath: path)
+        let trackedURLs = [
+            entry.storedFilePath,
+            entry.normalizedTextFilePath,
+            entry.coverImageFilePath,
+            entry.generatedAudioFilePath
+        ]
+        .compactMap { $0 }
+        .map { URL(fileURLWithPath: $0) }
+
+        trackedURLs.forEach { fileURL in
             if fileManager.fileExists(atPath: fileURL.path) {
                 try? fileManager.removeItem(at: fileURL)
             }
+        }
+
+        if let parentDirectory = trackedURLs.first?.deletingLastPathComponent(),
+           fileManager.fileExists(atPath: parentDirectory.path) {
+            try? fileManager.removeItem(at: parentDirectory)
         }
     }
 
@@ -893,7 +907,8 @@ struct ContentView: View {
     @MainActor
     private func preparePendingImport(from sourceURL: URL) async {
         do {
-            let stagedURL = try stageImportedFile(from: sourceURL)
+            let stagedResult = try stageImportedFile(from: sourceURL)
+            let stagedURL = stagedResult.stagedURL
             let fileExtension = stagedURL.pathExtension.lowercased()
             let detectedLanguage = DocumentIngestService.detectLanguage(
                 for: stagedURL,
@@ -904,6 +919,7 @@ struct ContentView: View {
             pendingDocumentLanguage = detectedLanguage
             pendingImportContext = PendingImportContext(
                 sourceURL: sourceURL,
+                uploadDirectoryURL: stagedResult.uploadDirectoryURL,
                 stagedURL: stagedURL,
                 fileName: sourceURL.lastPathComponent,
                 fileExtension: fileExtension,
@@ -1096,6 +1112,9 @@ struct ContentView: View {
                 try? fileManager.removeItem(at: url)
             }
         }
+        if fileManager.fileExists(atPath: context.uploadDirectoryURL.path) {
+            try? fileManager.removeItem(at: context.uploadDirectoryURL)
+        }
         translationCoordinator.cancel()
         if let pendingImportEntry {
             modelContext.delete(pendingImportEntry)
@@ -1172,7 +1191,7 @@ struct ContentView: View {
         pendingImportEntry = placeholder
     }
 
-    private func stageImportedFile(from sourceURL: URL) throws -> URL {
+    private func stageImportedFile(from sourceURL: URL) throws -> (stagedURL: URL, uploadDirectoryURL: URL) {
         guard sourceURL.isFileURL else {
             throw UploadError.invalidFile
         }
@@ -1194,7 +1213,7 @@ struct ContentView: View {
             throw UploadError.invalidFile
         }
 
-        let directoryURL = try uploadedFilesDirectory()
+        let directoryURL = try makeUploadDirectory(for: sourceURL)
         let baseName = sanitizedImportedFileBaseName(from: sourceURL)
         let destinationURL = directoryURL.appendingPathComponent("\(baseName).\(extensionName)")
 
@@ -1203,7 +1222,7 @@ struct ContentView: View {
         }
 
         try fileManager.copyItem(at: sourceURL, to: destinationURL)
-        return destinationURL
+        return (destinationURL, directoryURL)
     }
 
     private func sanitizedImportedFileBaseName(from sourceURL: URL) -> String {
@@ -1346,6 +1365,29 @@ struct ContentView: View {
         }
 
         return uploadsDirectory
+    }
+
+    private func makeUploadDirectory(for sourceURL: URL) throws -> URL {
+        let fileManager = FileManager.default
+        let rootDirectory = try uploadedFilesDirectory()
+        let directoryName = sanitizedUploadedFileDirectoryName(from: sourceURL)
+        let destinationDirectory = rootDirectory.appendingPathComponent(directoryName, isDirectory: true)
+
+        if !fileManager.fileExists(atPath: destinationDirectory.path) {
+            try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        }
+
+        return destinationDirectory
+    }
+
+    private func sanitizedUploadedFileDirectoryName(from sourceURL: URL) -> String {
+        let timestamp = Self.importTimestampFormatter.string(from: .now)
+        let stem = sourceURL.deletingPathExtension().lastPathComponent
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+        let sanitizedStem = stem.isEmpty ? "upload" : stem
+        return "\(timestamp)-\(sanitizedStem)"
     }
 
     private func readerSourceKind(for fileExtension: String) -> ReaderSourceKind {
@@ -1793,6 +1835,7 @@ struct ContentView: View {
                 from: normalizedTextFileURL,
                 entryTitle: entry.title,
                 voice: voice,
+                destinationDirectoryURL: normalizedTextFileURL.deletingLastPathComponent(),
                 progressHandler: { fraction in
                     await MainActor.run {
                         audioGenerationProgressValue = fraction

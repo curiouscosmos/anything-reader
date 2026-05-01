@@ -541,7 +541,7 @@ struct ReaderLibraryCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 0, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 0, style: .continuous)
-                .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.14 : 0.10), lineWidth: 1)
+                .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.24 : 0.40), lineWidth: 1)
         )
         .shadow(color: .black.opacity(preferredMode == .light ? 0.10 : 0.22), radius: 14, y: 8)
         .background(panelBackground, in: RoundedRectangle(cornerRadius: 28, style: .continuous))

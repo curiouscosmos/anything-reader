@@ -86,7 +86,7 @@ actor CoverArtService {
     @MainActor
     private func saveImageData(_ data: Data, sourceURL: URL, originalFileName: String) throws -> URL {
         let fileManager = FileManager.default
-        let directoryURL = try uploadedFilesDirectory()
+        let directoryURL = sourceURL.deletingLastPathComponent()
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
@@ -106,24 +106,6 @@ actor CoverArtService {
 
         try outputData.write(to: destinationURL, options: .atomic)
         return destinationURL
-    }
-
-    nonisolated private func uploadedFilesDirectory() throws -> URL {
-        let fileManager = FileManager.default
-        let supportDirectory = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let appDirectory = supportDirectory.appendingPathComponent("Anything Reader", isDirectory: true)
-        let uploadsDirectory = appDirectory.appendingPathComponent("Uploaded Files", isDirectory: true)
-
-        if !fileManager.fileExists(atPath: uploadsDirectory.path) {
-            try fileManager.createDirectory(at: uploadsDirectory, withIntermediateDirectories: true)
-        }
-
-        return uploadsDirectory
     }
 
     @MainActor

@@ -220,7 +220,7 @@ actor DocumentIngestService {
         sourceURL: URL
     ) throws -> URL {
         let fileManager = FileManager.default
-        let directoryURL = try uploadedFilesDirectory()
+        let directoryURL = try uploadDirectory(for: sourceURL)
         let baseName = sourceURL.lastPathComponent
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
@@ -239,6 +239,17 @@ actor DocumentIngestService {
         }
 
         return destinationURL
+    }
+
+    private func uploadDirectory(for sourceURL: URL) throws -> URL {
+        let fileManager = FileManager.default
+        let directoryURL = sourceURL.deletingLastPathComponent()
+
+        if !fileManager.fileExists(atPath: directoryURL.path) {
+            try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        }
+
+        return directoryURL
     }
 
     private func uploadedFilesDirectory() throws -> URL {

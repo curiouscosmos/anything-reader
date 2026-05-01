@@ -25,6 +25,7 @@ actor LibraryAudioGenerationService {
         from normalizedTextFileURL: URL,
         entryTitle: String,
         voice: KokoroVoiceOption,
+        destinationDirectoryURL: URL? = nil,
         progressHandler: (@Sendable (Double) async -> Void)? = nil
     ) async throws -> URL {
         guard FileManager.default.fileExists(atPath: normalizedTextFileURL.path) else {
@@ -44,7 +45,11 @@ actor LibraryAudioGenerationService {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        let destinationURL = try destinationURL(for: entryTitle, voice: voice)
+        let destinationURL = try destinationURL(
+            for: entryTitle,
+            voice: voice,
+            destinationDirectoryURL: destinationDirectoryURL
+        )
         let stagingURL = temporaryOutputURL(for: destinationURL)
 
         do {
@@ -214,8 +219,17 @@ actor LibraryAudioGenerationService {
         try audioFile.write(from: buffer)
     }
 
-    private func destinationURL(for entryTitle: String, voice: KokoroVoiceOption) throws -> URL {
-        let destinationDirectory = try uploadedFilesDirectory()
+    private func destinationURL(
+        for entryTitle: String,
+        voice: KokoroVoiceOption,
+        destinationDirectoryURL: URL? = nil
+    ) throws -> URL {
+        let destinationDirectory: URL
+        if let destinationDirectoryURL {
+            destinationDirectory = destinationDirectoryURL
+        } else {
+            destinationDirectory = try uploadedFilesDirectory()
+        }
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
 
