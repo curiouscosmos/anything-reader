@@ -21,39 +21,46 @@ enum FreeBooksSQLiteHelpers {
     static func filteredBooksQuery(
         baseSQL: String,
         languageFilter: FreeBookLanguageFilter,
+        categoryFilter: FreeBookCategoryFilter,
         includePagination: Bool
     ) -> (sql: String, bindValues: [String]) {
-        let aliases = languageFilter.queryAliases
-        guard !aliases.isEmpty else {
-            if includePagination {
-                return (
-                    sql: """
-                    \(baseSQL)
-                    ORDER BY title COLLATE NOCASE ASC
-                    LIMIT ? OFFSET ?;
-                    """,
-                    bindValues: []
-                )
+        var clauses: [String] = []
+        var bindValues: [String] = []
+
+        if !languageFilter.isAll {
+            let languageClause = likeClause(
+                aliases: languageFilter.queryAliases,
+                columns: ["languages"]
+            )
+            if let clause = languageClause.clause {
+                clauses.append(clause)
+                bindValues.append(contentsOf: languageClause.bindValues)
             }
-
-            return (sql: "\(baseSQL);", bindValues: [])
         }
 
-        var predicateParts: [String] = []
-        predicateParts.reserveCapacity(aliases.count)
-        for _ in aliases {
-            predicateParts.append("LOWER(COALESCE(languages, '')) LIKE ?")
+        if !categoryFilter.isAll {
+            let categoryClause = likeClause(
+                aliases: categoryFilter.aliases,
+                columns: ["bookshelves", "subjects"]
+            )
+            if let clause = categoryClause.clause {
+                clauses.append(clause)
+                bindValues.append(contentsOf: categoryClause.bindValues)
+            }
         }
 
-        let predicate = predicateParts.joined(separator: " OR ")
-        let filterClause = "WHERE (\(predicate))"
-        let bindValues = aliases.map { "%\($0.lowercased())%" }
+        let whereClause: String
+        if clauses.isEmpty {
+            whereClause = ""
+        } else {
+            whereClause = "WHERE " + clauses.joined(separator: " AND ")
+        }
 
         if includePagination {
             return (
                 sql: """
                 \(baseSQL)
-                \(filterClause)
+                \(whereClause)
                 ORDER BY title COLLATE NOCASE ASC
                 LIMIT ? OFFSET ?;
                 """,
@@ -64,9 +71,33 @@ enum FreeBooksSQLiteHelpers {
         return (
             sql: """
             \(baseSQL)
-            \(filterClause);
+            \(whereClause);
             """,
             bindValues: bindValues
         )
+    }
+
+    private static func likeClause(aliases: [String], columns: [String]) -> (clause: String?, bindValues: [String]) {
+        let terms = aliases
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+
+        guard !terms.isEmpty else {
+            return (nil, [])
+        }
+
+        var predicateParts: [String] = []
+        var bindValues: [String] = []
+        predicateParts.reserveCapacity(terms.count * columns.count)
+        bindValues.reserveCapacity(terms.count * columns.count)
+
+        for term in terms {
+            for column in columns {
+                predicateParts.append("LOWER(COALESCE(\(column), '')) LIKE ?")
+                bindValues.append("%\(term)%")
+            }
+        }
+
+        return ("(\(predicateParts.joined(separator: " OR ")))", bindValues)
     }
 }

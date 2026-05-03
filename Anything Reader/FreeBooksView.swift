@@ -63,12 +63,12 @@ struct FreeBooksView: View {
     }
 
     private var filterBar: some View {
-        HStack {
-            Text("Language filter")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-
-            Menu {
+        HStack(spacing: 16) {
+            filterMenu(
+                title: "Language",
+                selectedTitle: store.selectedLanguageFilter.displayName,
+                menuIdentifier: "free-books-language-filter-menu"
+            ) {
                 ForEach(FreeBookLanguageFilter.allCases) { filter in
                     Button {
                         Task {
@@ -82,16 +82,67 @@ struct FreeBooksView: View {
                         }
                     }
                 }
-            } label: {
-                Label(store.selectedLanguageFilter.displayName, systemImage: "line.3.horizontal.decrease.circle")
+            }
+
+            filterMenu(
+                title: "Category",
+                selectedTitle: store.selectedCategoryFilter.displayName,
+                menuIdentifier: "free-books-category-filter-menu"
+            ) {
+                Button {
+                    Task {
+                        await store.setCategoryFilter(.all)
+                    }
+                } label: {
+                    if store.selectedCategoryFilter == .all {
+                        Label(FreeBookCategoryFilter.all.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(FreeBookCategoryFilter.all.displayName)
+                    }
+                }
+
+                ForEach(FreeBookCategoryFilter.menuSections, id: \.self) { section in
+                    Section(section) {
+                        ForEach(FreeBookCategoryFilter.filters(in: section)) { filter in
+                            Button {
+                                Task {
+                                    await store.setCategoryFilter(filter)
+                                }
+                            } label: {
+                                if store.selectedCategoryFilter == filter {
+                                    Label(filter.displayName, systemImage: "checkmark")
+                                } else {
+                                    Text(filter.displayName)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func filterMenu<Content: View>(
+        title: String,
+        selectedTitle: String,
+        menuIdentifier: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text("\(title):")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Menu(content: content) {
+                Label(selectedTitle, systemImage: "line.3.horizontal.decrease.circle")
                     .font(.headline)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(Color.primary.opacity(0.06), in: Capsule())
             }
-            .accessibilityIdentifier("free-books-language-filter-menu")
-
-            Spacer(minLength: 0)
+            .accessibilityIdentifier(menuIdentifier)
         }
     }
 

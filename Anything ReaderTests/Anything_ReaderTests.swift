@@ -265,6 +265,36 @@ struct Anything_ReaderTests {
         #expect(FreeBookLanguageFilter.mandarin.queryAliases.contains("zh-hans"))
         #expect(FreeBookLanguageFilter.english.queryAliases.contains("eng"))
     }
+
+    @Test func freeBookCategoryFiltersExposeCuratedNames() {
+        #expect(FreeBookCategoryFilter.all.displayName == "All Categories")
+        #expect(FreeBookCategoryFilter.adventure.displayName == "Adventure")
+        #expect(FreeBookCategoryFilter.scienceFictionFantasy.displayName == "Science-Fiction & Fantasy")
+        #expect(FreeBookCategoryFilter.adventure.aliases.contains("adventure"))
+        #expect(FreeBookCategoryFilter.sciencePhysics.aliases.contains("physics"))
+        #expect(FreeBookCategoryFilter.adventure.section == "Literature")
+        #expect(FreeBookCategoryFilter.sciencePhysics.section == "Science & Tech")
+        #expect(FreeBookCategoryFilter.classicsOfLiterature.aliases.contains("best books ever listings"))
+        #expect(FreeBookCategoryFilter.americanLiterature.aliases.contains("category: american literature"))
+        #expect(FreeBookCategoryFilter.scienceFictionFantasy.aliases.contains("science fiction and fantasy"))
+        #expect(FreeBookCategoryFilter.historyModern.aliases.contains("history: modern"))
+    }
+
+    @Test func freeBooksSqlHelperBuildsCombinedCategoryAndLanguagePredicates() {
+        let query = FreeBooksSQLiteHelpers.filteredBooksQuery(
+            baseSQL: "SELECT * FROM books",
+            languageFilter: .english,
+            categoryFilter: .adventure,
+            includePagination: true
+        )
+
+        #expect(query.sql.contains("WHERE"))
+        #expect(query.sql.contains("languages"))
+        #expect(query.sql.contains("bookshelves"))
+        #expect(query.sql.contains("subjects"))
+        #expect(query.sql.contains("LIMIT ? OFFSET ?"))
+        #expect(query.bindValues.count > 0)
+    }
 }
 
 private func makeTemporaryDirectory(prefix: String) throws -> URL {

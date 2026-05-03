@@ -269,4 +269,8 @@ enum FreeBookLanguageFilter: String, CaseIterable, Identifiable, Hashable {
             return ["zh", "zh-hans", "zh-hant", "chi", "zho", "mandarin", "chinese"]
         }
     }
+
+    var isAll: Bool {
+        self == .all
+    }
 }
