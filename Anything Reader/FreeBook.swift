@@ -36,11 +36,19 @@ struct FreeBook: Identifiable, Hashable {
     }
 
     var displayAuthors: String {
-        formattedList(from: authors, fallback: "Unknown author")
+        formattedList(
+            from: authors,
+            fallback: "Unknown author",
+            transform: Self.displayAuthorName
+        )
     }
 
     var displayLanguages: String {
-        formattedList(from: languages, fallback: "Unknown language")
+        formattedList(
+            from: languages,
+            fallback: "Unknown language",
+            transform: Self.displayLanguageName
+        )
     }
 
     var displaySubjects: String {
@@ -68,26 +76,231 @@ struct FreeBook: Identifiable, Hashable {
         return URL(fileURLWithPath: trimmed)
     }
 
-    private func formattedList(from value: String?, fallback: String) -> String {
-        let items = Self.listValues(from: value)
+    var htmlURL: URL? {
+        guard let html else { return nil }
+
+        for candidate in Self.listValues(from: html) + [html] {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            if let url = Self.makeURL(from: trimmed) {
+                return url
+            }
+        }
+
+        return nil
+    }
+
+    var inAppHTMLURL: URL? {
+        guard let htmlURL else { return nil }
+        return Self.preferredWebViewURL(for: htmlURL)
+    }
+
+    private func formattedList(
+        from value: String?,
+        fallback: String,
+        transform: ((String) -> String)? = nil
+    ) -> String {
+        let items = Self.listValues(from: value).map { transform?($0) ?? $0 }
         guard !items.isEmpty else { return fallback }
         if items.count == 1 { return items[0] }
         return items.prefix(3).joined(separator: " · ")
     }
 
-    static func listValues(from value: String?) -> [String] {
+    nonisolated static func listValues(from value: String?) -> [String] {
         guard let value else { return [] }
 
-        return value
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = trimCollectionWrappers(trimmed)
+
+        return normalized
             .components(separatedBy: CharacterSet(charactersIn: "\n;|"))
             .flatMap { $0.components(separatedBy: " / ") }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { trimCollectionWrappers($0) }
             .filter { !$0.isEmpty }
+            .map { stripSurroundingQuotes($0) }
             .reduce(into: [String]()) { result, item in
                 if !result.contains(item) {
                     result.append(item)
                 }
             }
+    }
+
+    nonisolated static func displayAuthorName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+
+        if trimmed.contains(",") {
+            let components = trimmed.split(separator: ",", omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if components.count >= 2 {
+                return ([components[1]] + components.dropFirst(2)).joined(separator: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        return trimmed
+    }
+
+    nonisolated static func displayLanguageName(_ value: String) -> String {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !normalized.isEmpty else { return value }
+
+        if let languageName = languageCodeName(for: normalized) {
+            return languageName
+        }
+
+        return value
+    }
+
+    nonisolated private static func languageCodeName(for code: String) -> String? {
+        switch code {
+        case "en", "eng", "en-us", "en-gb":
+            return "English"
+        case "fr", "fre", "fra":
+            return "French"
+        case "es", "spa":
+            return "Spanish"
+        case "de", "ger", "deu":
+            return "German"
+        case "it", "ita":
+            return "Italian"
+        case "pt", "por":
+            return "Portuguese"
+        case "nl", "dut", "nld":
+            return "Dutch"
+        case "sv", "swe":
+            return "Swedish"
+        case "tr", "tur":
+            return "Turkish"
+        case "pl", "pol":
+            return "Polish"
+        case "ro", "rum", "ron":
+            return "Romanian"
+        case "ru", "rus":
+            return "Russian"
+        case "uk", "ukr":
+            return "Ukrainian"
+        case "el", "ell":
+            return "Greek"
+        case "ar", "ara":
+            return "Arabic"
+        case "he", "heb":
+            return "Hebrew"
+        case "fa", "fas", "per":
+            return "Persian"
+        case "ur", "urd":
+            return "Urdu"
+        case "hi", "hin":
+            return "Hindi"
+        case "mr", "mar":
+            return "Marathi"
+        case "bn", "ben":
+            return "Bengali"
+        case "pa", "pan":
+            return "Punjabi"
+        case "ta", "tam":
+            return "Tamil"
+        case "te", "tel":
+            return "Telugu"
+        case "vi", "vie":
+            return "Vietnamese"
+        case "th", "tha":
+            return "Thai"
+        case "id", "ind":
+            return "Indonesian"
+        case "msa", "may", "ms":
+            return "Malay"
+        case "ko", "kor":
+            return "Korean"
+        case "ja", "jpn":
+            return "Japanese"
+        case "zho", "zh-hans", "zh":
+            return "Mandarin"
+        default:
+            return nil
+        }
+    }
+
+    nonisolated private static func trimCollectionWrappers(_ value: String) -> String {
+        var result = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if result.hasPrefix("[") && result.hasSuffix("]") {
+            result.removeFirst()
+            result.removeLast()
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated private static func stripSurroundingQuotes(_ value: String) -> String {
+        var result = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if result.hasPrefix("\"") && result.hasSuffix("\"") && result.count >= 2 {
+            result.removeFirst()
+            result.removeLast()
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated private static func makeURL(from value: String) -> URL? {
+        if let url = URL(string: value), url.scheme != nil {
+            return url
+        }
+
+        if value.hasPrefix("//"), let url = URL(string: "https:\(value)") {
+            return url
+        }
+
+        if value.hasPrefix("www."), let url = URL(string: "https://\(value)") {
+            return url
+        }
+
+        if value.hasPrefix("/ebooks/") || value.hasPrefix("/files/") {
+            return URL(string: "https://www.gutenberg.org\(value)")
+        }
+
+        if value.contains("gutenberg.org"), let url = URL(string: "https://\(value)") {
+            return url
+        }
+
+        return nil
+    }
+
+    nonisolated private static func preferredWebViewURL(for url: URL) -> URL? {
+        guard url.host?.contains("gutenberg.org") == true else {
+            return url
+        }
+
+        let path = url.path.lowercased()
+        guard path.contains("/ebooks/") else {
+            return url.scheme == "http" ? httpsURL(from: url) : url
+        }
+
+        let lastComponent = url.lastPathComponent
+        let components = lastComponent.split(separator: ".").map(String.init)
+        guard let identifier = components.first, let bookID = Int(identifier) else {
+            return url.scheme == "http" ? httpsURL(from: url) : url
+        }
+
+        let variant: String
+        if components.contains("images") {
+            variant = "images"
+        } else if components.contains("noimages") {
+            variant = "noimages"
+        } else {
+            variant = "noimages"
+        }
+
+        return URL(string: "https://www.gutenberg.org/cache/epub/\(bookID)/pg\(bookID)-\(variant).html")
+            ?? (url.scheme == "http" ? httpsURL(from: url) : url)
+    }
+
+    nonisolated private static func httpsURL(from url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.scheme = "https"
+        return components.url
     }
 
     private func isUsableLink(_ value: String?) -> Bool {

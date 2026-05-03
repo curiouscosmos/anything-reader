@@ -11,52 +11,58 @@ struct FreeBooksView: View {
     @StateObject private var store = FreeBooksCatalogStore.shared
     @Binding var searchText: String
     @State private var searchDebounceTask: Task<Void, Never>?
+    @State private var selectedHTMLBook: FreeBook?
 
     private let columns = [
         GridItem(.adaptive(minimum: 220), spacing: 16)
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            header
-            filterBar
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                filterBar
 
-            if store.isDownloadingDatabase {
-                downloadProgressCard
-            } else if !store.isDatabaseDownloaded {
-                downloadPromptCard
-            } else if store.isLoadingBooks {
-                loadingCard
-            } else if store.books.isEmpty {
-                emptyCatalogCard
-            } else {
-                booksGrid
-            }
-
-            if let errorMessage = store.errorMessage {
-                errorCard(errorMessage)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 24)
-        .padding(.top, 20)
-        .task {
-            await store.loadCatalogIfNeeded()
-            await store.setSearchText(searchText)
-        }
-        .onChange(of: searchText) { _, newValue in
-            searchDebounceTask?.cancel()
-            searchDebounceTask = Task {
-                do {
-                    try await Task.sleep(nanoseconds: 300_000_000)
-                } catch {
-                    return
+                if store.isDownloadingDatabase {
+                    downloadProgressCard
+                } else if !store.isDatabaseDownloaded {
+                    downloadPromptCard
+                } else if store.isLoadingBooks {
+                    loadingCard
+                } else if store.books.isEmpty {
+                    emptyCatalogCard
+                } else {
+                    booksGrid
                 }
 
-                guard !Task.isCancelled else { return }
-                await store.setSearchText(newValue)
+                if let errorMessage = store.errorMessage {
+                    errorCard(errorMessage)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .task {
+                await store.loadCatalogIfNeeded()
+                await store.setSearchText(searchText)
+            }
+            .onChange(of: searchText) { _, newValue in
+                searchDebounceTask?.cancel()
+                searchDebounceTask = Task {
+                    do {
+                        try await Task.sleep(nanoseconds: 300_000_000)
+                    } catch {
+                        return
+                    }
+
+                    guard !Task.isCancelled else { return }
+                    await store.setSearchText(newValue)
+                }
+            }
+            .navigationDestination(item: $selectedHTMLBook) { book in
+                FreeBookHTMLViewerView(book: book)
             }
         }
     }
@@ -137,6 +143,20 @@ struct FreeBooksView: View {
             }
 
             Spacer(minLength: 0)
+
+            Button {
+                Task {
+                    await store.resyncCatalog()
+                }
+            } label: {
+                Label("Resync Database", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.bordered)
+            .disabled(store.isDownloadingDatabase || store.isLoadingBooks || store.isLoadingMoreBooks)
+            .accessibilityIdentifier("free-books-resync-database-button")
         }
     }
 
@@ -166,7 +186,12 @@ struct FreeBooksView: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(store.books) { book in
-                    FreeBookCardView(book: book)
+                    FreeBookCardView(
+                        book: book,
+                        onView: {
+                            selectedHTMLBook = book
+                        }
+                    )
                 }
             }
 

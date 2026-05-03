@@ -127,40 +127,11 @@ final class FreeBooksCatalogStore: ObservableObject {
     }
 
     func downloadCatalog() async {
-        guard !isDownloadingDatabase else { return }
+        await performCatalogDownload()
+    }
 
-        isDownloadingDatabase = true
-        errorMessage = nil
-        defer { isDownloadingDatabase = false }
-
-        do {
-            try ensureDatabaseDirectoryExists()
-
-            let (temporaryURL, response) = try await URLSession.shared.download(from: catalogURL)
-            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-                throw CatalogDownloadError.invalidResponse
-            }
-
-            if fileManager.fileExists(atPath: localDatabaseURL.path) {
-                try fileManager.removeItem(at: localDatabaseURL)
-            }
-
-            try fileManager.moveItem(at: temporaryURL, to: localDatabaseURL)
-            let result = try await Self.loadBooks(
-                from: localDatabaseURL,
-                limit: pageSize,
-                offset: 0,
-                languageFilter: selectedLanguageFilter,
-                categoryFilter: selectedCategoryFilter,
-                searchText: searchText
-            )
-            books = result.books
-            totalBooksCount = result.totalCount
-        } catch {
-            books = []
-            totalBooksCount = 0
-            errorMessage = "Could not download the free books catalog: \(error.localizedDescription)"
-        }
+    func resyncCatalog() async {
+        await performCatalogDownload()
     }
 
     nonisolated private static func loadBooks(
@@ -340,6 +311,50 @@ final class FreeBooksCatalogStore: ObservableObject {
         let directoryURL = localDatabaseURL.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: directoryURL.path) {
             try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        }
+    }
+
+    private func performCatalogDownload() async {
+        guard !isDownloadingDatabase else { return }
+
+        isDownloadingDatabase = true
+        errorMessage = nil
+        defer { isDownloadingDatabase = false }
+
+        let hadExistingDatabase = isDatabaseDownloaded
+
+        do {
+            try ensureDatabaseDirectoryExists()
+
+            let (temporaryURL, response) = try await URLSession.shared.download(from: catalogURL)
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                throw CatalogDownloadError.invalidResponse
+            }
+
+            // Replace the existing catalog atomically so a failed refresh never leaves the app without a valid copy.
+            _ = try fileManager.replaceItemAt(
+                localDatabaseURL,
+                withItemAt: temporaryURL,
+                backupItemName: nil,
+                options: []
+            )
+
+            let result = try await Self.loadBooks(
+                from: localDatabaseURL,
+                limit: pageSize,
+                offset: 0,
+                languageFilter: selectedLanguageFilter,
+                categoryFilter: selectedCategoryFilter,
+                searchText: searchText
+            )
+            books = result.books
+            totalBooksCount = result.totalCount
+        } catch {
+            if !hadExistingDatabase {
+                books = []
+                totalBooksCount = 0
+            }
+            errorMessage = "Could not download the free books catalog: \(error.localizedDescription)"
         }
     }
 
