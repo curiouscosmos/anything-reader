@@ -25,6 +25,9 @@ struct ReaderSidebarView: View {
 
                 Label("Recently Played", systemImage: "clock.arrow.circlepath")
                     .tag(SidebarSelection.recent)
+
+                Label("Free Books", systemImage: "books.vertical.fill")
+                    .tag(SidebarSelection.freeBooks)
             }
 
             // User-generated categories.

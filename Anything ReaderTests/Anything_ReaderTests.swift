@@ -227,6 +227,44 @@ struct Anything_ReaderTests {
         #expect(voice.dropdownLabel.contains("Bella"))
         #expect(KokoroVoiceCatalog.voice(named: "missing").voiceName == KokoroVoiceCatalog.allVoices[0].voiceName)
     }
+
+    @Test func freeBookHelpersFormatCatalogMetadata() {
+        let book = FreeBook(
+            id: 42,
+            title: "The Sample Book",
+            authors: "Alice; Bob",
+            languages: "en|fr",
+            subjects: "Fiction / Adventure",
+            bookshelves: "Children's Books",
+            epub: "https://example.com/book.epub",
+            pdf: nil,
+            txt: "https://example.com/book.txt",
+            html: nil,
+            cover: "https://example.com/cover.png"
+        )
+
+        #expect(book.displayTitle == "The Sample Book")
+        #expect(book.displayAuthors == "Alice · Bob")
+        #expect(book.displayLanguages == "en · fr")
+        #expect(book.displaySubjects == "Fiction · Adventure")
+        #expect(book.displayBookshelves == "Children's Books")
+        #expect(book.displayFormat == "EPUB")
+        #expect(book.availableFormats == ["epub", "txt"])
+        #expect(book.coverURL?.absoluteString == "https://example.com/cover.png")
+    }
+
+    @Test func freeBookListValuesIgnoreEmptySegments() {
+        let values = FreeBook.listValues(from: " one ; ; two | three / four \n five ")
+        #expect(values == ["one", "two", "three", "four", "five"])
+    }
+
+    @Test func freeBookLanguageFiltersExposeMajorLanguageLabels() {
+        #expect(FreeBookLanguageFilter.all.displayName == "All Languages")
+        #expect(FreeBookLanguageFilter.english.displayName == "English")
+        #expect(FreeBookLanguageFilter.french.displayName == "French")
+        #expect(FreeBookLanguageFilter.mandarin.queryAliases.contains("zh-hans"))
+        #expect(FreeBookLanguageFilter.english.queryAliases.contains("eng"))
+    }
 }
 
 private func makeTemporaryDirectory(prefix: String) throws -> URL {

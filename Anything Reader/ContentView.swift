@@ -588,6 +588,9 @@ struct ContentView: View {
                             onDelete: deleteEntry
                         )
 
+                    case .freeBooks:
+                        FreeBooksView()
+
                     case .category(let categoryName):
                         ReaderLibrarySectionView(
                             title: categoryName,
@@ -649,6 +652,8 @@ struct ContentView: View {
             let matchesSelection: Bool
             switch selection {
             case .home, .recent:
+                matchesSelection = true
+            case .freeBooks:
                 matchesSelection = true
             case .category(let categoryName):
                 matchesSelection = entry.categoryName == categoryName

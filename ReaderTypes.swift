@@ -11,6 +11,7 @@ import SwiftUI
 enum SidebarSelection: Hashable {
     case home
     case recent
+    case freeBooks
     case category(String)
 }
 
