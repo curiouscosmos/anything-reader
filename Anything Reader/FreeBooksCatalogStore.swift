@@ -17,6 +17,7 @@ final class FreeBooksCatalogStore: ObservableObject {
     @Published private(set) var totalBooksCount = 0
     @Published var selectedLanguageFilter: FreeBookLanguageFilter = .all
     @Published var selectedCategoryFilter: FreeBookCategoryFilter = .all
+    @Published var searchText: String = ""
     @Published private(set) var isLoadingBooks = false
     @Published private(set) var isLoadingMoreBooks = false
     @Published private(set) var isDownloadingDatabase = false
@@ -54,6 +55,13 @@ final class FreeBooksCatalogStore: ObservableObject {
         await refreshCatalog()
     }
 
+    func setSearchText(_ text: String) async {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard searchText != normalized else { return }
+        searchText = normalized
+        await refreshCatalog()
+    }
+
     func refreshCatalog() async {
         guard isDatabaseDownloaded else {
             books = []
@@ -71,7 +79,8 @@ final class FreeBooksCatalogStore: ObservableObject {
                 limit: pageSize,
                 offset: 0,
                 languageFilter: selectedLanguageFilter,
-                categoryFilter: selectedCategoryFilter
+                categoryFilter: selectedCategoryFilter,
+                searchText: searchText
             )
             books = result.books
             totalBooksCount = result.totalCount
@@ -97,7 +106,8 @@ final class FreeBooksCatalogStore: ObservableObject {
                 totalBooksCount = try Self.countBooks(
                     in: localDatabaseURL,
                     languageFilter: selectedLanguageFilter,
-                    categoryFilter: selectedCategoryFilter
+                    categoryFilter: selectedCategoryFilter,
+                    searchText: searchText
                 )
             }
 
@@ -106,7 +116,8 @@ final class FreeBooksCatalogStore: ObservableObject {
                 limit: pageSize,
                 offset: books.count,
                 languageFilter: selectedLanguageFilter,
-                categoryFilter: selectedCategoryFilter
+                categoryFilter: selectedCategoryFilter,
+                searchText: searchText
             )
             books.append(contentsOf: result.books)
             totalBooksCount = result.totalCount
@@ -140,7 +151,8 @@ final class FreeBooksCatalogStore: ObservableObject {
                 limit: pageSize,
                 offset: 0,
                 languageFilter: selectedLanguageFilter,
-                categoryFilter: selectedCategoryFilter
+                categoryFilter: selectedCategoryFilter,
+                searchText: searchText
             )
             books = result.books
             totalBooksCount = result.totalCount
@@ -156,20 +168,23 @@ final class FreeBooksCatalogStore: ObservableObject {
         limit: Int,
         offset: Int,
         languageFilter: FreeBookLanguageFilter,
-        categoryFilter: FreeBookCategoryFilter
+        categoryFilter: FreeBookCategoryFilter,
+        searchText: String
     ) async throws -> (books: [FreeBook], totalCount: Int) {
         try await Task.detached(priority: .utility) {
             let totalCount = try countBooks(
                 in: databaseURL,
                 languageFilter: languageFilter,
-                categoryFilter: categoryFilter
+                categoryFilter: categoryFilter,
+                searchText: searchText
             )
             let books = try readBooks(
                 from: databaseURL,
                 limit: limit,
                 offset: offset,
                 languageFilter: languageFilter,
-                categoryFilter: categoryFilter
+                categoryFilter: categoryFilter,
+                searchText: searchText
             )
             return (books, totalCount)
         }.value
@@ -180,7 +195,8 @@ final class FreeBooksCatalogStore: ObservableObject {
         limit: Int,
         offset: Int,
         languageFilter: FreeBookLanguageFilter,
-        categoryFilter: FreeBookCategoryFilter
+        categoryFilter: FreeBookCategoryFilter,
+        searchText: String
     ) throws -> [FreeBook] {
         try withDatabase(at: databaseURL) { database in
             try validateCatalogSchema(database)
@@ -190,7 +206,7 @@ final class FreeBooksCatalogStore: ObservableObject {
                 SELECT id, title, authors, languages, subjects, bookshelves, epub, pdf, txt, html, cover
                 FROM books
                 """
-            , languageFilter: languageFilter, categoryFilter: categoryFilter, includePagination: true)
+            , languageFilter: languageFilter, categoryFilter: categoryFilter, searchText: searchText, includePagination: true)
 
             let sql = query.sql
             let bindCount = query.bindValues.count
@@ -236,7 +252,8 @@ final class FreeBooksCatalogStore: ObservableObject {
     nonisolated private static func countBooks(
         in databaseURL: URL,
         languageFilter: FreeBookLanguageFilter,
-        categoryFilter: FreeBookCategoryFilter
+        categoryFilter: FreeBookCategoryFilter,
+        searchText: String
     ) throws -> Int {
         try withDatabase(at: databaseURL) { database in
             try validateCatalogSchema(database)
@@ -245,6 +262,7 @@ final class FreeBooksCatalogStore: ObservableObject {
                 baseSQL: "SELECT COUNT(*) FROM books",
                 languageFilter: languageFilter,
                 categoryFilter: categoryFilter,
+                searchText: searchText,
                 includePagination: false
             )
 

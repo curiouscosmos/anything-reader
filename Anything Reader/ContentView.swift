@@ -26,7 +26,10 @@ struct ContentView: View {
     @AppStorage("kokoroVoiceName") private var kokoroVoiceName: String = KokoroVoiceCatalog.defaultVoiceName
 
     @State private var selection: SidebarSelection = .home
-    @State private var searchText = ""
+    @State private var homeSearchText = ""
+    @State private var recentSearchText = ""
+    @State private var freeBooksSearchText = ""
+    @State private var categorySearchTexts: [String: String] = [:]
     @State private var isShowingPasteSheet = false
     @State private var isShowingSettings = false
     @State private var isShowingKokoroDownloadModal = false
@@ -518,7 +521,8 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     ReaderTopBarView(
-                        searchText: $searchText,
+                        searchText: activeSearchTextBinding,
+                        searchPlaceholder: searchPlaceholder,
                         onHome: { selection = .home },
                         onPasteText: { isShowingPasteSheet = true },
                         onUploadFile: { isShowingFileImporter = true },
@@ -589,7 +593,7 @@ struct ContentView: View {
                         )
 
                     case .freeBooks:
-                        FreeBooksView()
+                        FreeBooksView(searchText: $freeBooksSearchText)
 
                     case .category(let categoryName):
                         ReaderLibrarySectionView(
@@ -635,7 +639,7 @@ struct ContentView: View {
     }
 
     private var filteredEntries: [LibraryEntry] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let query = activeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         return libraryEntries.filter { entry in
             let matchesQuery: Bool
@@ -660,6 +664,44 @@ struct ContentView: View {
             }
 
             return matchesQuery && matchesSelection
+        }
+    }
+
+    private var activeSearchTextBinding: Binding<String> {
+        switch selection {
+        case .home:
+            return $homeSearchText
+        case .recent:
+            return $recentSearchText
+        case .freeBooks:
+            return $freeBooksSearchText
+        case .category(let categoryName):
+            return Binding(
+                get: { categorySearchTexts[categoryName] ?? "" },
+                set: { categorySearchTexts[categoryName] = $0 }
+            )
+        }
+    }
+
+    private var activeSearchText: String {
+        switch selection {
+        case .home:
+            return homeSearchText
+        case .recent:
+            return recentSearchText
+        case .freeBooks:
+            return freeBooksSearchText
+        case .category(let categoryName):
+            return categorySearchTexts[categoryName] ?? ""
+        }
+    }
+
+    private var searchPlaceholder: String {
+        switch selection {
+        case .home, .recent, .category(_):
+            return "Search books, text, categories"
+        case .freeBooks:
+            return "Search free books, authors, categories"
         }
     }
 

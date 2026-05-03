@@ -285,6 +285,7 @@ struct Anything_ReaderTests {
             baseSQL: "SELECT * FROM books",
             languageFilter: .english,
             categoryFilter: .adventure,
+            searchText: "whale voyage",
             includePagination: true
         )
 
@@ -292,6 +293,7 @@ struct Anything_ReaderTests {
         #expect(query.sql.contains("languages"))
         #expect(query.sql.contains("bookshelves"))
         #expect(query.sql.contains("subjects"))
+        #expect(query.sql.contains("title"))
         #expect(query.sql.contains("LIMIT ? OFFSET ?"))
         #expect(query.bindValues.count > 0)
     }

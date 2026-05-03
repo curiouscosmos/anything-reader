@@ -74,6 +74,7 @@ struct ReaderSidebarView: View {
 // Global actions and search entry point shown above the library content.
 struct ReaderTopBarView: View {
     @Binding var searchText: String
+    let searchPlaceholder: String
     let onHome: () -> Void
     let onPasteText: () -> Void
     let onUploadFile: () -> Void
@@ -140,7 +141,7 @@ struct ReaderTopBarView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField("Search books, text, categories", text: $searchText)
+            TextField(searchPlaceholder, text: $searchText)
                 .textFieldStyle(.plain)
                 .disableAutocorrection(true)
         }

@@ -22,6 +22,7 @@ enum FreeBooksSQLiteHelpers {
         baseSQL: String,
         languageFilter: FreeBookLanguageFilter,
         categoryFilter: FreeBookCategoryFilter,
+        searchText: String,
         includePagination: Bool
     ) -> (sql: String, bindValues: [String]) {
         var clauses: [String] = []
@@ -47,6 +48,12 @@ enum FreeBooksSQLiteHelpers {
                 clauses.append(clause)
                 bindValues.append(contentsOf: categoryClause.bindValues)
             }
+        }
+
+        let searchClause = searchQueryClause(searchText: searchText)
+        if let clause = searchClause.clause {
+            clauses.append(clause)
+            bindValues.append(contentsOf: searchClause.bindValues)
         }
 
         let whereClause: String
@@ -75,6 +82,38 @@ enum FreeBooksSQLiteHelpers {
             """,
             bindValues: bindValues
         )
+    }
+
+    private static func searchQueryClause(searchText: String) -> (clause: String?, bindValues: [String]) {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else {
+            return (nil, [])
+        }
+
+        let tokens = query
+            .split(whereSeparator: { $0.isWhitespace || $0.isPunctuation })
+            .map(String.init)
+            .filter { !$0.isEmpty }
+
+        guard !tokens.isEmpty else {
+            return (nil, [])
+        }
+
+        let columns = ["title", "authors", "subjects", "bookshelves", "languages"]
+        var tokenClauses: [String] = []
+        var bindValues: [String] = []
+        tokenClauses.reserveCapacity(tokens.count)
+        bindValues.reserveCapacity(tokens.count * columns.count)
+
+        for token in tokens {
+            let perTokenClauses = columns.map { "LOWER(COALESCE(\($0), '')) LIKE ?" }
+            tokenClauses.append("(\(perTokenClauses.joined(separator: " OR ")))")
+            for _ in columns {
+                bindValues.append("%\(token)%")
+            }
+        }
+
+        return ("(\(tokenClauses.joined(separator: " AND ")))", bindValues)
     }
 
     private static func likeClause(aliases: [String], columns: [String]) -> (clause: String?, bindValues: [String]) {

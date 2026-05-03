@@ -9,6 +9,8 @@ import SwiftUI
 
 struct FreeBooksView: View {
     @StateObject private var store = FreeBooksCatalogStore.shared
+    @Binding var searchText: String
+    @State private var searchDebounceTask: Task<Void, Never>?
 
     private let columns = [
         GridItem(.adaptive(minimum: 220), spacing: 16)
@@ -42,6 +44,20 @@ struct FreeBooksView: View {
         .padding(.top, 20)
         .task {
             await store.loadCatalogIfNeeded()
+            await store.setSearchText(searchText)
+        }
+        .onChange(of: searchText) { _, newValue in
+            searchDebounceTask?.cancel()
+            searchDebounceTask = Task {
+                do {
+                    try await Task.sleep(nanoseconds: 300_000_000)
+                } catch {
+                    return
+                }
+
+                guard !Task.isCancelled else { return }
+                await store.setSearchText(newValue)
+            }
         }
     }
 
@@ -50,7 +66,7 @@ struct FreeBooksView: View {
             Text("Free Books")
                 .font(.largeTitle.weight(.bold))
 
-            Text("Browse the downloaded catalog of free books and open a title when you are ready to add it to your library.")
+            Text("Browse the downloaded catalog of free books and use the search bar above to find titles, authors, categories, or shelves.")
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
