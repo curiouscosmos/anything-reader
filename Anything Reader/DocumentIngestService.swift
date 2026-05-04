@@ -2,7 +2,7 @@
 //  DocumentIngestService.swift
 //  Anything Reader
 //
-//  Handles PDF, image, TXT, and ePub extraction plus normalization.
+//  Handles PDF, image, HTML, TXT, and ePub extraction plus normalization.
 //
 
 import AppKit
@@ -152,6 +152,11 @@ actor DocumentIngestService {
                 sectionCount: 0,
                 readingJumpTargets: []
             )
+        case .html:
+            rawText = try HTMLTextExtractionService.extractText(from: stagedFileURL)
+            extractedTitle = bestTitleCandidate(from: rawText)
+            pdfExtractionMode = nil
+            readingMetadata = TXTReadingMetadataService.readingMetadata(from: rawText)
         case .text, .pastedText:
             guard let text = String(data: fileData, encoding: .utf8) else {
                 throw DocumentIngestError.unreadableDocument
@@ -319,6 +324,37 @@ actor DocumentIngestService {
         default:
             return .text
         }
+    }
+}
+
+private enum HTMLTextExtractionService {
+    nonisolated static func extractText(from url: URL) throws -> String {
+        let data = try Data(contentsOf: url)
+        let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
+            .documentType: NSAttributedString.DocumentType.html,
+            .characterEncoding: String.Encoding.utf8.rawValue
+        ]
+
+        if let attributedString = try? NSAttributedString(data: data, options: options, documentAttributes: nil) {
+            let text = attributedString.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                return text
+            }
+        }
+
+        if let utf8Text = String(data: data, encoding: .utf8) {
+            return stripHTMLTags(from: utf8Text)
+        }
+
+        throw DocumentIngestError.extractionFailed
+    }
+
+    nonisolated private static func stripHTMLTags(from text: String) -> String {
+        let stripped = text
+            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

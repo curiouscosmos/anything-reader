@@ -11,6 +11,7 @@ struct FreeBookCardView: View {
     let book: FreeBook
     var onView: (() -> Void)? = nil
     var onDownload: (() -> Void)? = nil
+    var isDownloadDisabled: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -137,6 +138,8 @@ struct FreeBookCardView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(BookCardPrimaryButtonStyle())
+            .disabled(isDownloadDisabled)
+            .opacity(isDownloadDisabled ? 0.55 : 1)
         }
     }
 
@@ -210,5 +213,10 @@ private struct BookCardSecondaryButtonStyle: ButtonStyle {
 
 #Preview {
     // Preview Free Books screen for development
-    FreeBooksView(searchText: .constant("Lincoln"))
+    FreeBooksView(
+        searchText: .constant("Lincoln"),
+        isDownloadingBook: .constant(false),
+        downloadMessage: .constant(""),
+        onDownloadBook: { _ in }
+    )
 }

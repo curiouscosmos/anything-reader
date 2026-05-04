@@ -10,8 +10,12 @@ import SwiftUI
 struct FreeBooksView: View {
     @StateObject private var store = FreeBooksCatalogStore.shared
     @Binding var searchText: String
+    @Binding var isDownloadingBook: Bool
+    @Binding var downloadMessage: String
+    let onDownloadBook: (FreeBook) -> Void
     @State private var searchDebounceTask: Task<Void, Never>?
     @State private var selectedHTMLBook: FreeBook?
+    private let booksTopAnchorID = "free-books-grid-top"
 
     private let columns = [
         GridItem(.adaptive(minimum: 220), spacing: 16)
@@ -75,6 +79,20 @@ struct FreeBooksView: View {
             Text("Browse the downloaded catalog of free books and use the search bar above to find titles, authors, categories, or shelves.")
                 .font(.headline)
                 .foregroundStyle(.secondary)
+
+            if isDownloadingBook, !downloadMessage.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Downloading free book")
+                            .font(.subheadline.weight(.semibold))
+                        Text(downloadMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 4)
+            }
 
             if store.isDatabaseDownloaded, store.totalBooksCount > store.books.count {
                 Text("Showing \(store.books.count) of \(store.totalBooksCount) books. Load more to continue browsing.")
@@ -183,52 +201,68 @@ struct FreeBooksView: View {
     }
 
     private var booksGrid: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(store.books) { book in
-                    FreeBookCardView(
-                        book: book,
-                        onView: {
-                            selectedHTMLBook = book
-                        }
-                    )
-                }
-            }
+        ScrollViewReader { proxy in
+            ScrollView {
+                Color.clear
+                    .frame(height: 1)
+                    .id(booksTopAnchorID)
 
-            if store.isLoadingMoreBooks {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Loading more books...")
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 20)
-            } else if store.books.count < store.totalBooksCount {
-                Button {
-                    Task {
-                        await store.loadNextPage()
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(store.books) { book in
+                        FreeBookCardView(
+                            book: book,
+                            onView: {
+                                selectedHTMLBook = book
+                            },
+                            onDownload: {
+                                onDownloadBook(book)
+                            },
+                            isDownloadDisabled: isDownloadingBook
+                        )
                     }
-                } label: {
-                    Label("Load More Books", systemImage: "arrow.down.circle")
-                        .font(.headline)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
                 }
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 20)
-                .accessibilityIdentifier("free-books-load-more-button")
-            }
 
-            if store.totalBooksCount > 0 {
-                Text("Showing \(store.books.count) of \(store.totalBooksCount) books.")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                if store.isLoadingMoreBooks {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Loading more books...")
+                            .foregroundStyle(.secondary)
+                    }
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.bottom, 40)
+                    .padding(.vertical, 20)
+                } else if store.books.count < store.totalBooksCount {
+                    Button {
+                        Task {
+                            await store.loadNextPage()
+                        }
+                    } label: {
+                        Label("Load More Books", systemImage: "arrow.down.circle")
+                            .font(.headline)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 20)
+                    .accessibilityIdentifier("free-books-load-more-button")
+                }
+
+                if store.totalBooksCount > 0 {
+                    Text("Showing \(store.books.count) of \(store.totalBooksCount) books.")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.bottom, 40)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .onChange(of: isDownloadingBook) { _, newValue in
+                guard newValue else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(booksTopAnchorID, anchor: .top)
+                }
             }
         }
-        .scrollContentBackground(.hidden)
     }
 
     private var downloadPromptCard: some View {

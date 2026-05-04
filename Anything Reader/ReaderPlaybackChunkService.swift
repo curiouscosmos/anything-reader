@@ -49,7 +49,7 @@ struct ReaderPlaybackChunkService {
             ) ?? chunks(from: text, language: language)
         }
 
-        if entry.sourceKind == .text || entry.sourceKind == .pastedText || entry.sourceKind == .image {
+        if entry.sourceKind == .text || entry.sourceKind == .html || entry.sourceKind == .pastedText || entry.sourceKind == .image {
             return structuredChunks(
                 from: text,
                 marker: txtSectionBreakMarker,
@@ -145,7 +145,7 @@ struct ReaderPlaybackChunkService {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         }
 
-        if (entry.sourceKind == .text || entry.sourceKind == .pastedText || entry.sourceKind == .image),
+        if (entry.sourceKind == .text || entry.sourceKind == .html || entry.sourceKind == .pastedText || entry.sourceKind == .image),
            text.contains(txtSectionBreakMarker) {
             return text
                 .components(separatedBy: txtSectionBreakMarker)
@@ -169,7 +169,7 @@ struct ReaderPlaybackChunkService {
                 return pdfPageBreakMarker
             case .epub:
                 return epubChapterBreakMarker
-            case .text, .pastedText, .image:
+            case .text, .html, .pastedText, .image:
                 return txtSectionBreakMarker
             }
         }()
@@ -195,7 +195,7 @@ struct ReaderPlaybackChunkService {
                 return pdfPageBreakMarker
             case .epub:
                 return epubChapterBreakMarker
-            case .text, .pastedText, .image:
+            case .text, .html, .pastedText, .image:
                 return txtSectionBreakMarker
             }
         }()

@@ -28,14 +28,6 @@ struct FreeBookHTMLViewerView: View {
             } else {
                 missingHTMLView
             }
-
-            if let loadErrorMessage {
-                Text("Failed to load the HTML page: \(loadErrorMessage)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-            }
         }
         .navigationTitle(book.displayTitle)
         .onAppear {

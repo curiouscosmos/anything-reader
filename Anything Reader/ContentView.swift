@@ -30,6 +30,10 @@ struct ContentView: View {
     @State private var recentSearchText = ""
     @State private var freeBooksSearchText = ""
     @State private var categorySearchTexts: [String: String] = [:]
+    @State private var freeBookDownloadRequest: FreeBook?
+    @State private var freeBookDownloadSuccess: FreeBookDownloadSuccess?
+    @State private var isDownloadingFreeBook = false
+    @State private var freeBookDownloadMessage = ""
     @State private var isShowingPasteSheet = false
     @State private var isShowingSettings = false
     @State private var isShowingKokoroDownloadModal = false
@@ -255,6 +259,32 @@ struct ContentView: View {
                     confirmPendingAudioGeneration(for: entry)
                 },
                 onCancel: discardPendingAudioGeneration
+            )
+        }
+        .sheet(item: $freeBookDownloadRequest) { book in
+            FreeBookDownloadOptionsSheet(
+                book: book,
+                onDownload: { translateBook, targetLanguage in
+                    freeBookDownloadRequest = nil
+                    Task {
+                        await importFreeBook(book: book, translateBook: translateBook, targetLanguage: targetLanguage)
+                    }
+                },
+                onCancel: {
+                    freeBookDownloadRequest = nil
+                }
+            )
+        }
+        .sheet(item: $freeBookDownloadSuccess) { success in
+            FreeBookDownloadSuccessSheet(
+                title: success.title,
+                onView: {
+                    selection = .home
+                    freeBookDownloadSuccess = nil
+                },
+                onDone: {
+                    freeBookDownloadSuccess = nil
+                }
             )
         }
         .fileImporter(
@@ -592,8 +622,15 @@ struct ContentView: View {
                             onDelete: deleteEntry
                         )
 
-                    case .freeBooks:
-                        FreeBooksView(searchText: $freeBooksSearchText)
+                        case .freeBooks:
+                        FreeBooksView(
+                            searchText: $freeBooksSearchText,
+                            isDownloadingBook: $isDownloadingFreeBook,
+                            downloadMessage: $freeBookDownloadMessage,
+                            onDownloadBook: { book in
+                                freeBookDownloadRequest = book
+                            }
+                        )
 
                     case .category(let categoryName):
                         ReaderLibrarySectionView(
@@ -1396,6 +1433,317 @@ struct ContentView: View {
         return destinationURL
     }
 
+    @MainActor
+    private func importFreeBook(
+        book: FreeBook,
+        translateBook: Bool,
+        targetLanguage: TextLanguage
+    ) async {
+        guard !isProcessingImport else { return }
+
+        isProcessingImport = true
+        isDownloadingFreeBook = true
+        processingImportMessage = "Downloading \(book.displayTitle)…"
+        freeBookDownloadMessage = processingImportMessage
+        beginIdleSleepAssertion(for: .importing)
+
+        var stagedFileURLs: [URL] = []
+
+        defer {
+            isProcessingImport = false
+            processingImportMessage = ""
+            isDownloadingFreeBook = false
+            freeBookDownloadMessage = ""
+            endIdleSleepAssertion(for: .importing)
+        }
+
+        do {
+            let sourceLanguage = book.primaryLanguage ?? .english
+            let downloadDirectory = try makeFreeBookDownloadDirectory(for: book)
+            guard let txtURL = book.preferredTXTDownloadURL else {
+                throw UploadError.unsupportedFileType
+            }
+            let stagedURL = try await downloadFreeBookFile(
+                from: txtURL,
+                into: downloadDirectory,
+                fileName: freeBookFileName(for: book),
+                fileExtension: "txt"
+            )
+            stagedFileURLs.append(stagedURL)
+
+            let draft = try await DocumentIngestService.shared.extractDraft(
+                stagedFileURL: stagedURL,
+                fileExtension: "txt",
+                documentLanguage: sourceLanguage
+            )
+
+            await MainActor.run {
+                processingImportMessage = translateBook
+                    ? "Translating \(book.displayTitle)…"
+                    : "Normalizing \(book.displayTitle)…"
+                freeBookDownloadMessage = processingImportMessage
+            }
+
+            let finalText: String
+            let normalizedLanguage: TextLanguage
+
+            if translateBook {
+                guard let translationSourceLanguage = sourceLanguage.localeLanguage,
+                      let translationTargetLanguage = targetLanguage.localeLanguage else {
+                    throw DocumentTranslationError.missingLanguage
+                }
+
+                let availability = LanguageAvailability(preferredStrategy: .lowLatency)
+                let status = await availability.status(
+                    from: translationSourceLanguage,
+                    to: translationTargetLanguage
+                )
+
+                switch status {
+                case .installed, .supported:
+                    break
+                case .unsupported:
+                    throw DocumentTranslationError.unsupported(
+                        source: sourceLanguage,
+                        target: targetLanguage
+                    )
+                @unknown default:
+                    throw DocumentTranslationError.unsupported(
+                        source: sourceLanguage,
+                        target: targetLanguage
+                    )
+                }
+
+                finalText = try await translationCoordinator.translate(
+                    sourceText: draft.rawText,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage
+                )
+                normalizedLanguage = targetLanguage
+            } else {
+                finalText = draft.rawText
+                normalizedLanguage = sourceLanguage
+            }
+
+            let ingest = try await DocumentIngestService.shared.finalize(
+                draft: draft,
+                sourceText: finalText,
+                normalizedLanguage: normalizedLanguage,
+                originalFileName: freeBookFileName(for: book),
+                sourceURL: stagedURL
+            )
+
+            stagedFileURLs.append(ingest.normalizedTextFileURL)
+
+            let title = ingest.title ?? book.displayTitle
+            await MainActor.run {
+                processingImportMessage = "Downloading cover art for \(book.displayTitle)…"
+                freeBookDownloadMessage = processingImportMessage
+            }
+            let coverImageFilePath = try await downloadFreeBookCover(
+                from: book.coverURL,
+                into: downloadDirectory,
+                fileName: freeBookFileName(for: book)
+            )
+
+            let entry = LibraryEntry(
+                title: title,
+                subtitle: "Downloaded from Free Books",
+                sourceKind: ingest.sourceKind,
+                fileExtension: "txt",
+                originalFileName: "\(freeBookFileName(for: book)).txt",
+                storedFilePath: stagedURL.path,
+                normalizedTextFilePath: ingest.normalizedTextFileURL.path,
+                coverImageFilePath: coverImageFilePath,
+                fileSizeBytes: ingest.fileSizeBytes,
+                categoryName: nil,
+                avatarSymbolName: ReaderSourceKind.text.systemImage,
+                accentName: Self.accentPalette.randomElement() ?? "emerald",
+                phonemeText: nil,
+                phonemeUpdatedAt: nil,
+                textLanguage: ingest.textLanguage,
+                pdfExtractionMode: ingest.pdfExtractionMode,
+                readingStructureKind: ingest.readingStructureKind,
+                pageCount: ingest.pageCount,
+                chapterCount: ingest.chapterCount,
+                sectionCount: ingest.sectionCount,
+                importState: .ready,
+                readingJumpTargets: ingest.readingJumpTargets,
+                progress: 0,
+                lastOpened: .now
+            )
+
+            modelContext.insert(entry)
+            try modelContext.save()
+
+            freeBookDownloadSuccess = FreeBookDownloadSuccess(title: entry.title)
+            playSuccessTone()
+        } catch {
+            stagedFileURLs.forEach { url in
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+            uploadAlertMessage = error.localizedDescription
+        }
+    }
+
+    private func freeBookFileName(for book: FreeBook) -> String {
+        let title = book.displayTitle
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "\"", with: "")
+        let fallback = title.isEmpty ? "free-book-\(book.id)" : title
+        return fallback
+    }
+
+    private func makeFreeBookDownloadDirectory(for book: FreeBook) throws -> URL {
+        let fileManager = FileManager.default
+        let rootDirectory = try uploadedFilesDirectory()
+        let timestamp = Self.importTimestampFormatter.string(from: .now)
+        let folderName = "free-book-\(book.id)-\(timestamp)-\(freeBookFileName(for: book))"
+        let sanitizedFolderName = folderName
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+        let directoryURL = rootDirectory.appendingPathComponent(sanitizedFolderName, isDirectory: true)
+
+        if !fileManager.fileExists(atPath: directoryURL.path) {
+            try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        }
+
+        return directoryURL
+    }
+
+    private func downloadFreeBookFile(
+        from sourceURL: URL,
+        into directoryURL: URL,
+        fileName: String,
+        fileExtension: String
+    ) async throws -> URL {
+        let downloadURL = httpsIfNeeded(sourceURL)
+        print("Free book TXT download URL: \(downloadURL.absoluteString)")
+        let (temporaryURL, response) = try await downloadFileIgnoringInsecureRedirects(from: downloadURL)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw UploadError.invalidFile
+        }
+
+        let destinationURL = directoryURL.appendingPathComponent("\(fileName).\(fileExtension)")
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+
+        try fileManager.moveItem(at: temporaryURL, to: destinationURL)
+        return destinationURL
+    }
+
+    private func downloadFreeBookCover(
+        from coverURL: URL?,
+        into directoryURL: URL,
+        fileName: String
+    ) async throws -> String? {
+        guard let coverURL else { return nil }
+
+        let downloadURL = httpsIfNeeded(coverURL)
+        print("Free book cover download URL: \(downloadURL.absoluteString)")
+        let (temporaryURL, response) = try await downloadFileIgnoringInsecureRedirects(from: downloadURL)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            return nil
+        }
+
+        let fileManager = FileManager.default
+        let responseURL = response.url ?? coverURL
+        let extensionName = responseURL.pathExtension.isEmpty ? coverURL.pathExtension : responseURL.pathExtension
+        let safeExtension = extensionName.isEmpty ? "png" : extensionName
+        let destinationURL = directoryURL.appendingPathComponent("\(fileName)-cover.\(safeExtension)")
+
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try? fileManager.removeItem(at: destinationURL)
+        }
+
+        try fileManager.moveItem(at: temporaryURL, to: destinationURL)
+        return destinationURL.path
+    }
+
+    private func downloadFileIgnoringInsecureRedirects(from url: URL) async throws -> (URL, URLResponse) {
+        let delegate = FreeBookDownloadSessionDelegate()
+        let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let task = session.downloadTask(with: url) { temporaryURL, response, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let temporaryURL, let response else {
+                    continuation.resume(throwing: UploadError.invalidFile)
+                    return
+                }
+
+                continuation.resume(returning: (temporaryURL, response))
+            }
+
+            delegate.task = task
+            task.resume()
+        }
+    }
+
+    private func httpsIfNeeded(_ url: URL) -> URL {
+        guard url.scheme == "http", url.host?.contains("gutenberg.org") == true else {
+            return url
+        }
+
+        let httpsString = url.absoluteString.replacingOccurrences(
+            of: "http://",
+            with: "https://",
+            options: [.anchored]
+        )
+        return URL(string: httpsString) ?? url
+    }
+
+    private final class FreeBookDownloadSessionDelegate: NSObject, URLSessionTaskDelegate {
+        var task: URLSessionTask?
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping (URLRequest?) -> Void
+        ) {
+            guard let requestURL = request.url else {
+                completionHandler(request)
+                return
+            }
+
+            let secureURL = secureGutenbergURL(for: requestURL)
+            if secureURL != requestURL {
+                var secureRequest = request
+                secureRequest.url = secureURL
+                print("Free book redirect rewritten to: \(secureURL.absoluteString)")
+                completionHandler(secureRequest)
+                return
+            }
+
+            completionHandler(request)
+        }
+
+        private func secureGutenbergURL(for url: URL) -> URL {
+            guard url.host?.contains("gutenberg.org") == true else {
+                return url
+            }
+
+            let httpsString = url.absoluteString.replacingOccurrences(
+                of: "http://",
+                with: "https://",
+                options: [.anchored]
+            )
+            return URL(string: httpsString) ?? url
+        }
+    }
+
     private func uploadedFilesDirectory() throws -> URL {
         let fileManager = FileManager.default
         let supportDirectory = try fileManager.url(
@@ -1449,6 +1797,8 @@ struct ContentView: View {
             return .epub
         case "txt":
             return .text
+        case "html", "htm":
+            return .html
         default:
             return .text
         }
@@ -1457,7 +1807,7 @@ struct ContentView: View {
     private func isSupportedUploadFileExtension(_ fileExtension: String) -> Bool {
         guard !fileExtension.isEmpty else { return false }
 
-        if ["pdf", "txt", "epub"].contains(fileExtension) {
+        if ["pdf", "txt", "epub", "html", "htm"].contains(fileExtension) {
             return true
         }
 
@@ -1472,7 +1822,7 @@ struct ContentView: View {
             return "book.fill"
         case .image:
             return "doc.text.image"
-        case .text, .pastedText:
+        case .text, .html, .pastedText:
             return "doc.text.fill"
         }
     }

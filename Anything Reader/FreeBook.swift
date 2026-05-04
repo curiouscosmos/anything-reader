@@ -96,6 +96,32 @@ struct FreeBook: Identifiable, Hashable {
         return Self.preferredWebViewURL(for: htmlURL)
     }
 
+    var txtURL: URL? {
+        guard let txt else { return nil }
+
+        for candidate in Self.listValues(from: txt) + [txt] {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            if let url = Self.makeURL(from: trimmed) {
+                return url
+            }
+        }
+
+        return nil
+    }
+
+    var preferredTXTDownloadURL: URL? {
+        guard let txtURL else { return nil }
+        return Self.preferredTXTDownloadURL(for: txtURL)
+    }
+
+    var primaryLanguage: TextLanguage? {
+        Self.listValues(from: languages)
+            .compactMap { Self.catalogTextLanguage(from: $0) }
+            .first
+    }
+
     private func formattedList(
         from value: String?,
         fallback: String,
@@ -244,7 +270,7 @@ struct FreeBook: Identifiable, Hashable {
 
     nonisolated private static func makeURL(from value: String) -> URL? {
         if let url = URL(string: value), url.scheme != nil {
-            return url
+            return httpsIfNeeded(url)
         }
 
         if value.hasPrefix("//"), let url = URL(string: "https:\(value)") {
@@ -264,6 +290,91 @@ struct FreeBook: Identifiable, Hashable {
         }
 
         return nil
+    }
+
+    nonisolated private static func httpsIfNeeded(_ url: URL) -> URL {
+        guard url.scheme == "http", url.host?.contains("gutenberg.org") == true else {
+            return url
+        }
+
+        let httpsString = url.absoluteString.replacingOccurrences(
+            of: "http://",
+            with: "https://",
+            options: [.anchored]
+        )
+        return URL(string: httpsString) ?? url
+    }
+
+    nonisolated private static func catalogTextLanguage(from value: String) -> TextLanguage? {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return nil }
+
+        switch normalized {
+        case "en", "eng", "english":
+            return .english
+        case "fr", "fre", "fra", "french":
+            return .french
+        case "es", "spa", "spanish":
+            return .spanish
+        case "de", "ger", "deu", "german":
+            return .german
+        case "it", "ita", "italian":
+            return .italian
+        case "pt", "por", "portuguese":
+            return .portuguese
+        case "nl", "dut", "nld", "dutch":
+            return .dutch
+        case "sv", "swe", "swedish":
+            return .swedish
+        case "tr", "tur", "turkish":
+            return .turkish
+        case "pl", "pol", "polish":
+            return .polish
+        case "ro", "rum", "ron", "romanian":
+            return .romanian
+        case "ru", "rus", "russian":
+            return .russian
+        case "uk", "ukr", "ukrainian":
+            return .ukrainian
+        case "el", "ell", "greek":
+            return .greek
+        case "ar", "ara", "arabic":
+            return .arabic
+        case "he", "heb", "hebrew":
+            return .hebrew
+        case "fa", "fas", "per", "persian":
+            return .persian
+        case "ur", "urd", "urdu":
+            return .urdu
+        case "hi", "hin", "hindi":
+            return .hindi
+        case "mr", "mar", "marathi":
+            return .marathi
+        case "bn", "ben", "bengali":
+            return .bengali
+        case "pa", "pan", "punjabi":
+            return .punjabi
+        case "ta", "tam", "tamil":
+            return .tamil
+        case "te", "tel", "telugu":
+            return .telugu
+        case "vi", "vie", "vietnamese":
+            return .vietnamese
+        case "th", "tha", "thai":
+            return .thai
+        case "id", "ind", "indonesian":
+            return .indonesian
+        case "ms", "msa", "may", "malay":
+            return .malay
+        case "ko", "kor", "korean":
+            return .korean
+        case "ja", "jpn", "japanese":
+            return .japanese
+        case "zh", "zho", "zh-hans", "zh-hant", "mandarin", "chinese":
+            return .mandarin
+        default:
+            return nil
+        }
     }
 
     nonisolated private static func preferredWebViewURL(for url: URL) -> URL? {
@@ -293,6 +404,28 @@ struct FreeBook: Identifiable, Hashable {
 
         return URL(string: "https://www.gutenberg.org/cache/epub/\(bookID)/pg\(bookID)-\(variant).html")
             ?? (url.scheme == "http" ? httpsURL(from: url) : url)
+    }
+
+    nonisolated private static func preferredTXTDownloadURL(for url: URL) -> URL {
+//        guard url.host?.contains("gutenberg.org") == true else {
+//            return url
+//        }
+//
+//        if let bookID = gutenbergBookID(from: url) {
+//            let canonical = "https://www.gutenberg.org/ebooks/\(bookID).txt.utf-8"
+//            return URL(string: canonical) ?? httpsIfNeeded(url)
+//        }
+
+        return httpsIfNeeded(url)
+    }
+
+    nonisolated private static func gutenbergBookID(from url: URL) -> Int? {
+        let pathComponents = url.pathComponents.compactMap { component -> Int? in
+            let digits = component.filter(\.isNumber)
+            return Int(digits)
+        }
+
+        return pathComponents.first
     }
 
     nonisolated private static func httpsURL(from url: URL) -> URL? {
