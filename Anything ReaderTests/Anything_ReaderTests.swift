@@ -69,6 +69,61 @@ struct Anything_ReaderTests {
         #expect(normalized == "Hello, world\n\n\"Quoted\" - text...")
     }
 
+    @Test func fileSummarizationServiceResolvesLanguageAndFallbacksToEnglish() {
+        #expect(FileSummarizationService.resolvedLanguage(for: .unknown) == .english)
+        #expect(FileSummarizationService.summaryLanguageName(for: .unknown) == "U.S. English")
+        #expect(FileSummarizationService.summaryLanguageName(for: .mandarin) == "Mandarin")
+    }
+
+    @Test func fileSummarizationServiceSplitsParagraphsAndOversizedWordsPredictably() {
+        let mergedSections = FileSummarizationService.splitForSummarization(
+            "Alpha.\n\nBeta gamma delta",
+            maximumCharacters: 100
+        )
+        let oversizedWordSections = FileSummarizationService.splitForSummarization(
+            "abcdefghij",
+            maximumCharacters: 3
+        )
+        let oversizedParagraphSections = FileSummarizationService.splitOversizedParagraph(
+            "one two three four",
+            maximumCharacters: 7
+        )
+
+        #expect(mergedSections == ["Alpha.\n\nBeta gamma delta"])
+        #expect(oversizedWordSections == ["abc", "def", "ghi", "j"])
+        #expect(oversizedParagraphSections == ["one two", "three", "four"])
+    }
+
+    @Test func fileSummarizationServiceNormalizesJoinedSectionSummaries() {
+        let summary = FileSummarizationService.normalizedSummary(
+            from: ["Hello   , world", "“Quoted” — text…"],
+            language: .english
+        )
+
+        #expect(summary == "Hello, world\n\n\"Quoted\" - text...")
+    }
+
+    @Test func fileSummarizationServiceRejectsEmptyInput() async {
+        var receivedEmptyInput = false
+        var receivedUnexpectedError = false
+
+        do {
+            _ = try await FileSummarizationService.shared.summarize(
+                text: "   ",
+                language: .english
+            )
+        } catch let error as FileSummarizationError {
+            if case .emptyInput = error {
+                receivedEmptyInput = true
+            }
+        } catch {
+            receivedUnexpectedError = true
+        }
+
+        #expect(receivedEmptyInput)
+        #expect(!receivedUnexpectedError)
+    }
+
     @Test func detectLanguageRecognizesCommonScripts() {
         #expect(TextNormalizationService.detectLanguage(for: "こんにちは世界") == .japanese)
         #expect(TextNormalizationService.detectLanguage(for: "你好，世界") == .mandarin)

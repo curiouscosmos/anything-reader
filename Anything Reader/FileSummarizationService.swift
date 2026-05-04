@@ -43,25 +43,23 @@ actor FileSummarizationService {
             throw FileSummarizationError.emptyInput
         }
 
-        let resolvedLanguage = language == .unknown ? .english : language
-        let sections = splitForSummarization(trimmedText, maximumCharacters: sectionCharacterLimit)
+        let resolvedLanguage = Self.resolvedLanguage(for: language)
+        let sections = Self.splitForSummarization(trimmedText, maximumCharacters: sectionCharacterLimit)
 
         guard !sections.isEmpty else {
             throw FileSummarizationError.emptyInput
         }
 
         let sectionSummaries = try await summarizeSections(sections, language: resolvedLanguage)
-        let combinedSummary = sectionSummaries.joined(separator: "\n\n")
-        let normalizedSummary = TextNormalizationService.normalize(combinedSummary, language: resolvedLanguage)
+        let normalizedSummary = Self.normalizedSummary(from: sectionSummaries, language: resolvedLanguage)
 
         if normalizedSummary.count <= finalSummaryCharacterLimit {
             return normalizedSummary
         }
 
-        let condensedSections = splitForSummarization(normalizedSummary, maximumCharacters: sectionCharacterLimit)
+        let condensedSections = Self.splitForSummarization(normalizedSummary, maximumCharacters: sectionCharacterLimit)
         let condensedSummaries = try await summarizeSections(condensedSections, language: resolvedLanguage)
-        let condensedSummary = condensedSummaries.joined(separator: "\n\n")
-        let finalSummary = TextNormalizationService.normalize(condensedSummary, language: resolvedLanguage)
+        let finalSummary = Self.normalizedSummary(from: condensedSummaries, language: resolvedLanguage)
 
         guard !finalSummary.isEmpty else {
             throw FileSummarizationError.emptyInput
@@ -96,7 +94,7 @@ actor FileSummarizationService {
 
         let instructions = """
         You are a careful document summarizer.
-        Summarize the provided text in \(summaryLanguageName(for: language)).
+        Summarize the provided text in \(Self.summaryLanguageName(for: language)).
         Write in plain prose only.
         Do not use bullets, numbering, headings, or markdown.
         Keep names, numbers, and important facts accurate.
@@ -131,7 +129,16 @@ actor FileSummarizationService {
         #endif
     }
 
-    private func splitForSummarization(_ text: String, maximumCharacters: Int) -> [String] {
+    nonisolated static func resolvedLanguage(for language: TextLanguage) -> TextLanguage {
+        language == .unknown ? .english : language
+    }
+
+    nonisolated static func normalizedSummary(from sectionSummaries: [String], language: TextLanguage) -> String {
+        let combinedSummary = sectionSummaries.joined(separator: "\n\n")
+        return TextNormalizationService.normalize(combinedSummary, language: language)
+    }
+
+    nonisolated static func splitForSummarization(_ text: String, maximumCharacters: Int) -> [String] {
         let canonical = text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -178,7 +185,7 @@ actor FileSummarizationService {
         return sections
     }
 
-    private func splitOversizedParagraph(_ paragraph: String, maximumCharacters: Int) -> [String] {
+    nonisolated static func splitOversizedParagraph(_ paragraph: String, maximumCharacters: Int) -> [String] {
         let words = paragraph.split(whereSeparator: { $0.isWhitespace })
         guard !words.isEmpty else { return [paragraph] }
 
@@ -218,7 +225,7 @@ actor FileSummarizationService {
         return sections
     }
 
-    private func splitByCharacterCount(_ text: String, maximumCharacters: Int) -> [String] {
+    nonisolated static func splitByCharacterCount(_ text: String, maximumCharacters: Int) -> [String] {
         guard maximumCharacters > 0 else { return [text] }
 
         var sections: [String] = []
@@ -233,7 +240,7 @@ actor FileSummarizationService {
         return sections
     }
 
-    private func summaryLanguageName(for language: TextLanguage) -> String {
+    nonisolated static func summaryLanguageName(for language: TextLanguage) -> String {
         switch language {
         case .english:
             return "U.S. English"
