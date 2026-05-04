@@ -307,6 +307,40 @@ struct ReaderGenerateAudioSheet: View {
     }
 }
 
+// Small success modal shown after a file summary is generated and saved locally.
+struct ReaderSummarySuccessSheet: View {
+    let title: String
+    let onPlay: () -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(.green)
+
+            VStack(spacing: 6) {
+                Text("Summary complete")
+                    .font(.title3.weight(.bold))
+
+                Text("The summary for \(title) was saved locally.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            HStack(spacing: 12) {
+                Button("Done", action: onDone)
+                    .buttonStyle(.bordered)
+
+                Button("Play Summary", action: onPlay)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .frame(minWidth: 320)
+        .padding(28)
+    }
+}
+
 // Modal for Kokoro model downloads.
 struct ReaderKokoroDownloadSheet: View {
     @ObservedObject var modelStore: KokoroModelStore

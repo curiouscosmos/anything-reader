@@ -422,10 +422,14 @@ struct ReaderLibrarySectionView: View {
     let preferredMode: AppearanceMode
     let isEntryPlaying: (LibraryEntry) -> Bool
     let isEntryGeneratingAudio: (LibraryEntry) -> Bool
+    let isEntrySummarizing: (LibraryEntry) -> Bool
+    let isSummaryPlaying: (LibraryEntry) -> Bool
     let audioGenerationProgressFraction: (LibraryEntry) -> Double?
     let generatedAudioProgressFraction: (LibraryEntry) -> Double?
     let onPrimaryAction: (LibraryEntry) -> Void
     let onPlay: (LibraryEntry) -> Void
+    let onPlaySummary: (LibraryEntry) -> Void
+    let onSummarize: (LibraryEntry) -> Void
     let onView: (LibraryEntry) -> Void
     let onRevealLocation: (LibraryEntry) -> Void
     let onGenerateAudio: (LibraryEntry) -> Void
@@ -461,11 +465,16 @@ struct ReaderLibrarySectionView: View {
                             isPlaying: isEntryPlaying(entry),
                             isImporting: entry.isImporting,
                             isGeneratingAudio: isEntryGeneratingAudio(entry),
+                            isLoading: entry.isImporting || isEntryGeneratingAudio(entry) || isEntrySummarizing(entry),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(entry),
                             generatedAudioProgressFraction: generatedAudioProgressFraction(entry),
                             hasGeneratedAudio: entry.generatedAudioFileURL != nil,
+                            hasSummarizedText: entry.hasSummarizedText,
+                            isSummaryPlaying: isSummaryPlaying(entry),
                             onPrimaryAction: { onPrimaryAction(entry) },
                             onPlay: { onPlay(entry) },
+                            onPlaySummary: { onPlaySummary(entry) },
+                            onSummarize: { onSummarize(entry) },
                             onView: { onView(entry) },
                             onRevealLocation: { onRevealLocation(entry) },
                             onGenerateAudio: { onGenerateAudio(entry) },
@@ -516,11 +525,16 @@ struct ReaderLibraryCardView: View {
     let isPlaying: Bool
     let isImporting: Bool
     let isGeneratingAudio: Bool
+    let isLoading: Bool
     let audioGenerationProgressFraction: Double?
     let generatedAudioProgressFraction: Double?
     let hasGeneratedAudio: Bool
+    let hasSummarizedText: Bool
+    let isSummaryPlaying: Bool
     let onPrimaryAction: () -> Void
     let onPlay: () -> Void
+    let onPlaySummary: () -> Void
+    let onSummarize: () -> Void
     let onView: () -> Void
     let onRevealLocation: () -> Void
     let onGenerateAudio: () -> Void
@@ -536,8 +550,11 @@ struct ReaderLibraryCardView: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             cardArtworkLayer
-            if !isImporting && !isGeneratingAudio {
+            if !isLoading {
                 cardFooterLayer
+            }
+            if hasSummarizedText {
+                summaryPlayButton
             }
             if isImporting {
                 importOverlay(text: "Preparing file...")
@@ -545,6 +562,10 @@ struct ReaderLibraryCardView: View {
             }
             if isGeneratingAudio {
                 importOverlay(text: "Generating audio...", progress: audioGenerationProgressFraction)
+                    .zIndex(1)
+            }
+            if isLoading && !isImporting && !isGeneratingAudio {
+                importOverlay(text: "Summarizing file...")
                     .zIndex(1)
             }
             cardMenuButton
@@ -570,6 +591,26 @@ struct ReaderLibraryCardView: View {
         } message: {
             Text("This will permanently remove the book/text from the local database.")
         }
+    }
+
+    private var summaryPlayButton: some View {
+        HStack {
+            Button(action: onPlaySummary) {
+                Label("Summary", systemImage: isSummaryPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color.yellow, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(isSummaryPlaying)
+            .opacity(isSummaryPlaying ? 0.8 : 1)
+            Spacer()
+        }
+        .padding(12)
+        .accessibilityLabel("Play summary")
     }
 
     @ViewBuilder
@@ -752,19 +793,26 @@ struct ReaderLibraryCardView: View {
                 categories: categories,
                 preferredMode: preferredMode,
                 onPlay: onPlay,
+                onPlaySummary: onPlaySummary,
+                onSummarize: {
+                    isShowingCardMenu = false
+                    onSummarize()
+                },
                 onView: onView,
                 onRevealLocation: onRevealLocation,
                 onGenerateAudio: onGenerateAudio,
                 onStopAudioGeneration: onStopAudioGeneration,
                 onDeleteAudio: onDeleteAudio,
                 hasGeneratedAudio: hasGeneratedAudio,
+                hasSummarizedText: hasSummarizedText,
+                isSummaryPlaying: isSummaryPlaying,
                 isGeneratingAudio: isGeneratingAudio,
                 onClearCategory: onClearCategory,
                 onAssignCategory: onAssignCategory,
                 onDelete: {
                     isShowingDeleteConfirmation = true
                 },
-                isLoading: isImporting || isGeneratingAudio
+                isLoading: isLoading
             )
             .frame(width: 260)
             .padding(12)
@@ -875,12 +923,16 @@ struct ReaderCardMenuPopoverView: View {
     let categories: [ReaderCategory]
     let preferredMode: AppearanceMode
     let onPlay: () -> Void
+    let onPlaySummary: () -> Void
+    let onSummarize: () -> Void
     let onView: () -> Void
     let onRevealLocation: () -> Void
     let onGenerateAudio: () -> Void
     let onStopAudioGeneration: () -> Void
     let onDeleteAudio: () -> Void
     let hasGeneratedAudio: Bool
+    let hasSummarizedText: Bool
+    let isSummaryPlaying: Bool
     let isGeneratingAudio: Bool
     let onClearCategory: () -> Void
     let onAssignCategory: (String) -> Void
@@ -895,6 +947,11 @@ struct ReaderCardMenuPopoverView: View {
                 Divider()
             } else if !isLoading {
                 menuButton(title: "Play now", systemImage: "play.fill", action: onPlay)
+                if hasSummarizedText {
+                    menuButton(title: "Play summarized file", systemImage: "quote.bubble.fill", action: onPlaySummary)
+                } else {
+                    menuButton(title: "Summarize File", systemImage: "text.bubble.fill", action: onSummarize)
+                }
                 menuButton(title: "View text", systemImage: "doc.text.magnifyingglass", action: onView)
                 menuButton(title: "Open file location", systemImage: "folder", action: onRevealLocation)
                 if hasGeneratedAudio {

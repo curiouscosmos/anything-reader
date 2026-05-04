@@ -17,20 +17,24 @@ struct ReaderPlaybackChunkService {
     static let txtSectionBreakMarker = "[[TXT_SECTION_BREAK]]"
 
     static func normalizedText(for entry: LibraryEntry) -> String? {
-        if let path = entry.normalizedTextFilePath {
-            let fileURL = URL(fileURLWithPath: path)
-            if let fileText = try? String(contentsOf: fileURL, encoding: .utf8) {
-                let trimmed = fileText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    return trimmed
-                }
+        normalizedText(for: entry.normalizedTextFileURL)
+    }
+
+    static func normalizedText(for textFileURL: URL?) -> String? {
+        guard let textFileURL else { return nil }
+
+        if let fileText = try? String(contentsOf: textFileURL, encoding: .utf8) {
+            let trimmed = fileText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
             }
         }
+
         return nil
     }
 
-    static func chunks(for entry: LibraryEntry) -> [String] {
-        guard let text = normalizedText(for: entry) else { return [] }
+    static func chunks(for entry: LibraryEntry, textFileURL: URL? = nil) -> [String] {
+        guard let text = normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) else { return [] }
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
 
         if entry.sourceKind == .pdf {
@@ -127,8 +131,8 @@ struct ReaderPlaybackChunkService {
             .filter { !$0.isEmpty }
     }
 
-    static func pageChunks(for entry: LibraryEntry) -> [String] {
-        guard let text = normalizedText(for: entry) else { return [] }
+    static func pageChunks(for entry: LibraryEntry, textFileURL: URL? = nil) -> [String] {
+        guard let text = normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) else { return [] }
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
 
         if entry.sourceKind == .pdf,

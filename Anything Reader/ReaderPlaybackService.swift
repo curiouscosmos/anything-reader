@@ -91,6 +91,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         voice: KokoroVoiceOption,
         startingProgress: Double,
         startingChunkIndex: Int? = nil,
+        textFileURL: URL? = nil,
         onProgress: @escaping (ReaderPlaybackUpdate) -> Void,
         onFinished: @escaping () -> Void,
         onFailure: @escaping (String) -> Void
@@ -103,14 +104,18 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         let sessionID = playbackSessionID
         isPlaying = true
         isBufferingFirstChunk = true
-        activePlaybackIdentity = entry.cacheIdentity
+        activePlaybackIdentity = [
+            entry.cacheIdentity,
+            textFileURL?.path ?? ""
+        ]
+        .joined(separator: "|")
         activeChunkIndex = max(startingChunkIndex ?? 0, 0)
         playerNode.volume = Float(volume)
 
         playbackTask = Task { [weak self] in
             guard let self else { return }
 
-            let chunks = ReaderPlaybackChunkService.chunks(for: entry)
+            let chunks = ReaderPlaybackChunkService.chunks(for: entry, textFileURL: textFileURL)
             guard !chunks.isEmpty else {
                 await MainActor.run {
                     guard self.playbackSessionID == sessionID else { return }

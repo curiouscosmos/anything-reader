@@ -42,6 +42,9 @@ struct ContentView: View {
     @State private var isShowingImportLanguageSheet = false
     @State private var audioGenerationSheetEntry: LibraryEntry?
     @State private var pendingAudioDeletionEntry: LibraryEntry?
+    @State private var summaryGenerationSuccess: SummaryGenerationSuccess?
+    @State private var pendingSummaryEntry: LibraryEntry?
+    @State private var summarySuccessEntry: LibraryEntry?
     @State private var newCategoryName = ""
     @State private var pastedTitle = ""
     @State private var pastedText = ""
@@ -61,9 +64,14 @@ struct ContentView: View {
     @State private var translateToLanguage: TextLanguage = .english
     @State private var importAwakeAssertion: NSObjectProtocol?
     @State private var audioGenerationAwakeAssertion: NSObjectProtocol?
+    @State private var summaryGenerationAwakeAssertion: NSObjectProtocol?
     @State private var generatedAudioAlertMessage: String?
+    @State private var summaryGenerationAlertMessage: String?
     @State private var playbackState = PlaybackState()
     @State private var activeEntry: LibraryEntry?
+    @State private var activePlaybackSummaryFilePath: String?
+    @State private var activePlaybackShouldPersistProgress = true
+    @State private var summaryPlaybackLastSavedElapsedSeconds: Int = 0
     @State private var activeGeneratedAudioEntry: LibraryEntry?
     @State private var viewerEntry: LibraryEntry?
     @State private var viewerAlertMessage: String?
@@ -72,6 +80,7 @@ struct ContentView: View {
     @State private var readingNavigationTask: Task<Void, Never>?
     @State private var audioGenerationTask: Task<Void, Never>?
     @State private var audioGenerationPrewarmTask: Task<Void, Never>?
+    @State private var summaryGenerationTask: Task<Void, Never>?
     @State private var playbackChunks: [String] = []
     @State private var playbackChunkIndex: Int = 0
     @State private var playbackSessionToken = UUID()
@@ -95,6 +104,7 @@ struct ContentView: View {
     private enum IdleSleepAssertionKind {
         case importing
         case audio
+        case summarizing
     }
 
     private static let fallbackAvatars = [
@@ -147,6 +157,11 @@ struct ContentView: View {
         var createdFileURLs: [URL]
     }
 
+    private struct SummaryGenerationSuccess: Identifiable {
+        let id = UUID()
+        let title: String
+    }
+
     var body: some View {
         ZStack {
             backgroundLayer
@@ -188,6 +203,7 @@ struct ContentView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
             } else if shouldShowPlayerBar {
+                let summaryPlaybackActive = isSummaryPlaybackActive
                 ReaderPlayerBarView(
                     playbackState: $playbackState,
                     volume: Binding(
@@ -196,14 +212,18 @@ struct ContentView: View {
                     ),
                     preferredMode: preferredMode,
                     isLoadingFirstChunk: readerPlaybackService.isBufferingFirstChunk,
-                    readingStructureKind: activeEntry?.readingStructureKind,
-                    jumpTargets: activeEntry?.readingJumpTargets ?? [],
-                    canRewind: canNavigateReadingTarget(.backward, in: activeEntry),
-                    canFastForward: canNavigateReadingTarget(.forward, in: activeEntry),
+                    readingStructureKind: summaryPlaybackActive ? nil : activeEntry?.readingStructureKind,
+                    jumpTargets: summaryPlaybackActive ? [] : (activeEntry?.readingJumpTargets ?? []),
+                    canRewind: summaryPlaybackActive ? false : canNavigateReadingTarget(.backward, in: activeEntry),
+                    canFastForward: summaryPlaybackActive ? false : canNavigateReadingTarget(.forward, in: activeEntry),
                     onRewind: rewindPlayback,
                     onTogglePlayPause: togglePlayback,
                     onFastForward: fastForwardPlayback,
-                    onJumpToTarget: jumpToReadingTarget
+                    onJumpToTarget: { target in
+                        if !summaryPlaybackActive {
+                            jumpToReadingTarget(target)
+                        }
+                    }
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
@@ -284,6 +304,22 @@ struct ContentView: View {
                 },
                 onDone: {
                     freeBookDownloadSuccess = nil
+                }
+            )
+        }
+        .sheet(item: $summaryGenerationSuccess) { success in
+            ReaderSummarySuccessSheet(
+                title: success.title,
+                onPlay: {
+                    if let summarySuccessEntry {
+                        playSummarizedFile(for: summarySuccessEntry)
+                    }
+                    summaryGenerationSuccess = nil
+                    summarySuccessEntry = nil
+                },
+                onDone: {
+                    summaryGenerationSuccess = nil
+                    summarySuccessEntry = nil
                 }
             )
         }
@@ -380,6 +416,19 @@ struct ContentView: View {
             }
         } message: {
             Text(generatedAudioAlertMessage ?? "The generated audio file could not be played.")
+        }
+        .alert(
+            "Summary Failed",
+            isPresented: Binding(
+                get: { summaryGenerationAlertMessage != nil },
+                set: { if !$0 { summaryGenerationAlertMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                summaryGenerationAlertMessage = nil
+            }
+        } message: {
+            Text(summaryGenerationAlertMessage ?? "The summary could not be generated.")
         }
         .preferredColorScheme(preferredMode.colorScheme)
         .tint(.green)
@@ -478,6 +527,10 @@ struct ContentView: View {
 
     private var shouldShowPlayerBar: Bool {
         activeEntry != nil && !readerPlaybackService.isBufferingFirstChunk
+    }
+
+    private var isSummaryPlaybackActive: Bool {
+        activePlaybackSummaryFilePath != nil
     }
 
     private var shouldShowGeneratedAudioPlayerBar: Bool {
@@ -584,10 +637,14 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
+                            isEntrySummarizing: isEntrySummarizing(_:),
+                            isSummaryPlaying: isSummaryPlaybackPlaying(for:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
+                            onPlaySummary: playSummarizedLibraryEntry(_:),
+                            onSummarize: summarizeLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
@@ -608,10 +665,14 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
+                            isEntrySummarizing: isEntrySummarizing(_:),
+                            isSummaryPlaying: isSummaryPlaybackPlaying(for:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
+                            onPlaySummary: playSummarizedLibraryEntry(_:),
+                            onSummarize: summarizeLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
@@ -642,10 +703,14 @@ struct ContentView: View {
                             preferredMode: preferredMode,
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
+                            isEntrySummarizing: isEntrySummarizing(_:),
+                            isSummaryPlaying: isSummaryPlaybackPlaying(for:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
+                            onPlaySummary: playSummarizedLibraryEntry(_:),
+                            onSummarize: summarizeLibraryEntry(_:),
                             onView: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
@@ -819,6 +884,10 @@ struct ContentView: View {
             stopGeneratedAudioPlayback()
         }
 
+        if pendingSummaryEntry?.persistentModelID == entry.persistentModelID {
+            cancelSummaryGenerationIfNeeded(for: entry)
+        }
+
         if viewerEntry?.persistentModelID == entry.persistentModelID {
             viewerEntry = nil
         }
@@ -856,6 +925,119 @@ struct ContentView: View {
         ReaderPlaybackChunkService.normalizedText(for: entry)
     }
 
+    @MainActor
+    private func summarizeLibraryEntry(_ entry: LibraryEntry) {
+        guard summaryGenerationTask == nil else {
+            summaryGenerationAlertMessage = "Finish the current summary before starting another one."
+            return
+        }
+
+        guard let normalizedText = ReaderPlaybackChunkService.normalizedText(for: entry) else {
+            summaryGenerationAlertMessage = "This item does not have a normalized file to summarize."
+            return
+        }
+
+        summaryGenerationAlertMessage = nil
+        summaryGenerationSuccess = nil
+        summarySuccessEntry = nil
+        pendingSummaryEntry = entry
+        beginIdleSleepAssertion(for: .summarizing)
+
+        summaryGenerationTask = Task { @MainActor in
+            defer {
+                summaryGenerationTask = nil
+                pendingSummaryEntry = nil
+                endIdleSleepAssertion(for: .summarizing)
+            }
+
+            do {
+                let sourceLanguage = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: normalizedText)
+                let summarizedText = try await FileSummarizationService.shared.summarize(
+                    text: normalizedText,
+                    language: sourceLanguage
+                )
+                try Task.checkCancellation()
+                let normalizedSummary = TextNormalizationService.normalize(summarizedText, language: sourceLanguage)
+
+                guard !normalizedSummary.isEmpty else {
+                    throw FileSummarizationError.emptyInput
+                }
+
+                if let summaryURL = entry.summarizedTextFileURL,
+                   FileManager.default.fileExists(atPath: summaryURL.path) {
+                    try? FileManager.default.removeItem(at: summaryURL)
+                }
+
+                let summaryData = Data(normalizedSummary.utf8)
+                let summaryFileName = summaryFileName(for: entry)
+                let storedURL = try storeTextFile(
+                    contents: summaryData,
+                    fileName: summaryFileName,
+                    directoryURL: summaryStorageDirectory(for: entry)
+                )
+
+                entry.summarizedTextFilePath = storedURL.path
+                entry.summarizedTextUpdatedAt = .now
+                entry.summarizedTextPlaybackPositionSeconds = 0
+                entry.lastOpened = .now
+                try modelContext.save()
+
+                summarySuccessEntry = entry
+                summaryGenerationSuccess = SummaryGenerationSuccess(title: entry.title)
+                playSuccessTone()
+            } catch is CancellationError {
+                return
+            } catch {
+                summaryGenerationAlertMessage = error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func playSummarizedFile(for entry: LibraryEntry) {
+        guard let summaryURL = entry.summarizedTextFileURL else {
+            summaryGenerationAlertMessage = "This item does not have a summarized file yet."
+            return
+        }
+
+        if isSummaryPlaybackTracked(for: entry) {
+            togglePlayback()
+            return
+        }
+
+        startPlayback(
+            for: entry,
+            textFileURL: summaryURL,
+            displayTitle: "Summary: \(entry.title)",
+            persistProgress: true
+        )
+    }
+
+    private func summaryFileName(for entry: LibraryEntry) -> String {
+        let baseName = entry.title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+
+        if baseName.isEmpty {
+            return "summary"
+        }
+
+        return "\(baseName)-summary"
+    }
+
+    private func summaryStorageDirectory(for entry: LibraryEntry) -> URL? {
+        if let summaryDirectory = entry.normalizedTextFileURL?.deletingLastPathComponent() {
+            return summaryDirectory
+        }
+
+        if let summaryDirectory = entry.storedFilePath.map({ URL(fileURLWithPath: $0).deletingLastPathComponent() }) {
+            return summaryDirectory
+        }
+
+        return try? uploadedFilesDirectory()
+    }
+
     private func revealLibraryEntryLocation(_ entry: LibraryEntry) {
         guard let storedPath = entry.storedFilePath else {
             uploadAlertMessage = "This item does not have a saved file location."
@@ -876,6 +1058,7 @@ struct ContentView: View {
         let trackedURLs = [
             entry.storedFilePath,
             entry.normalizedTextFilePath,
+            entry.summarizedTextFilePath,
             entry.coverImageFilePath,
             entry.generatedAudioFilePath
         ]
@@ -1420,10 +1603,21 @@ struct ContentView: View {
         return destinationURL
     }
 
-    private func storeTextFile(contents: Data, fileName: String) throws -> URL {
+    private func storeTextFile(contents: Data, fileName: String, directoryURL: URL? = nil) throws -> URL {
         let fileManager = FileManager.default
-        let directoryURL = try uploadedFilesDirectory()
-        let destinationURL = directoryURL.appendingPathComponent("\(UUID().uuidString)-\(fileName).txt")
+        let resolvedDirectoryURL: URL
+        if let directoryURL {
+            resolvedDirectoryURL = directoryURL
+        } else {
+            resolvedDirectoryURL = try uploadedFilesDirectory()
+        }
+        let destinationFileName: String
+        if directoryURL == nil {
+            destinationFileName = "\(UUID().uuidString)-\(fileName).txt"
+        } else {
+            destinationFileName = "\(fileName).txt"
+        }
+        let destinationURL = resolvedDirectoryURL.appendingPathComponent(destinationFileName)
 
         if fileManager.fileExists(atPath: destinationURL.path) {
             try fileManager.removeItem(at: destinationURL)
@@ -1867,13 +2061,45 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func startPlayback(for entry: LibraryEntry, readingPositionOverrideText: String? = nil) {
+    private func playSummarizedLibraryEntry(_ entry: LibraryEntry) {
+        guard let summaryURL = entry.summarizedTextFileURL else {
+            summaryGenerationAlertMessage = "This item does not have a summarized file yet."
+            return
+        }
+
+        if isSummaryPlaybackTracked(for: entry) {
+            togglePlayback()
+        } else {
+            startPlayback(
+                for: entry,
+                textFileURL: summaryURL,
+                displayTitle: "Summary: \(entry.title)",
+                persistProgress: true
+            )
+        }
+    }
+
+    @MainActor
+    private func startPlayback(
+        for entry: LibraryEntry,
+        textFileURL: URL? = nil,
+        displayTitle: String? = nil,
+        persistProgress: Bool = true
+    ) {
         stopGeneratedAudioPlayback()
         playbackSessionToken = UUID()
         let sessionToken = playbackSessionToken
-        let resumeProgress = playbackResumeProgress(for: entry)
-        let resumeTargetIndex = entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: resumeProgress)
-        let startingChunkIndex = resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) } ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: ReaderPlaybackChunkService.chunks(for: entry).count)
+        let normalizedText = ReaderPlaybackChunkService.normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) ?? ""
+        let duration = estimatedPlaybackDuration(for: normalizedText)
+        let isSummaryPlayback = textFileURL?.path == entry.summarizedTextFileURL?.path
+        let resumeProgress = persistProgress
+            ? playbackResumeProgress(for: entry, textFileURL: textFileURL, duration: duration)
+            : 0
+        let resumeTargetIndex = persistProgress && !isSummaryPlayback
+            ? (entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: resumeProgress))
+            : nil
+        let chunks = ReaderPlaybackChunkService.chunks(for: entry, textFileURL: textFileURL)
+        let startingChunkIndex = resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) } ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: chunks.count)
 
         readerPlaybackService.stop()
         stopPlaybackTask()
@@ -1881,22 +2107,23 @@ struct ContentView: View {
 
         // Store the active record so progress updates persist to SwiftData.
         activeEntry = entry
+        activePlaybackSummaryFilePath = textFileURL?.path == entry.summarizedTextFileURL?.path ? textFileURL?.path : nil
+        activePlaybackShouldPersistProgress = persistProgress
+        summaryPlaybackLastSavedElapsedSeconds = activePlaybackSummaryFilePath != nil ? Int((Double(duration) * resumeProgress).rounded()) : 0
         entry.lastOpened = .now
 
-        playbackChunks = ReaderPlaybackChunkService.chunks(for: entry)
+        playbackChunks = chunks
         playbackChunkIndex = startingChunkIndex
 
-        let normalizedText = normalizedTextSnippet(for: entry) ?? ""
-        let duration = max(600, min(10800, normalizedText.isEmpty ? 1800 : max(600, normalizedText.count / 12)))
         let elapsedSeconds = Int((Double(duration) * resumeProgress).rounded())
 
         playbackState = PlaybackState(
-            title: entry.title,
+            title: displayTitle ?? entry.title,
             subtitle: entry.subtitle,
-            readingPositionText: entry.currentReadingPositionDisplayText ?? readingPositionText(for: entry, progress: resumeProgress),
+            readingPositionText: displayTitle ?? entry.currentReadingPositionDisplayText ?? readingPositionText(for: entry, progress: resumeProgress),
             readingPositionOverrideText: nil,
-            readingPositionIndexOverride: entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: resumeProgress),
-            readingPositionTotalCount: entry.currentReadingPositionTotalCount ?? (entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count),
+            readingPositionIndexOverride: persistProgress && !isSummaryPlayback ? (entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: resumeProgress)) : nil,
+            readingPositionTotalCount: persistProgress && !isSummaryPlayback ? (entry.currentReadingPositionTotalCount ?? (entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count)) : nil,
             avatarSymbol: entry.avatarSymbolName,
             accentName: entry.accentName,
             progress: resumeProgress,
@@ -1905,9 +2132,10 @@ struct ContentView: View {
             isPlaying: true
         )
 
-        entry.progress = resumeProgress
-
-        try? modelContext.save()
+        if persistProgress {
+            entry.progress = resumeProgress
+            try? modelContext.save()
+        }
 
         let voice = KokoroVoiceCatalog.voice(named: kokoroVoiceName)
         readerPlaybackService.play(
@@ -1915,6 +2143,7 @@ struct ContentView: View {
             voice: voice,
             startingProgress: resumeProgress,
             startingChunkIndex: startingChunkIndex,
+            textFileURL: textFileURL,
             onProgress: { update in
                 guard self.playbackSessionToken == sessionToken else { return }
                 self.applyPlaybackUpdate(update, to: entry)
@@ -1924,8 +2153,14 @@ struct ContentView: View {
                 self.playbackState.progress = 0
                 self.playbackState.elapsedSeconds = 0
                 self.playbackState.isPlaying = false
-                entry.progress = 0
-                try? self.modelContext.save()
+                if self.activePlaybackSummaryFilePath != nil {
+                    entry.summarizedTextPlaybackPositionSeconds = 0
+                    self.summaryPlaybackLastSavedElapsedSeconds = 0
+                    try? self.modelContext.save()
+                } else if self.activePlaybackShouldPersistProgress {
+                    entry.progress = 0
+                    try? self.modelContext.save()
+                }
                 self.persistPlayerProgress()
             },
             onFailure: { message in
@@ -1944,6 +2179,7 @@ struct ContentView: View {
         cancelReadingNavigationTask()
         playbackState = PlaybackState()
         activeEntry = nil
+        activePlaybackSummaryFilePath = nil
         playbackChunks = []
         playbackChunkIndex = 0
         playbackSessionToken = UUID()
@@ -1988,7 +2224,18 @@ struct ContentView: View {
             cancelReadingNavigationTask()
         } else {
             if let entry = activeEntry {
-                startPlayback(for: entry)
+                if let activePlaybackSummaryFilePath,
+                   let summaryURL = entry.summarizedTextFileURL,
+                   summaryURL.path == activePlaybackSummaryFilePath {
+                    startPlayback(
+                        for: entry,
+                        textFileURL: summaryURL,
+                        displayTitle: "Summary: \(entry.title)",
+                        persistProgress: true
+                    )
+                } else {
+                    startPlayback(for: entry)
+                }
             } else {
                 playbackState.isPlaying = false
             }
@@ -2080,11 +2327,18 @@ struct ContentView: View {
 
     @MainActor
     private func persistPlayerProgress() {
-        activeEntry?.progress = playbackState.progress
-        if let activeEntry {
-            syncReadingPositionState(for: activeEntry, progress: playbackState.progress)
+        guard let activeEntry else { return }
+
+        if activePlaybackSummaryFilePath != nil {
+            persistSummaryPlaybackProgress(for: activeEntry, force: true)
+            return
         }
-        activeEntry?.lastOpened = .now
+
+        guard activePlaybackShouldPersistProgress else { return }
+
+        activeEntry.progress = playbackState.progress
+        syncReadingPositionState(for: activeEntry, progress: playbackState.progress)
+        activeEntry.lastOpened = .now
         try? modelContext.save()
     }
 
@@ -2106,9 +2360,25 @@ struct ContentView: View {
         playbackState.elapsedSeconds = update.elapsedSeconds
         playbackState.durationSeconds = update.durationSeconds
         playbackState.progress = update.progress
-        syncReadingPositionState(for: entry, progress: update.progress, chunkIndex: update.chunkIndex)
         playbackState.isPlaying = update.isPlaying
-        entry.progress = update.progress
+        if activePlaybackSummaryFilePath != nil {
+            persistSummaryPlaybackProgress(for: entry)
+        } else if activePlaybackShouldPersistProgress {
+            syncReadingPositionState(for: entry, progress: update.progress, chunkIndex: update.chunkIndex)
+            entry.progress = update.progress
+            entry.lastOpened = .now
+            try? modelContext.save()
+        }
+    }
+
+    @MainActor
+    private func persistSummaryPlaybackProgress(for entry: LibraryEntry, force: Bool = false) {
+        let elapsedSeconds = max(0, playbackState.elapsedSeconds)
+        let shouldPersist = force || abs(elapsedSeconds - summaryPlaybackLastSavedElapsedSeconds) >= 5
+        guard shouldPersist else { return }
+
+        summaryPlaybackLastSavedElapsedSeconds = elapsedSeconds
+        entry.summarizedTextPlaybackPositionSeconds = elapsedSeconds
         entry.lastOpened = .now
         try? modelContext.save()
     }
@@ -2130,6 +2400,25 @@ struct ContentView: View {
         guard audioGenerationTask != nil else { return false }
         guard let pendingAudioGenerationEntry else { return false }
         return pendingAudioGenerationEntry.persistentModelID == entry.persistentModelID
+    }
+
+    @MainActor
+    private func isSummaryPlaybackTracked(for entry: LibraryEntry) -> Bool {
+        guard let activePlaybackSummaryFilePath else { return false }
+        guard let summaryURL = entry.summarizedTextFileURL else { return false }
+        return summaryURL.path == activePlaybackSummaryFilePath
+    }
+
+    @MainActor
+    private func isSummaryPlaybackPlaying(for entry: LibraryEntry) -> Bool {
+        isSummaryPlaybackTracked(for: entry) && playbackState.isPlaying
+    }
+
+    @MainActor
+    private func isEntrySummarizing(_ entry: LibraryEntry) -> Bool {
+        guard summaryGenerationTask != nil else { return false }
+        guard let pendingSummaryEntry else { return false }
+        return pendingSummaryEntry.persistentModelID == entry.persistentModelID
     }
 
     @MainActor
@@ -2320,6 +2609,19 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func cancelSummaryGenerationIfNeeded(for entry: LibraryEntry) {
+        guard isEntrySummarizing(entry) else { return }
+
+        summaryGenerationTask?.cancel()
+        summaryGenerationTask = nil
+        pendingSummaryEntry = nil
+        summaryGenerationSuccess = nil
+        summarySuccessEntry = nil
+        summaryGenerationAlertMessage = nil
+        endIdleSleepAssertion(for: .summarizing)
+    }
+
+    @MainActor
     private func beginIdleSleepAssertion(for kind: IdleSleepAssertionKind) {
         let activity: NSObjectProtocol
 
@@ -2338,6 +2640,13 @@ struct ContentView: View {
                 reason: "Generating audio"
             )
             audioGenerationAwakeAssertion = activity
+        case .summarizing:
+            if summaryGenerationAwakeAssertion != nil { return }
+            activity = ProcessInfo.processInfo.beginActivity(
+                options: [.idleSystemSleepDisabled],
+                reason: "Summarizing file"
+            )
+            summaryGenerationAwakeAssertion = activity
         }
     }
 
@@ -2352,6 +2661,10 @@ struct ContentView: View {
             guard let activity = audioGenerationAwakeAssertion else { return }
             ProcessInfo.processInfo.endActivity(activity)
             audioGenerationAwakeAssertion = nil
+        case .summarizing:
+            guard let activity = summaryGenerationAwakeAssertion else { return }
+            ProcessInfo.processInfo.endActivity(activity)
+            summaryGenerationAwakeAssertion = nil
         }
     }
 
@@ -2461,7 +2774,15 @@ struct ContentView: View {
         return ReaderPlaybackChunkService.progress(for: target.index, chunkCount: targets.count)
     }
 
-    private func playbackResumeProgress(for entry: LibraryEntry) -> Double {
+    private func playbackResumeProgress(for entry: LibraryEntry, textFileURL: URL? = nil, duration: Int) -> Double {
+        if let textFileURL,
+           let summaryURL = entry.summarizedTextFileURL,
+           summaryURL.path == textFileURL.path {
+            let elapsedSeconds = entry.summarizedTextPlaybackPositionSeconds ?? 0
+            guard duration > 0 else { return 0 }
+            return min(max(Double(elapsedSeconds) / Double(duration), 0), 0.999_999)
+        }
+
         if let currentIndex = entry.currentReadingPositionIndex,
            let totalCount = entry.currentReadingPositionTotalCount,
            totalCount > 0 {
@@ -2469,6 +2790,10 @@ struct ContentView: View {
         }
 
         return entry.progress
+    }
+
+    private func estimatedPlaybackDuration(for normalizedText: String) -> Int {
+        max(600, min(10800, normalizedText.isEmpty ? 1800 : max(600, normalizedText.count / 12)))
     }
 
     private func adjacentReadingTarget(for direction: ReadingNavigationDirection, in entry: LibraryEntry) -> ReaderJumpTarget? {

@@ -313,6 +313,9 @@ final class LibraryEntry {
     var generatedAudioUpdatedAt: Date?
     var generatedAudioDurationSeconds: Int?
     var generatedAudioPlaybackPositionSeconds: Int?
+    var summarizedTextFilePath: String?
+    var summarizedTextUpdatedAt: Date?
+    var summarizedTextPlaybackPositionSeconds: Int?
     var readingJumpTargetsData: Data?
     var currentReadingPositionIndex: Int?
     var currentReadingPositionTotalCount: Int?
@@ -348,6 +351,9 @@ final class LibraryEntry {
         generatedAudioUpdatedAt: Date? = nil,
         generatedAudioDurationSeconds: Int? = nil,
         generatedAudioPlaybackPositionSeconds: Int? = nil,
+        summarizedTextFilePath: String? = nil,
+        summarizedTextUpdatedAt: Date? = nil,
+        summarizedTextPlaybackPositionSeconds: Int? = nil,
         readingJumpTargets: [ReaderJumpTarget] = [],
         currentReadingPositionIndex: Int? = nil,
         currentReadingPositionTotalCount: Int? = nil,
@@ -382,6 +388,9 @@ final class LibraryEntry {
         self.generatedAudioUpdatedAt = generatedAudioUpdatedAt
         self.generatedAudioDurationSeconds = generatedAudioDurationSeconds
         self.generatedAudioPlaybackPositionSeconds = generatedAudioPlaybackPositionSeconds
+        self.summarizedTextFilePath = summarizedTextFilePath
+        self.summarizedTextUpdatedAt = summarizedTextUpdatedAt
+        self.summarizedTextPlaybackPositionSeconds = summarizedTextPlaybackPositionSeconds
         self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
         self.currentReadingPositionIndex = currentReadingPositionIndex
         self.currentReadingPositionTotalCount = currentReadingPositionTotalCount
@@ -431,6 +440,24 @@ final class LibraryEntry {
     var generatedAudioFileURL: URL? {
         guard let generatedAudioFilePath else { return nil }
         return URL(fileURLWithPath: generatedAudioFilePath)
+    }
+
+    var normalizedTextFileURL: URL? {
+        guard let normalizedTextFilePath else { return nil }
+        return URL(fileURLWithPath: normalizedTextFilePath)
+    }
+
+    var summarizedTextFileURL: URL? {
+        guard let summarizedTextFilePath else { return nil }
+        return URL(fileURLWithPath: summarizedTextFilePath)
+    }
+
+    var hasSummarizedText: Bool {
+        summarizedTextFileURL != nil
+    }
+
+    var summarizedTextPlaybackPosition: TimeInterval {
+        TimeInterval(summarizedTextPlaybackPositionSeconds ?? 0)
     }
 
     var generatedAudioPlaybackPosition: TimeInterval {
