@@ -194,6 +194,39 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     self.activeChunkIndex = chunkIndex
                 }
 
+                let isFirstSessionChunk = chunkIndex == startIndex
+                if isFirstSessionChunk,
+                   let cachedAudioURL = await ReaderPlaybackAudioCacheService.shared.cachedAudioURL(
+                    for: entry,
+                    voiceName: voice.voiceName,
+                    chunkText: chunkText
+                   ) {
+                    await MainActor.run {
+                        guard self.playbackSessionID == sessionID else { return }
+                        self.scheduleAudioFile(
+                            cachedAudioURL,
+                            isFinalChunk: chunkIndex == chunks.count - 1,
+                            sessionID: sessionID,
+                            onFinished: onFinished
+                        )
+                        if !self.playerNode.isPlaying {
+                            self.playerNode.play()
+                        }
+                    }
+
+                    scheduledChunkCount += 1
+
+                    if scheduledChunkCount == 1 {
+                        await MainActor.run {
+                            guard self.playbackSessionID == sessionID else { return }
+                            self.isBufferingFirstChunk = false
+                        }
+                    }
+
+                    await primeAudioPrefetch(for: entry, chunks: chunks, voice: voice, startingAt: chunkIndex + 1, sessionID: sessionID)
+                    continue
+                }
+
                 if await PhonemeCacheService.shared.cachedPhonemes(for: entry, chunkIndex: chunkIndex) == nil {
                     let phonemes = await KokoroG2PService.shared.phonemize(chunkText)
                     if !phonemes.isEmpty {
@@ -208,6 +241,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                         entry: entry,
                         voice: voice,
                         text: chunkText,
+                        isPrimaryChunk: chunkIndex == startIndex,
                         sessionID: sessionID
                     )
                 } catch {
@@ -387,6 +421,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         entry: LibraryEntry,
         voice: KokoroVoiceOption,
         text: String,
+        isPrimaryChunk: Bool,
         sessionID: UUID
     ) async throws -> URL {
         let isActiveSession = await MainActor.run { self.playbackSessionID == sessionID }
@@ -396,6 +431,16 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
         if let cached = synthesizedAudioURLs[chunkIndex] {
             return cached
+        }
+
+        if isPrimaryChunk,
+           let cachedAudioURL = await ReaderPlaybackAudioCacheService.shared.cachedAudioURL(
+            for: entry,
+            voiceName: voice.voiceName,
+            chunkText: text
+           ) {
+            synthesizedAudioURLs[chunkIndex] = cachedAudioURL
+            return cachedAudioURL
         }
 
         if let task = synthesisTasks[chunkIndex] {
@@ -413,12 +458,24 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
         do {
             let url = try await task.value
+            let cachedURL: URL
+            if isPrimaryChunk,
+               let storedURL = await ReaderPlaybackAudioCacheService.shared.storeAudio(
+                at: url,
+                for: entry,
+                voiceName: voice.voiceName,
+                chunkText: text
+               ) {
+                cachedURL = storedURL
+            } else {
+                cachedURL = url
+            }
             let isStillActive = await MainActor.run { self.playbackSessionID == sessionID }
             if isStillActive {
-                synthesizedAudioURLs[chunkIndex] = url
+                synthesizedAudioURLs[chunkIndex] = cachedURL
                 synthesisTasks.removeValue(forKey: chunkIndex)
             }
-            return url
+            return cachedURL
         } catch {
             let isStillActive = await MainActor.run { self.playbackSessionID == sessionID }
             if isStillActive {

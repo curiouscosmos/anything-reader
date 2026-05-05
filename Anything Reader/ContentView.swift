@@ -950,6 +950,7 @@ struct ContentView: View {
 
         Task {
             await PhonemeCacheService.shared.removeCache(for: entry)
+            await ReaderPlaybackAudioCacheService.shared.removeCache(for: entry)
         }
 
         modelContext.delete(entry)

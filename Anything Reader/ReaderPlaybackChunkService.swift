@@ -10,6 +10,7 @@ import Foundation
 import SwiftData
 
 struct ReaderPlaybackChunkService {
+    static let initialChunkLength = 150
     static let preferredChunkLength = 420
     static let prefetchChunkCount = 3
     static let pdfPageBreakMarker = "[[PDF_PAGE_BREAK]]"
@@ -75,60 +76,12 @@ struct ReaderPlaybackChunkService {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         }
 
-        let paragraphs = cleaned
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .components(separatedBy: "\n\n")
-
-        var chunks: [String] = []
-
-        for paragraph in paragraphs {
-            let paragraphText = paragraph
-                .replacingOccurrences(of: "\n", with: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            guard !paragraphText.isEmpty else { continue }
-
-            let segments = splitIntoSentenceSegments(paragraphText, language: resolvedLanguage)
-            if segments.isEmpty {
-                chunks.append(paragraphText)
-                continue
-            }
-
-            var buffer = ""
-            for segment in segments {
-                let trimmedSegment = segment.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmedSegment.isEmpty else { continue }
-
-                if trimmedSegment.count > preferredChunkLength {
-                    if !buffer.isEmpty {
-                        chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
-                        buffer = ""
-                    }
-
-                    chunks.append(contentsOf: splitLongSegment(trimmedSegment))
-                    continue
-                }
-
-                if buffer.isEmpty {
-                    buffer = trimmedSegment
-                } else if buffer.count + 1 + trimmedSegment.count <= preferredChunkLength {
-                    buffer += " "
-                    buffer += trimmedSegment
-                } else {
-                    chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
-                    buffer = trimmedSegment
-                }
-            }
-
-            if !buffer.isEmpty {
-                chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-        }
-
-        return chunks
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        var firstChunkPending = true
+        return chunks(
+            fromCleanedText: cleaned,
+            language: resolvedLanguage,
+            firstChunkPending: &firstChunkPending
+        )
     }
 
     static func pageChunks(for entry: LibraryEntry, textFileURL: URL? = nil) -> [String] {
@@ -278,6 +231,11 @@ struct ReaderPlaybackChunkService {
     }
 
     private static func splitLongSegment(_ text: String) -> [String] {
+        var firstChunkPending = true
+        return splitLongSegment(text, firstChunkPending: &firstChunkPending)
+    }
+
+    private static func splitLongSegment(_ text: String, firstChunkPending: inout Bool) -> [String] {
         let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         guard !words.isEmpty else { return [text] }
 
@@ -285,28 +243,33 @@ struct ReaderPlaybackChunkService {
         var buffer = ""
 
         for word in words {
-            if word.count > preferredChunkLength {
+            let chunkLength = firstChunkPending ? initialChunkLength : preferredChunkLength
+
+            if word.count > chunkLength {
                 if !buffer.isEmpty {
                     chunks.append(buffer)
                     buffer = ""
+                    firstChunkPending = false
                 }
-                chunks.append(contentsOf: breakLongWord(word))
+                chunks.append(contentsOf: breakLongWord(word, firstChunkPending: &firstChunkPending))
                 continue
             }
 
             if buffer.isEmpty {
                 buffer = word
-            } else if buffer.count + 1 + word.count <= preferredChunkLength {
+            } else if buffer.count + 1 + word.count <= chunkLength {
                 buffer += " "
                 buffer += word
             } else {
                 chunks.append(buffer)
                 buffer = word
+                firstChunkPending = false
             }
         }
 
         if !buffer.isEmpty {
             chunks.append(buffer)
+            firstChunkPending = false
         }
 
         return chunks
@@ -323,8 +286,18 @@ struct ReaderPlaybackChunkService {
             .components(separatedBy: marker)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-        let flattenedChunks = sections.flatMap { section in
-            chunks(from: section, language: language)
+        var firstChunkPending = true
+        var flattenedChunks: [String] = []
+        flattenedChunks.reserveCapacity(sections.count)
+
+        for section in sections {
+            flattenedChunks.append(
+                contentsOf: chunks(
+                    fromCleanedText: section,
+                    language: language,
+                    firstChunkPending: &firstChunkPending
+                )
+            )
         }
 
         return flattenedChunks.isEmpty ? nil : flattenedChunks
@@ -343,27 +316,124 @@ struct ReaderPlaybackChunkService {
 
         var startIndices: [Int] = []
         var runningIndex = 0
+        var firstChunkPending = true
 
         for section in sections {
             startIndices.append(runningIndex)
-            runningIndex += chunks(from: section, language: language).count
+            runningIndex += chunks(
+                fromCleanedText: section,
+                language: language,
+                firstChunkPending: &firstChunkPending
+            ).count
         }
 
         return startIndices
     }
 
     private static func breakLongWord(_ word: String) -> [String] {
-        guard word.count > preferredChunkLength else { return [word] }
+        var firstChunkPending = true
+        return breakLongWord(word, firstChunkPending: &firstChunkPending)
+    }
+
+    private static func breakLongWord(_ word: String, firstChunkPending: inout Bool) -> [String] {
+        let chunkLength = firstChunkPending ? initialChunkLength : preferredChunkLength
+        guard word.count > chunkLength else { return [word] }
 
         var result: [String] = []
         var startIndex = word.startIndex
 
         while startIndex < word.endIndex {
-            let endIndex = word.index(startIndex, offsetBy: preferredChunkLength, limitedBy: word.endIndex) ?? word.endIndex
+            let currentChunkLength = firstChunkPending ? initialChunkLength : preferredChunkLength
+            let endIndex = word.index(startIndex, offsetBy: currentChunkLength, limitedBy: word.endIndex) ?? word.endIndex
             result.append(String(word[startIndex..<endIndex]))
             startIndex = endIndex
+            firstChunkPending = false
         }
 
         return result
+    }
+
+    private static func chunks(
+        fromCleanedText cleanedText: String,
+        language: TextLanguage,
+        firstChunkPending: inout Bool
+    ) -> [String] {
+        let paragraphs = cleanedText
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n\n")
+
+        var chunks: [String] = []
+
+        for paragraph in paragraphs {
+            let paragraphText = paragraph
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !paragraphText.isEmpty else { continue }
+
+            let segments = splitIntoSentenceSegments(paragraphText, language: language)
+            if segments.isEmpty {
+                appendChunk(paragraphText, to: &chunks, firstChunkPending: &firstChunkPending)
+                continue
+            }
+
+            var buffer = ""
+            for segment in segments {
+                let trimmedSegment = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedSegment.isEmpty else { continue }
+
+                let chunkLength = firstChunkPending ? initialChunkLength : preferredChunkLength
+
+                if trimmedSegment.count > chunkLength {
+                    if !buffer.isEmpty {
+                        chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
+                        buffer = ""
+                        firstChunkPending = false
+                    }
+
+                    chunks.append(contentsOf: splitLongSegment(trimmedSegment, firstChunkPending: &firstChunkPending))
+                    continue
+                }
+
+                if buffer.isEmpty {
+                    buffer = trimmedSegment
+                } else if buffer.count + 1 + trimmedSegment.count <= chunkLength {
+                    buffer += " "
+                    buffer += trimmedSegment
+                } else {
+                    chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
+                    buffer = trimmedSegment
+                    firstChunkPending = false
+                }
+            }
+
+            if !buffer.isEmpty {
+                chunks.append(buffer.trimmingCharacters(in: .whitespacesAndNewlines))
+                firstChunkPending = false
+            }
+        }
+
+        return chunks
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func appendChunk(
+        _ chunk: String,
+        to chunks: inout [String],
+        firstChunkPending: inout Bool
+    ) {
+        let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedChunk.isEmpty else { return }
+
+        let chunkLength = firstChunkPending ? initialChunkLength : preferredChunkLength
+        if trimmedChunk.count <= chunkLength {
+            chunks.append(trimmedChunk)
+            firstChunkPending = false
+            return
+        }
+
+        chunks.append(contentsOf: splitLongSegment(trimmedChunk, firstChunkPending: &firstChunkPending))
     }
 }

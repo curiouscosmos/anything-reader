@@ -32,8 +32,10 @@ enum FileSummarizationError: LocalizedError {
 actor FileSummarizationService {
     static let shared = FileSummarizationService()
 
-    private let sectionCharacterLimit = 6_000
-    private let finalSummaryCharacterLimit = 8_000
+    private let sectionCharacterLimit = 1_500
+    private let finalSummaryCharacterLimit = 4_500
+    private static let maximumResponseTokens = 256
+    private static let maximumHierarchyDepth = 12
 
     private init() {}
 
@@ -44,22 +46,21 @@ actor FileSummarizationService {
         }
 
         let resolvedLanguage = Self.resolvedLanguage(for: language)
-        let sections = Self.splitForSummarization(trimmedText, maximumCharacters: sectionCharacterLimit)
-
-        guard !sections.isEmpty else {
-            throw FileSummarizationError.emptyInput
-        }
-
-        let sectionSummaries = try await summarizeSections(sections, language: resolvedLanguage)
-        let normalizedSummary = Self.normalizedSummary(from: sectionSummaries, language: resolvedLanguage)
+        let normalizedSummary = try await summarizeHierarchically(
+            trimmedText,
+            language: resolvedLanguage,
+            maximumCharacters: sectionCharacterLimit
+        )
 
         if normalizedSummary.count <= finalSummaryCharacterLimit {
             return normalizedSummary
         }
 
-        let condensedSections = Self.splitForSummarization(normalizedSummary, maximumCharacters: sectionCharacterLimit)
-        let condensedSummaries = try await summarizeSections(condensedSections, language: resolvedLanguage)
-        let finalSummary = Self.normalizedSummary(from: condensedSummaries, language: resolvedLanguage)
+        let finalSummary = try await summarizeHierarchically(
+            normalizedSummary,
+            language: resolvedLanguage,
+            maximumCharacters: sectionCharacterLimit
+        )
 
         guard !finalSummary.isEmpty else {
             throw FileSummarizationError.emptyInput
@@ -79,6 +80,130 @@ actor FileSummarizationService {
         }
 
         return summaries
+    }
+
+    private func summarizeHierarchically(
+        _ text: String,
+        language: TextLanguage,
+        maximumCharacters: Int,
+        depth: Int = 0
+    ) async throws -> String {
+        let sections = Self.splitForSummarization(text, maximumCharacters: maximumCharacters)
+
+        guard !sections.isEmpty else {
+            throw FileSummarizationError.emptyInput
+        }
+
+        if sections.count == 1 {
+            return try await summarizeSectionHierarchically(
+                sections[0],
+                language: language,
+                maximumCharacters: maximumCharacters,
+                depth: depth
+            )
+        }
+
+        var sectionSummaries: [String] = []
+        sectionSummaries.reserveCapacity(sections.count)
+
+        for section in sections {
+            try Task.checkCancellation()
+            let summary = try await summarizeSectionHierarchically(
+                section,
+                language: language,
+                maximumCharacters: maximumCharacters,
+                depth: depth + 1
+            )
+            sectionSummaries.append(summary)
+        }
+
+        guard !sectionSummaries.isEmpty else {
+            throw FileSummarizationError.emptyInput
+        }
+
+        let combinedSummary = Self.normalizedSummary(from: sectionSummaries, language: language)
+
+        if combinedSummary.count <= maximumCharacters || depth >= Self.maximumHierarchyDepth {
+            return combinedSummary
+        }
+
+        return try await summarizeHierarchically(
+            combinedSummary,
+            language: language,
+            maximumCharacters: Self.nextSmallerCharacterLimit(
+                for: combinedSummary,
+                currentLimit: maximumCharacters
+            ),
+            depth: depth + 1
+        )
+    }
+
+    private func summarizeSectionHierarchically(
+        _ text: String,
+        language: TextLanguage,
+        maximumCharacters: Int,
+        depth: Int
+    ) async throws -> String {
+        let sections = Self.splitForSummarization(text, maximumCharacters: maximumCharacters)
+
+        guard !sections.isEmpty else {
+            throw FileSummarizationError.emptyInput
+        }
+
+        if sections.count > 1 {
+            var childSummaries: [String] = []
+            childSummaries.reserveCapacity(sections.count)
+
+            for section in sections {
+                try Task.checkCancellation()
+                let summary = try await summarizeSectionHierarchically(
+                    section,
+                    language: language,
+                    maximumCharacters: Self.nextSmallerCharacterLimit(for: section, currentLimit: maximumCharacters),
+                    depth: depth + 1
+                )
+                childSummaries.append(summary)
+            }
+
+            guard !childSummaries.isEmpty else {
+                throw FileSummarizationError.emptyInput
+            }
+
+            let combinedChildSummary = Self.normalizedSummary(from: childSummaries, language: language)
+            if combinedChildSummary.count <= maximumCharacters || depth >= Self.maximumHierarchyDepth {
+                return combinedChildSummary
+            }
+
+            return try await summarizeSectionHierarchically(
+                combinedChildSummary,
+                language: language,
+                maximumCharacters: Self.nextSmallerCharacterLimit(
+                    for: combinedChildSummary,
+                    currentLimit: maximumCharacters
+                ),
+                depth: depth + 1
+            )
+        }
+
+        do {
+            return try await summarizeSingleSection(sections[0], language: language)
+        } catch let error as LanguageModelSession.GenerationError {
+            guard Self.shouldSplitFurther(error: error), maximumCharacters > 1 else {
+                throw Self.generationFailed(error: error, language: language)
+            }
+
+            return try await summarizeSectionHierarchically(
+                sections[0],
+                language: language,
+                maximumCharacters: Self.nextSmallerCharacterLimit(
+                    for: sections[0],
+                    currentLimit: maximumCharacters
+                ),
+                depth: depth + 1
+            )
+        } catch {
+            throw FileSummarizationError.generationFailed(error.localizedDescription)
+        }
     }
 
     private func summarizeSingleSection(_ section: String, language: TextLanguage) async throws -> String {
@@ -109,7 +234,9 @@ actor FileSummarizationService {
 
         do {
             let session = LanguageModelSession(model: model, tools: [], instructions: instructions)
-            return try await session.respond(to: prompt).content
+            var options = GenerationOptions()
+            options.maximumResponseTokens = Self.maximumResponseTokens
+            return try await session.respond(to: prompt, options: options).content
         } catch let error as LanguageModelSession.GenerationError {
             if case .unsupportedLanguageOrLocale = error {
                 if language != .english {
@@ -120,7 +247,11 @@ actor FileSummarizationService {
                 )
             }
 
-            throw FileSummarizationError.generationFailed(error.localizedDescription)
+            if case .guardrailViolation = error {
+                return Self.extractiveFallbackSummary(from: section, language: language)
+            }
+
+            throw Self.generationFailed(error: error, language: language)
         } catch {
             throw FileSummarizationError.generationFailed(error.localizedDescription)
         }
@@ -136,6 +267,111 @@ actor FileSummarizationService {
     nonisolated static func normalizedSummary(from sectionSummaries: [String], language: TextLanguage) -> String {
         let combinedSummary = sectionSummaries.joined(separator: "\n\n")
         return TextNormalizationService.normalize(combinedSummary, language: language)
+    }
+
+    nonisolated static func shouldSplitFurther(error: LanguageModelSession.GenerationError) -> Bool {
+        if case .exceededContextWindowSize = error {
+            return true
+        }
+
+        return false
+    }
+
+    nonisolated static func generationFailed(error: LanguageModelSession.GenerationError, language: TextLanguage) -> FileSummarizationError {
+        if case .unsupportedLanguageOrLocale = error {
+            if language != .english {
+                return .generationFailed("Apple Intelligence could not summarize this file in the detected language.")
+            }
+        }
+
+        if case .exceededContextWindowSize = error {
+            return .generationFailed("The summary request was too large for the model context window.")
+        }
+
+        return .generationFailed(error.localizedDescription)
+    }
+
+    nonisolated static func nextSmallerCharacterLimit(for text: String, currentLimit: Int) -> Int {
+        let halvedLimit = max(1, currentLimit / 2)
+        let textBasedLimit = max(1, text.count / 2)
+        return min(halvedLimit, textBasedLimit)
+    }
+
+    nonisolated static func extractiveFallbackSummary(from text: String, language: TextLanguage) -> String {
+        let normalizedText = TextNormalizationService.normalize(text, language: language)
+        let paragraphs = normalizedText
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var excerpts: [String] = []
+        var totalCharacterCount = 0
+        let maximumCharacterCount = 900
+
+        for paragraph in paragraphs.prefix(4) {
+            let sentences = splitIntoSentences(paragraph, language: language)
+            let candidate = sentences.prefix(2).joined(separator: " ")
+            let excerpt = candidate.isEmpty ? paragraph : candidate
+            guard !excerpt.isEmpty else { continue }
+
+            let remainingBudget = maximumCharacterCount - totalCharacterCount
+            guard remainingBudget > 0 else { break }
+
+            if excerpt.count <= remainingBudget {
+                excerpts.append(excerpt)
+                totalCharacterCount += excerpt.count
+            } else {
+                let truncated = String(excerpt.prefix(remainingBudget)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !truncated.isEmpty {
+                    excerpts.append(truncated)
+                }
+                break
+            }
+        }
+
+        if excerpts.isEmpty {
+            let fallbackText = String(normalizedText.prefix(maximumCharacterCount)).trimmingCharacters(in: .whitespacesAndNewlines)
+            return fallbackText.isEmpty ? "No readable text was available for summarization." : fallbackText
+        }
+
+        let joined = excerpts.joined(separator: " ")
+        return joined.count < normalizedText.count ? "\(joined)..." : joined
+    }
+
+    nonisolated static func splitIntoSentences(_ text: String, language: TextLanguage) -> [String] {
+        let pattern: String
+        switch language {
+        case .mandarin, .japanese:
+            pattern = #"(?<=[。！？!?；;…])\s*"#
+        case .hindi, .punjabi:
+            pattern = #"(?<=[।॥!?؛;…])\s*"#
+        default:
+            pattern = #"(?<=[.!?])\s+"#
+        }
+
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return [text]
+        }
+
+        let range = NSRange(text.startIndex..., in: text)
+        var sentences: [String] = []
+        var previousUpperBound = text.startIndex
+
+        regex.enumerateMatches(in: text, options: [], range: range) { match, _, _ in
+            guard let match, let splitRange = Range(match.range, in: text) else { return }
+            let segment = String(text[previousUpperBound..<splitRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !segment.isEmpty {
+                sentences.append(segment)
+            }
+            previousUpperBound = splitRange.upperBound
+        }
+
+        let remainder = String(text[previousUpperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !remainder.isEmpty {
+            sentences.append(remainder)
+        }
+
+        return sentences.isEmpty ? [text] : sentences
     }
 
     nonisolated static func splitForSummarization(_ text: String, maximumCharacters: Int) -> [String] {
