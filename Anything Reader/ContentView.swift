@@ -49,6 +49,8 @@ struct ContentView: View {
     @State private var pastedTitle = ""
     @State private var pastedText = ""
     @State private var uploadAlertMessage: String?
+    @State private var browserImportAlertMessage: String?
+    @State private var browserHostInstallAlertMessage: String?
     @State private var importFailureMessage: String?
     @State private var processingImportMessage = ""
     @State private var successToastMessage: String?
@@ -344,6 +346,32 @@ struct ContentView: View {
             Text(uploadAlertMessage ?? "The selected file could not be imported.")
         }
         .alert(
+            "Browser Import Failed",
+            isPresented: Binding(
+                get: { browserImportAlertMessage != nil },
+                set: { if !$0 { browserImportAlertMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                browserImportAlertMessage = nil
+            }
+        } message: {
+            Text(browserImportAlertMessage ?? "The browser page could not be imported.")
+        }
+        .alert(
+            "Browser Host Install Failed",
+            isPresented: Binding(
+                get: { browserHostInstallAlertMessage != nil },
+                set: { if !$0 { browserHostInstallAlertMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                browserHostInstallAlertMessage = nil
+            }
+        } message: {
+            Text(browserHostInstallAlertMessage ?? "The Chrome manifest could not be installed.")
+        }
+        .alert(
             "Normalization Failed",
             isPresented: Binding(
                 get: { importFailureMessage != nil },
@@ -454,6 +482,14 @@ struct ContentView: View {
             kokoroModelStore.refreshInstallationStatus()
             promptForKokoroDownloadIfNeeded()
         }
+        .task {
+            do {
+                try await BrowserNativeMessagingService.shared.installHostIfNeeded()
+            } catch {
+                browserHostInstallAlertMessage = "Chrome manifest install failed: \(error.localizedDescription)"
+            }
+            await monitorBrowserInbox()
+        }
         .onChange(of: kokoroModelStore.status) { _, newStatus in
             switch newStatus {
             case .installed:
@@ -522,6 +558,24 @@ struct ContentView: View {
         let availableNames = Set(KokoroVoiceCatalog.allVoices.map(\.voiceName))
         if !availableNames.contains(kokoroVoiceName) {
             kokoroVoiceName = KokoroVoiceCatalog.defaultVoiceName
+        }
+    }
+
+    @MainActor
+    private func monitorBrowserInbox() async {
+        while !Task.isCancelled {
+            do {
+                let pendingMessages = try await BrowserNativeMessagingService.shared.consumePendingMessages()
+                if !pendingMessages.isEmpty {
+                    for message in pendingMessages {
+                        importBrowserMessage(message)
+                    }
+                }
+            } catch {
+                // The browser inbox is best-effort. Launch should stay quiet if the folder is not ready yet.
+            }
+
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
         }
     }
 
@@ -1101,24 +1155,105 @@ struct ContentView: View {
 
         let trimmedTitle = pastedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedTitle = trimmedTitle.isEmpty ? generatedPastedTitle() : trimmedTitle
-        let fileName = resolvedTitle.replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-
-        let detectedLanguage = TextNormalizationService.detectLanguage(for: trimmedText)
-        let normalizedText = TextNormalizationService.normalize(trimmedText, language: detectedLanguage)
-        guard !normalizedText.isEmpty else {
-            uploadAlertMessage = "The pasted text could not be normalized."
+        guard let pastedEntry = storePlainTextEntry(
+            title: resolvedTitle,
+            subtitle: "Pasted text saved locally for later.",
+            text: trimmedText,
+            fileName: sanitizedStorageFileName(for: resolvedTitle)
+        ) else {
+            uploadAlertMessage = "The pasted text could not be imported."
             return
         }
+
+        pastedTitle = ""
+        pastedText = ""
+        isShowingPasteSheet = false
+        startPlayback(for: pastedEntry)
+    }
+
+    private func generatedPastedTitle() -> String {
+        let now = Date()
+        let calendar = Calendar.current
+        let noteNumber = libraryEntries.filter { entry in
+            entry.sourceKind == .pastedText && calendar.isDate(entry.createdAt, inSameDayAs: now)
+        }.count + 1
+
+        return "Note: #\(noteNumber)"
+    }
+
+    @MainActor
+    private func importBrowserMessage(_ message: BrowserNativeMessage) {
+        let trimmedText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            browserImportAlertMessage = "The browser page did not contain readable text."
+            return
+        }
+
+        let resolvedTitle = browserTitle(for: message)
+        guard let browserEntry = storePlainTextEntry(
+            title: resolvedTitle,
+            subtitle: browserSubtitle(for: message),
+            text: trimmedText,
+            fileName: sanitizedStorageFileName(for: resolvedTitle)
+        ) else {
+            browserImportAlertMessage = "The browser page could not be imported."
+            return
+        }
+
+        successToastMessage = "Imported browser page"
+        startPlayback(for: browserEntry)
+    }
+
+    private func browserTitle(for message: BrowserNativeMessage) -> String {
+        let trimmedTitle = message.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedTitle.isEmpty {
+            return trimmedTitle
+        }
+
+        let now = Date()
+        let calendar = Calendar.current
+        let browserCount = libraryEntries.filter { entry in
+            entry.sourceKind == .pastedText && calendar.isDate(entry.createdAt, inSameDayAs: now)
+        }.count + 1
+
+        if let pageURL = message.pageURL,
+           let host = URL(string: pageURL)?.host,
+           !host.isEmpty {
+            return "Web Clip from \(host) #\(browserCount)"
+        }
+
+        return "Web Clip #\(browserCount)"
+    }
+
+    private func browserSubtitle(for message: BrowserNativeMessage) -> String {
+        if let pageURL = message.pageURL,
+           let host = URL(string: pageURL)?.host,
+           !host.isEmpty {
+            return "Saved from \(host)."
+        }
+
+        return "Saved from browser extension."
+    }
+
+    @MainActor
+    private func storePlainTextEntry(
+        title: String,
+        subtitle: String,
+        text: String,
+        fileName: String
+    ) -> LibraryEntry? {
+        let detectedLanguage = TextNormalizationService.detectLanguage(for: text)
+        let normalizedText = TextNormalizationService.normalize(text, language: detectedLanguage)
+        guard !normalizedText.isEmpty else { return nil }
 
         let textData = Data(normalizedText.utf8)
         guard let storedURL = try? storeTextFile(contents: textData, fileName: fileName) else {
-            uploadAlertMessage = "The pasted text could not be saved to disk."
-            return
+            return nil
         }
-        let pastedEntry = LibraryEntry(
-            title: resolvedTitle,
-            subtitle: "Pasted text saved locally for later.",
+
+        let storedEntry = LibraryEntry(
+            title: title,
+            subtitle: subtitle,
             sourceKind: .pastedText,
             fileExtension: "txt",
             originalFileName: "\(fileName).txt",
@@ -1136,23 +1271,9 @@ struct ContentView: View {
             lastOpened: .now
         )
 
-        modelContext.insert(pastedEntry)
+        modelContext.insert(storedEntry)
         try? modelContext.save()
-
-        pastedTitle = ""
-        pastedText = ""
-        isShowingPasteSheet = false
-        startPlayback(for: pastedEntry)
-    }
-
-    private func generatedPastedTitle() -> String {
-        let now = Date()
-        let calendar = Calendar.current
-        let noteNumber = libraryEntries.filter { entry in
-            entry.sourceKind == .pastedText && calendar.isDate(entry.createdAt, inSameDayAs: now)
-        }.count + 1
-
-        return "Note: #\(noteNumber)"
+        return storedEntry
     }
 
     // MARK: - File Uploads
@@ -1500,6 +1621,12 @@ struct ContentView: View {
             .replacingOccurrences(of: ":", with: "_")
         let timestamp = Self.importTimestampFormatter.string(from: .now)
         return "\(sanitizedStem)_\(timestamp)"
+    }
+
+    private func sanitizedStorageFileName(for title: String) -> String {
+        title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
     }
 
     private static let importTimestampFormatter: DateFormatter = {

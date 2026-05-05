@@ -55,6 +55,7 @@ struct ReaderSettingsSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
