@@ -112,9 +112,11 @@ actor DocumentIngestService {
         }
 
         let sourceKind = readerSourceKind(for: normalizedFileExtension)
+        let pdfDocument = sourceKind == .pdf ? try PDFTextExtractionService.loadDocument(from: stagedFileURL) : nil
         let detectedLanguage = Self.detectLanguage(
             for: stagedFileURL,
-            fileExtension: normalizedFileExtension
+            fileExtension: normalizedFileExtension,
+            pdfDocument: pdfDocument
         )
         let resolvedLanguage = documentLanguage == .unknown ? detectedLanguage : documentLanguage
         let rawText: String
@@ -124,14 +126,17 @@ actor DocumentIngestService {
 
         switch sourceKind {
         case .pdf:
+            guard let pdfDocument else {
+                throw DocumentIngestError.unreadableDocument
+            }
             let pdfExtraction = try PDFTextExtractionService.extractText(
-                from: stagedFileURL,
+                from: pdfDocument,
                 preferredLanguage: resolvedLanguage
             )
             rawText = pdfExtraction.text
             extractedTitle = bestTitleCandidate(from: rawText)
             pdfExtractionMode = pdfExtraction.mode
-            readingMetadata = PDFTextExtractionService.readingMetadata(from: stagedFileURL)
+            readingMetadata = PDFTextExtractionService.readingMetadata(from: pdfDocument)
         case .epub:
             let epubTextExtraction = try EPUBTextExtractionService.extractText(from: stagedFileURL)
             rawText = epubTextExtraction.text
@@ -277,11 +282,19 @@ actor DocumentIngestService {
 
     nonisolated static func detectLanguage(
         for stagedFileURL: URL,
-        fileExtension: String
+        fileExtension: String,
+        pdfDocument: PDFDocument? = nil
     ) -> TextLanguage {
         switch fileExtension.lowercased() {
         case "pdf":
-            return PDFTextExtractionService.previewLanguage(from: stagedFileURL)
+            if let pdfDocument {
+                return PDFTextExtractionService.previewLanguage(from: pdfDocument)
+            }
+
+            guard let document = try? PDFTextExtractionService.loadDocument(from: stagedFileURL) else {
+                return .english
+            }
+            return PDFTextExtractionService.previewLanguage(from: document)
         case "epub":
             guard let text = try? EPUBTextExtractionService.extractText(from: stagedFileURL).text else {
                 return .english
@@ -383,20 +396,25 @@ nonisolated private func bestTitleCandidate(from text: String) -> String? {
 }
 
 private enum PDFTextExtractionService {
-    nonisolated static func extractText(
-        from url: URL,
-        preferredLanguage: TextLanguage? = nil
-    ) throws -> PDFTextExtractionResult {
+    nonisolated static func loadDocument(from url: URL) throws -> PDFDocument {
         guard let document = PDFDocument(url: url), document.pageCount > 0 else {
             throw DocumentIngestError.unreadableDocument
         }
 
+        return document
+    }
+
+    nonisolated static func extractText(
+        from document: PDFDocument,
+        preferredLanguage: TextLanguage? = nil
+    ) throws -> PDFTextExtractionResult {
         let pageCount = document.pageCount
         let extractionMode = classifyExtractionMode(for: document)
         let boilerplateThreshold = max(2, Int(ceil(Double(pageCount) * 0.35)))
         var candidateCounts: [String: Int] = [:]
+        let sampleIndices = boilerplateSampleIndices(for: pageCount)
 
-        for index in 0..<pageCount {
+        for index in sampleIndices {
             guard let page = document.page(at: index) else { continue }
             let pageBounds = page.bounds(for: .mediaBox)
             let headerRect = CGRect(
@@ -454,26 +472,6 @@ private enum PDFTextExtractionService {
         }
 
         let extracted = cleanedPages.joined(separator: "\n\n[[PDF_PAGE_BREAK]]\n\n")
-        if extractedWordCount(extracted) < max(40, pageCount * 12),
-           extractionMode != .ocr {
-            let forcedOCRPages = (0..<pageCount).compactMap { index -> String? in
-                guard let page = document.page(at: index) else { return nil }
-                let pagePreferredLanguage = preferredLanguage ?? detectLanguageHint(from: page.string)
-                return bestPageText(from: page, preferredLanguage: pagePreferredLanguage, forceOCR: true)
-            }
-
-            let forcedExtracted = forcedOCRPages
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .joined(separator: "\n\n[[PDF_PAGE_BREAK]]\n\n")
-
-            guard !forcedExtracted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw DocumentIngestError.extractionFailed
-            }
-
-            return PDFTextExtractionResult(text: forcedExtracted, mode: .ocr)
-        }
-
         guard !extracted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw DocumentIngestError.extractionFailed
         }
@@ -482,10 +480,14 @@ private enum PDFTextExtractionService {
     }
 
     nonisolated static func previewLanguage(from url: URL) -> TextLanguage {
-        guard let document = PDFDocument(url: url), document.pageCount > 0 else {
+        guard let document = try? loadDocument(from: url) else {
             return .english
         }
 
+        return previewLanguage(from: document)
+    }
+
+    nonisolated static func previewLanguage(from document: PDFDocument) -> TextLanguage {
         let samplePages = min(document.pageCount, 3)
         let sampleText = (0..<samplePages)
             .compactMap { document.page(at: $0)?.string }
@@ -496,7 +498,7 @@ private enum PDFTextExtractionService {
     }
 
     nonisolated static func readingMetadata(from url: URL) -> ReadingMetadata {
-        guard let document = PDFDocument(url: url), document.pageCount > 0 else {
+        guard let document = try? loadDocument(from: url) else {
             return ReadingMetadata(
                 readingStructureKind: nil,
                 pageCount: 0,
@@ -506,7 +508,20 @@ private enum PDFTextExtractionService {
             )
         }
 
+        return readingMetadata(from: document)
+    }
+
+    nonisolated static func readingMetadata(from document: PDFDocument) -> ReadingMetadata {
         let pageCount = document.pageCount
+        guard pageCount > 0 else {
+            return ReadingMetadata(
+                readingStructureKind: nil,
+                pageCount: 0,
+                chapterCount: 0,
+                sectionCount: 0,
+                readingJumpTargets: []
+            )
+        }
         let jumpTargets = (0..<pageCount).map { index in
             ReaderJumpTarget(index: index, title: "Page \(index + 1)")
         }
@@ -526,7 +541,7 @@ private enum PDFTextExtractionService {
     }
 
     nonisolated static func extractTitle(from url: URL) -> String? {
-        guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return nil }
+        guard let document = try? loadDocument(from: url), let page = document.page(at: 0) else { return nil }
         let pageText = pageText(from: page, preferredLanguage: detectLanguageHint(from: page.string))
         return bestTitleCandidate(from: pageText)
     }
@@ -565,9 +580,7 @@ private enum PDFTextExtractionService {
         forceOCR: Bool = false
     ) -> String {
         let directText = directPageText(from: page)
-        let directScore = textQualityScore(for: directText)
-
-        if forceOCR || shouldUseOCR(for: directText) {
+        if forceOCR || shouldUseOCR(for: directText) || isSparseEmbeddedText(directText) {
             if let ocrText = ocrText(from: page, preferredLanguage: preferredLanguage)?.trimmingCharacters(in: .whitespacesAndNewlines),
                !ocrText.isEmpty {
                 return ocrText
@@ -575,13 +588,7 @@ private enum PDFTextExtractionService {
             return directText
         }
 
-        guard let ocrText = ocrText(from: page, preferredLanguage: preferredLanguage)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !ocrText.isEmpty else {
-            return directText
-        }
-
-        let ocrScore = textQualityScore(for: ocrText)
-        return ocrScore > directScore + 2 ? ocrText : directText
+        return directText
     }
 
     nonisolated private static func shouldUseOCR(for text: String) -> Bool {
@@ -661,19 +668,6 @@ private enum PDFTextExtractionService {
         return false
     }
 
-    nonisolated private static func textQualityScore(for text: String) -> Int {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return 0 }
-
-        let letters = trimmed.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
-        let words = trimmed.split(whereSeparator: { $0.isWhitespace }).count
-        let digits = trimmed.unicodeScalars.filter { CharacterSet.decimalDigits.contains($0) }.count
-        let punctuation = trimmed.unicodeScalars.filter { CharacterSet.punctuationCharacters.contains($0) }.count
-        let repeatedNoisePenalty = looksLikeGibberish(trimmed) ? 6 : 0
-
-        return (letters * 2) + (words * 3) - digits - punctuation - repeatedNoisePenalty
-    }
-
     nonisolated private static func isSparseEmbeddedText(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
@@ -685,12 +679,6 @@ private enum PDFTextExtractionService {
         // OCR-only PDFs sometimes expose only a title or a few fragments in the
         // embedded text layer. Those files should still be routed through OCR.
         return (wordCount <= 20 && letterCount <= 140) || lineCount <= 6 || trimmed.count <= 240
-    }
-
-    nonisolated private static func extractedWordCount(_ text: String) -> Int {
-        text
-            .split(whereSeparator: { $0.isWhitespace })
-            .count
     }
 
     nonisolated private static func ocrText(
@@ -839,6 +827,22 @@ private enum PDFTextExtractionService {
         ]
 
         return Array(Set(rawIndices.map { min(max($0, 0), pageCount - 1) })).sorted()
+    }
+
+    nonisolated private static func boilerplateSampleIndices(for pageCount: Int) -> [Int] {
+        guard pageCount > 0 else { return [] }
+
+        if pageCount <= 15 {
+            return Array(0..<pageCount)
+        }
+
+        let windowSize = 5
+        let middleStart = max((pageCount / 2) - (windowSize / 2), 0)
+        let first = Array(0..<windowSize)
+        let middle = Array(middleStart..<(middleStart + windowSize))
+        let last = Array((pageCount - windowSize)..<pageCount)
+
+        return Array(Set(first + middle + last)).sorted()
     }
 
     nonisolated private static func ocrLanguageHints(preferredLanguage: TextLanguage?) -> [String] {
