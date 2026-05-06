@@ -430,6 +430,7 @@ struct ReaderLibrarySectionView: View {
     let onPlay: (LibraryEntry) -> Void
     let onPlaySummary: (LibraryEntry) -> Void
     let onSummarize: (LibraryEntry) -> Void
+    let onCancelSummarization: (LibraryEntry) -> Void
     let onView: (LibraryEntry) -> Void
     let onRevealLocation: (LibraryEntry) -> Void
     let onGenerateAudio: (LibraryEntry) -> Void
@@ -471,10 +472,12 @@ struct ReaderLibrarySectionView: View {
                             hasGeneratedAudio: entry.generatedAudioFileURL != nil,
                             hasSummarizedText: entry.hasSummarizedText,
                             isSummaryPlaying: isSummaryPlaying(entry),
+                            isSummarizing: isEntrySummarizing(entry),
                             onPrimaryAction: { onPrimaryAction(entry) },
                             onPlay: { onPlay(entry) },
                             onPlaySummary: { onPlaySummary(entry) },
                             onSummarize: { onSummarize(entry) },
+                            onCancelSummarization: { onCancelSummarization(entry) },
                             onView: { onView(entry) },
                             onRevealLocation: { onRevealLocation(entry) },
                             onGenerateAudio: { onGenerateAudio(entry) },
@@ -531,10 +534,12 @@ struct ReaderLibraryCardView: View {
     let hasGeneratedAudio: Bool
     let hasSummarizedText: Bool
     let isSummaryPlaying: Bool
+    let isSummarizing: Bool
     let onPrimaryAction: () -> Void
     let onPlay: () -> Void
     let onPlaySummary: () -> Void
     let onSummarize: () -> Void
+    let onCancelSummarization: () -> Void
     let onView: () -> Void
     let onRevealLocation: () -> Void
     let onGenerateAudio: () -> Void
@@ -798,6 +803,10 @@ struct ReaderLibraryCardView: View {
                     isShowingCardMenu = false
                     onSummarize()
                 },
+                onCancelSummarization: {
+                    isShowingCardMenu = false
+                    onCancelSummarization()
+                },
                 onView: onView,
                 onRevealLocation: onRevealLocation,
                 onGenerateAudio: onGenerateAudio,
@@ -806,6 +815,7 @@ struct ReaderLibraryCardView: View {
                 hasGeneratedAudio: hasGeneratedAudio,
                 hasSummarizedText: hasSummarizedText,
                 isSummaryPlaying: isSummaryPlaying,
+                isSummarizing: isSummarizing,
                 isGeneratingAudio: isGeneratingAudio,
                 onClearCategory: onClearCategory,
                 onAssignCategory: onAssignCategory,
@@ -925,6 +935,7 @@ struct ReaderCardMenuPopoverView: View {
     let onPlay: () -> Void
     let onPlaySummary: () -> Void
     let onSummarize: () -> Void
+    let onCancelSummarization: () -> Void
     let onView: () -> Void
     let onRevealLocation: () -> Void
     let onGenerateAudio: () -> Void
@@ -933,6 +944,7 @@ struct ReaderCardMenuPopoverView: View {
     let hasGeneratedAudio: Bool
     let hasSummarizedText: Bool
     let isSummaryPlaying: Bool
+    let isSummarizing: Bool
     let isGeneratingAudio: Bool
     let onClearCategory: () -> Void
     let onAssignCategory: (String) -> Void
@@ -944,6 +956,9 @@ struct ReaderCardMenuPopoverView: View {
         VStack(alignment: .leading, spacing: 10) {
             if isGeneratingAudio {
                 menuButton(title: "Stop Audio generation", systemImage: "stop.fill", role: .destructive, action: onStopAudioGeneration)
+                Divider()
+            } else if isSummarizing {
+                menuButton(title: "Cancel summarization", systemImage: "xmark.circle.fill", role: .destructive, action: onCancelSummarization)
                 Divider()
             } else if !isLoading {
                 menuButton(title: "Play now", systemImage: "play.fill", action: onPlay)

@@ -201,6 +201,8 @@ actor FileSummarizationService {
                 ),
                 depth: depth + 1
             )
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw FileSummarizationError.generationFailed(error.localizedDescription)
         }
@@ -252,6 +254,8 @@ actor FileSummarizationService {
             }
 
             throw Self.generationFailed(error: error, language: language)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw FileSummarizationError.generationFailed(error.localizedDescription)
         }
