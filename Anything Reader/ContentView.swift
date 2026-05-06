@@ -700,7 +700,8 @@ struct ContentView: View {
                             onPlaySummary: playSummarizedLibraryEntry(_:),
                             onSummarize: summarizeLibraryEntry(_:),
                             onCancelSummarization: cancelSummaryGenerationIfNeeded(for:),
-                            onView: openNormalizedTextViewer,
+                            onOpenOriginalFile: openOriginalUploadedFile,
+                            onViewTextFile: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
                             onStopAudioGeneration: stopAudioGeneration(for:),
@@ -729,7 +730,8 @@ struct ContentView: View {
                             onPlaySummary: playSummarizedLibraryEntry(_:),
                             onSummarize: summarizeLibraryEntry(_:),
                             onCancelSummarization: cancelSummaryGenerationIfNeeded(for:),
-                            onView: openNormalizedTextViewer,
+                            onOpenOriginalFile: openOriginalUploadedFile,
+                            onViewTextFile: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
                             onStopAudioGeneration: stopAudioGeneration(for:),
@@ -768,7 +770,8 @@ struct ContentView: View {
                             onPlaySummary: playSummarizedLibraryEntry(_:),
                             onSummarize: summarizeLibraryEntry(_:),
                             onCancelSummarization: cancelSummaryGenerationIfNeeded(for:),
-                            onView: openNormalizedTextViewer,
+                            onOpenOriginalFile: openOriginalUploadedFile,
+                            onViewTextFile: openNormalizedTextViewer,
                             onRevealLocation: revealLibraryEntryLocation,
                             onGenerateAudio: openAudioGenerationSheet(for:),
                             onStopAudioGeneration: stopAudioGeneration(for:),
@@ -961,6 +964,26 @@ struct ContentView: View {
     }
 
     // MARK: - File Viewing
+
+    private func openOriginalUploadedFile(_ entry: LibraryEntry) {
+        guard let storedPath = entry.storedFilePath else {
+            viewerAlertMessage = "This item does not have an uploaded file to open."
+            return
+        }
+
+        let fileURL = URL(fileURLWithPath: storedPath)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            viewerAlertMessage = "The uploaded file could not be found on disk."
+            return
+        }
+
+        entry.lastOpened = .now
+        try? modelContext.save()
+
+        if !NSWorkspace.shared.open(fileURL) {
+            viewerAlertMessage = "The uploaded file could not be opened in another app."
+        }
+    }
 
     private func openNormalizedTextViewer(_ entry: LibraryEntry) {
         guard let storedPath = entry.normalizedTextFilePath else {

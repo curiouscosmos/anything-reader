@@ -431,7 +431,8 @@ struct ReaderLibrarySectionView: View {
     let onPlaySummary: (LibraryEntry) -> Void
     let onSummarize: (LibraryEntry) -> Void
     let onCancelSummarization: (LibraryEntry) -> Void
-    let onView: (LibraryEntry) -> Void
+    let onOpenOriginalFile: (LibraryEntry) -> Void
+    let onViewTextFile: (LibraryEntry) -> Void
     let onRevealLocation: (LibraryEntry) -> Void
     let onGenerateAudio: (LibraryEntry) -> Void
     let onStopAudioGeneration: (LibraryEntry) -> Void
@@ -478,7 +479,8 @@ struct ReaderLibrarySectionView: View {
                             onPlaySummary: { onPlaySummary(entry) },
                             onSummarize: { onSummarize(entry) },
                             onCancelSummarization: { onCancelSummarization(entry) },
-                            onView: { onView(entry) },
+                            onOpenOriginalFile: { onOpenOriginalFile(entry) },
+                            onViewTextFile: { onViewTextFile(entry) },
                             onRevealLocation: { onRevealLocation(entry) },
                             onGenerateAudio: { onGenerateAudio(entry) },
                             onStopAudioGeneration: { onStopAudioGeneration(entry) },
@@ -540,7 +542,8 @@ struct ReaderLibraryCardView: View {
     let onPlaySummary: () -> Void
     let onSummarize: () -> Void
     let onCancelSummarization: () -> Void
-    let onView: () -> Void
+    let onOpenOriginalFile: () -> Void
+    let onViewTextFile: () -> Void
     let onRevealLocation: () -> Void
     let onGenerateAudio: () -> Void
     let onStopAudioGeneration: () -> Void
@@ -724,7 +727,7 @@ struct ReaderLibraryCardView: View {
                     .disabled(isImporting)
                     .opacity(isImporting ? 0.45 : 1)
 
-                    Button(action: onView) {
+                    Button(action: onOpenOriginalFile) {
                         Text("View")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.white)
@@ -807,7 +810,10 @@ struct ReaderLibraryCardView: View {
                     isShowingCardMenu = false
                     onCancelSummarization()
                 },
-                onView: onView,
+                onViewTextFile: {
+                    isShowingCardMenu = false
+                    onViewTextFile()
+                },
                 onRevealLocation: onRevealLocation,
                 onGenerateAudio: onGenerateAudio,
                 onStopAudioGeneration: onStopAudioGeneration,
@@ -936,7 +942,7 @@ struct ReaderCardMenuPopoverView: View {
     let onPlaySummary: () -> Void
     let onSummarize: () -> Void
     let onCancelSummarization: () -> Void
-    let onView: () -> Void
+    let onViewTextFile: () -> Void
     let onRevealLocation: () -> Void
     let onGenerateAudio: () -> Void
     let onStopAudioGeneration: () -> Void
@@ -967,7 +973,7 @@ struct ReaderCardMenuPopoverView: View {
                 } else {
                     menuButton(title: "Summarize File", systemImage: "text.bubble.fill", action: onSummarize)
                 }
-                menuButton(title: "View text", systemImage: "doc.text.magnifyingglass", action: onView)
+                menuButton(title: "View text file", systemImage: "doc.text.magnifyingglass", action: onViewTextFile)
                 menuButton(title: "Open file location", systemImage: "folder", action: onRevealLocation)
                 if hasGeneratedAudio {
                     menuButton(title: "Delete audio file", systemImage: "trash", role: .destructive, action: onDeleteAudio)
