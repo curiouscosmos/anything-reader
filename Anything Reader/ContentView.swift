@@ -600,6 +600,7 @@ struct ContentView: View {
         guard let entry = activeEntry else { return }
         guard playbackState.isPlaying || readerPlaybackService.isPlaying || readerPlaybackService.isBufferingFirstChunk else { return }
 
+        discardPlaybackAudioCache(for: entry)
         readerPlaybackService.stop()
         stopPlaybackTask()
         stopPlaybackWarmupTask()
@@ -2205,9 +2206,16 @@ struct ContentView: View {
             return
         }
 
-        if isEntryPlaying(entry) {
+        if let activeEntry,
+           activeEntry.persistentModelID == entry.persistentModelID,
+           (playbackState.isPlaying || readerPlaybackService.isPaused) {
             togglePlayback()
         } else {
+            if let activeEntry,
+               activeEntry.persistentModelID != entry.persistentModelID {
+                readerPlaybackService.stop()
+                discardPlaybackAudioCache(for: activeEntry)
+            }
             startPlayback(for: entry)
         }
     }
@@ -2219,9 +2227,16 @@ struct ContentView: View {
             return
         }
 
-        if isSummaryPlaybackTracked(for: entry) {
+        if let activeEntry,
+           activeEntry.persistentModelID == entry.persistentModelID,
+           (playbackState.isPlaying || readerPlaybackService.isPaused) {
             togglePlayback()
         } else {
+            if let activeEntry,
+               activeEntry.persistentModelID != entry.persistentModelID {
+                readerPlaybackService.stop()
+                discardPlaybackAudioCache(for: activeEntry)
+            }
             startPlayback(
                 for: entry,
                 textFileURL: summaryURL,
@@ -2238,6 +2253,18 @@ struct ContentView: View {
         displayTitle: String? = nil,
         persistProgress: Bool = true
     ) {
+        let priorEntry = activeEntry
+        readerPlaybackService.stop()
+        stopPlaybackTask()
+        stopPlaybackWarmupTask()
+        cancelReadingNavigationTask()
+
+        if let priorEntry,
+           priorEntry.persistentModelID != entry.persistentModelID
+            || activePlaybackSummaryFilePath != textFileURL?.path {
+            discardPlaybackAudioCache(for: priorEntry)
+        }
+
         stopGeneratedAudioPlayback()
         playbackSessionToken = UUID()
         let sessionToken = playbackSessionToken
@@ -2252,10 +2279,6 @@ struct ContentView: View {
             : nil
         let chunks = ReaderPlaybackChunkService.chunks(for: entry, textFileURL: textFileURL)
         let startingChunkIndex = resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) } ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: chunks.count)
-
-        readerPlaybackService.stop()
-        stopPlaybackTask()
-        stopPlaybackWarmupTask()
 
         // Store the active record so progress updates persist to SwiftData.
         activeEntry = entry
@@ -2370,10 +2393,12 @@ struct ContentView: View {
     private func togglePlayback() {
         if playbackState.isPlaying {
             playbackState.isPlaying = false
-            readerPlaybackService.stop()
-            stopPlaybackTask()
-            stopPlaybackWarmupTask()
-            cancelReadingNavigationTask()
+            readerPlaybackService.pause()
+            persistPlayerProgress()
+        } else if readerPlaybackService.isPaused, activeEntry != nil {
+            readerPlaybackService.resume()
+            playbackState.isPlaying = true
+            persistPlayerProgress()
         } else {
             if let entry = activeEntry {
                 if let activePlaybackSummaryFilePath,
@@ -2452,6 +2477,7 @@ struct ContentView: View {
         playbackState.readingPositionTotalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
         entry.lastOpened = .now
         try? modelContext.save()
+        discardPlaybackAudioCache(for: entry)
         startPlayback(for: entry)
     }
 
@@ -2507,6 +2533,16 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func discardPlaybackAudioCache(for entry: LibraryEntry) {
+        // The first-chunk cache is session-scoped for a specific entry/position.
+        // When the user switches files or jumps to a different chapter, that old
+        // cache no longer has a live playback target, so it is cleared explicitly.
+        Task {
+            await ReaderPlaybackAudioCacheService.shared.removeCache(for: entry)
+        }
+    }
+
+    @MainActor
     private func applyPlaybackUpdate(_ update: ReaderPlaybackUpdate, to entry: LibraryEntry) {
         guard playbackState.isPlaying else { return }
         playbackState.elapsedSeconds = update.elapsedSeconds
@@ -2545,6 +2581,11 @@ struct ContentView: View {
         guard let activeEntry else { return false }
         return activeEntry.persistentModelID == entry.persistentModelID
             && playbackState.isPlaying
+    }
+
+    @MainActor
+    private func isEntryPaused(_ entry: LibraryEntry) -> Bool {
+        return readerPlaybackService.isPausedPlayback(for: entry)
     }
 
     @MainActor

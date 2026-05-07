@@ -689,7 +689,7 @@ struct ReaderLibraryCardView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: generatedAudioProgressFraction ?? entry.generatedAudioProgressFraction)
+                    ProgressView(value: generatedAudioProgressFraction ?? entry.currentReadingProgressFraction)
                         .tint(.white)
 
                     if let currentReadingProgress = entry.currentReadingProgressSummaryText ?? entry.currentReadingPositionDisplayText {
@@ -1202,9 +1202,9 @@ struct ReaderPlayerBarView: View {
             }
         }
         .padding(16)
-        .background(panelBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(panelBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(elevatedBackground, lineWidth: 1)
         )
         .shadow(color: .black.opacity(preferredMode == .light ? 0.12 : 0.35), radius: 20, y: 8)

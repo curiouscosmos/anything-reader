@@ -30,12 +30,18 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     static let shared = ReaderPlaybackService()
 
     @Published private(set) var isPlaying = false
+    @Published private(set) var isPaused = false
     @Published private(set) var isBufferingFirstChunk = false
     @Published private(set) var activePlaybackIdentity: String?
     @Published private(set) var volume: Double
 
-    private let engine = AVAudioEngine()
-    private let playerNode = AVAudioPlayerNode()
+    private var engine = AVAudioEngine()
+    private var playerNode = AVAudioPlayerNode()
+    private struct PlaybackSession {
+        let id: UUID
+        let identity: String
+    }
+
     private var playbackTask: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
     private var stopRequested = false
@@ -43,6 +49,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private var synthesizedAudioURLs: [Int: URL] = [:]
     private var synthesisTasks: [Int: Task<URL, Error>] = [:]
     private var playbackSessionID = UUID()
+    private var playbackSession: PlaybackSession?
     private var activeChunkIndex = 0
 
     private static let volumeStorageKey = "readerPlaybackVolume"
@@ -57,6 +64,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     func stop() {
         stopRequested = true
         playbackSessionID = UUID()
+        playbackSession = nil
         playbackTask?.cancel()
         progressTask?.cancel()
         playbackTask = nil
@@ -66,14 +74,24 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         synthesisTasks.removeAll()
         synthesizedAudioURLs.removeAll()
 
-        if playerNode.isPlaying {
-            playerNode.stop()
+        let oldEngine = engine
+        let oldPlayerNode = playerNode
+
+        if oldPlayerNode.isPlaying {
+            oldPlayerNode.stop()
         }
-        if engine.isRunning {
-            engine.stop()
+        oldPlayerNode.reset()
+        if oldEngine.isRunning {
+            oldEngine.stop()
         }
 
+        engine = AVAudioEngine()
+        playerNode = AVAudioPlayerNode()
+        playerNode.volume = Float(volume)
+        didConfigureEngine = false
+
         isPlaying = false
+        isPaused = false
         isBufferingFirstChunk = false
         activePlaybackIdentity = nil
         activeChunkIndex = 0
@@ -102,13 +120,12 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         stopRequested = false
         playbackSessionID = UUID()
         let sessionID = playbackSessionID
+        let sessionIdentity = playbackIdentity(for: entry, textFileURL: textFileURL)
+        playbackSession = PlaybackSession(id: sessionID, identity: sessionIdentity)
         isPlaying = true
+        isPaused = false
         isBufferingFirstChunk = true
-        activePlaybackIdentity = [
-            entry.cacheIdentity,
-            textFileURL?.path ?? ""
-        ]
-        .joined(separator: "|")
+        activePlaybackIdentity = sessionIdentity
         activeChunkIndex = max(startingChunkIndex ?? 0, 0)
         playerNode.volume = Float(volume)
 
@@ -120,8 +137,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 await MainActor.run {
                     guard self.playbackSessionID == sessionID else { return }
                     self.isPlaying = false
+                    self.isPaused = false
                     self.isBufferingFirstChunk = false
                     self.activePlaybackIdentity = nil
+                    self.playbackSession = nil
                     onFailure("No readable text was found in this file.")
                 }
                 return
@@ -162,8 +181,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 await MainActor.run {
                     guard self.playbackSessionID == sessionID else { return }
                     self.isPlaying = false
+                    self.isPaused = false
                     self.isBufferingFirstChunk = false
                     self.activePlaybackIdentity = nil
+                    self.playbackSession = nil
                     self.activeChunkIndex = 0
                     onFailure(error.localizedDescription)
                 }
@@ -209,7 +230,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                             sessionID: sessionID,
                             onFinished: onFinished
                         )
-                        if !self.playerNode.isPlaying {
+                        if !self.playerNode.isPlaying && !self.isPaused {
                             self.playerNode.play()
                         }
                     }
@@ -248,8 +269,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     await MainActor.run {
                         guard self.playbackSessionID == sessionID else { return }
                         self.isPlaying = false
+                        self.isPaused = false
                         self.isBufferingFirstChunk = false
                         self.activePlaybackIdentity = nil
+                        self.playbackSession = nil
                         self.activeChunkIndex = 0
                         onFailure(error.localizedDescription)
                     }
@@ -264,7 +287,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                         sessionID: sessionID,
                         onFinished: onFinished
                     )
-                    if !self.playerNode.isPlaying {
+                    if !self.playerNode.isPlaying && !self.isPaused {
                         self.playerNode.play()
                     }
                 }
@@ -285,14 +308,16 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
             guard scheduledChunkCount > 0 else {
                 await MainActor.run {
-                    guard self.playbackSessionID == sessionID else { return }
-                    self.isPlaying = false
-                    self.isBufferingFirstChunk = false
-                    self.activePlaybackIdentity = nil
-                    self.activeChunkIndex = 0
-                    onFailure("No readable audio could be generated for this file.")
-                }
-                return
+                        guard self.playbackSessionID == sessionID else { return }
+                        self.isPlaying = false
+                        self.isPaused = false
+                        self.isBufferingFirstChunk = false
+                        self.activePlaybackIdentity = nil
+                        self.playbackSession = nil
+                        self.activeChunkIndex = 0
+                        onFailure("No readable audio could be generated for this file.")
+                    }
+                    return
             }
 
             while !stopRequested && !Task.isCancelled {
@@ -309,6 +334,32 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         }
     }
 
+    func pause() {
+        guard playerNode.isPlaying else { return }
+
+        playerNode.pause()
+        isPlaying = false
+        isPaused = true
+    }
+
+    func resume() {
+        guard isPaused else { return }
+
+        playerNode.play()
+        isPlaying = true
+        isPaused = false
+    }
+
+    func isActivePlayback(for entry: LibraryEntry, textFileURL: URL? = nil) -> Bool {
+        guard let playbackSession else { return false }
+        return playbackSession.identity == playbackIdentity(for: entry, textFileURL: textFileURL)
+    }
+
+    func isPausedPlayback(for entry: LibraryEntry, textFileURL: URL? = nil) -> Bool {
+        guard isPaused else { return false }
+        return isActivePlayback(for: entry, textFileURL: textFileURL)
+    }
+
     private func configureEngineIfNeeded() {
         guard !didConfigureEngine else { return }
 
@@ -316,6 +367,17 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
         engine.prepare()
         didConfigureEngine = true
+    }
+
+    private func playbackIdentity(for entry: LibraryEntry, textFileURL: URL?) -> String {
+        let modelID = entry.persistentModelID
+        return [
+            modelID.storeIdentifier ?? "default",
+            modelID.entityName,
+            String(describing: modelID.id),
+            textFileURL?.path ?? ""
+        ]
+        .joined(separator: "|")
     }
 
     private func scheduleAudioFile(
@@ -340,8 +402,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private func finishPlayback(onFinished: @escaping () -> Void) {
         stopRequested = true
         isPlaying = false
+        isPaused = false
         isBufferingFirstChunk = false
         activePlaybackIdentity = nil
+        playbackSession = nil
 
         if playerNode.isPlaying {
             playerNode.stop()
@@ -535,6 +599,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             if isStoppedNaturally {
                 await MainActor.run {
                     self.isPlaying = false
+                    self.isPaused = false
+                    self.playbackSession = nil
                     onFinished()
                 }
             }
