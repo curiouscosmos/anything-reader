@@ -10,8 +10,8 @@ import Foundation
 import SwiftData
 
 struct ReaderPlaybackChunkService {
-    static let initialChunkLength = 120
-    static let preferredChunkLength = 240
+    static let initialChunkLength = 40
+    static let preferredChunkLength = 120
     static let prefetchChunkCount = 3
     static let pdfPageBreakMarker = "[[PDF_PAGE_BREAK]]"
     static let epubChapterBreakMarker = "[[EPUB_CHAPTER_BREAK]]"
