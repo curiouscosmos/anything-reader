@@ -410,6 +410,7 @@ struct ReaderLibrarySectionView: View {
     let isSummaryPlaying: (LibraryEntry) -> Bool
     let audioGenerationProgressFraction: (LibraryEntry) -> Double?
     let generatedAudioProgressFraction: (LibraryEntry) -> Double?
+    let readingProgressFraction: (LibraryEntry) -> Double?
     let onPrimaryAction: (LibraryEntry) -> Void
     let onPlay: (LibraryEntry) -> Void
     let onPlaySummary: (LibraryEntry) -> Void
@@ -454,6 +455,7 @@ struct ReaderLibrarySectionView: View {
                             isLoading: entry.isImporting || isEntryGeneratingAudio(entry) || isEntrySummarizing(entry),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(entry),
                             generatedAudioProgressFraction: generatedAudioProgressFraction(entry),
+                            readingProgressFraction: readingProgressFraction(entry),
                             hasGeneratedAudio: entry.generatedAudioFileURL != nil,
                             hasSummarizedText: entry.hasSummarizedText,
                             isSummaryPlaying: isSummaryPlaying(entry),
@@ -491,7 +493,7 @@ struct ReaderLibrarySectionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(panelBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(panelBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var panelBackground: Color {
@@ -517,6 +519,7 @@ struct ReaderLibraryCardView: View {
     let isLoading: Bool
     let audioGenerationProgressFraction: Double?
     let generatedAudioProgressFraction: Double?
+    let readingProgressFraction: Double?
     let hasGeneratedAudio: Bool
     let hasSummarizedText: Bool
     let isSummaryPlaying: Bool
@@ -562,14 +565,14 @@ struct ReaderLibraryCardView: View {
             }
             cardMenuButton
         }
-        .frame(maxWidth: .infinity, minHeight: 380, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 400, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.24 : 0.40), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(preferredMode == .light ? 0.10 : 0.22), radius: 14, y: 8)
-        .background(panelBackground, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(preferredMode == .light ? 0.10 : 0.22), radius: 16, y: 8)
+        .background(panelBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .confirmationDialog(
             "Delete \"\(entry.title)\"?",
             isPresented: $isShowingDeleteConfirmation,
@@ -614,7 +617,7 @@ struct ReaderLibraryCardView: View {
             preferredMode: preferredMode,
             isLoading: isCoverArtLoading
         )
-        .frame(maxWidth: .infinity, minHeight: 320)
+        .frame(maxWidth: .infinity, minHeight: 340)
         .clipped()
 
         LinearGradient(
@@ -689,7 +692,7 @@ struct ReaderLibraryCardView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: generatedAudioProgressFraction ?? entry.currentReadingProgressFraction)
+                    ProgressView(value: readingProgressFraction ?? generatedAudioProgressFraction ?? entry.currentReadingProgressFraction)
                         .tint(.white)
 
                     if let currentReadingProgress = entry.currentReadingProgressSummaryText ?? entry.currentReadingPositionDisplayText {
@@ -732,7 +735,7 @@ struct ReaderLibraryCardView: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(TopRoundedRectangle(radius: 16).fill(metaBackground))
+            .background(TopRoundedRectangle(radius: 0).fill(metaBackground))
         }
         .padding(.vertical, 2)
     }
@@ -869,7 +872,7 @@ struct ReaderLibraryCardView: View {
         case .light:
             return Color.white.opacity(0.34)
         case .dark, .system:
-            return Color.black.opacity(0.42)
+            return Color.black.opacity(0.70)
         }
     }
 
@@ -988,9 +991,9 @@ struct ReaderCardMenuPopoverView: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 12)
-        .background(menuBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(menuBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(menuBorderColor, lineWidth: 1)
         )
         .shadow(color: .black.opacity(preferredMode == .light ? 0.14 : 0.26), radius: 16, y: 8)
@@ -1070,12 +1073,12 @@ struct ReaderCardArtworkView: View {
             .scaledToFit() // preserve full cover
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color.gray.opacity(preferredMode == .light ? 0.08 : 0.2))
             )
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.28 : 0.14), lineWidth: 1)
             )
             .shadow(color: .black.opacity(preferredMode == .light ? 0.12 : 0.24), radius: 10, y: 5)
@@ -1085,7 +1088,7 @@ struct ReaderCardArtworkView: View {
     // Placeholder art shown while cover extraction is still running.
     private var placeholderCover: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: placeholderGradientColors,
@@ -1095,7 +1098,7 @@ struct ReaderCardArtworkView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.30 : 0.14), lineWidth: 1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -1375,7 +1378,7 @@ struct ReaderPlayerBarView: View {
     private var firstChunkLoadingOverlay: some View {
         ZStack {
             Color.black.opacity(preferredMode == .light ? 0.08 : 0.18)
-                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
             VStack(spacing: 12) {
                 ProgressView()
@@ -1387,7 +1390,7 @@ struct ReaderPlayerBarView: View {
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 18)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: .black.opacity(0.16), radius: 12, y: 5)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1490,9 +1493,9 @@ struct GeneratedAudioPlayerBarView: View {
             }
         }
         .padding(16)
-        .background(panelBackground, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(panelBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(elevatedBackground, lineWidth: 1)
         )
         .shadow(color: .black.opacity(preferredMode == .light ? 0.12 : 0.35), radius: 20, y: 8)
@@ -1663,8 +1666,8 @@ struct ReaderProcessingOverlayView: View {
             }
             .padding(24)
             .frame(maxWidth: 320)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.24), radius: 16, y: 8)
         }
     }
 }
@@ -1689,7 +1692,7 @@ struct ReaderPlaybackLoadingOverlayView: View {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 18)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: .black.opacity(0.20), radius: 16, y: 6)
         }
     }

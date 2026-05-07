@@ -79,6 +79,7 @@ struct ContentView: View {
     @State private var viewerAlertMessage: String?
     @State private var playbackTask: Task<Void, Never>?
     @State private var playbackWarmupTask: Task<Void, Never>?
+    @State private var playbackProgressPersistenceTask: Task<Void, Never>?
     @State private var readingNavigationTask: Task<Void, Never>?
     @State private var audioGenerationTask: Task<Void, Never>?
     @State private var audioGenerationPrewarmTask: Task<Void, Never>?
@@ -86,6 +87,7 @@ struct ContentView: View {
     @State private var playbackChunks: [String] = []
     @State private var playbackChunkIndex: Int = 0
     @State private var playbackSessionToken = UUID()
+    @State private var playbackProgressLastSavedElapsedSeconds: Int = 0
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var didCleanupGeneratedContent = false
     @State private var coverArtGenerationKeys: Set<String> = []
@@ -604,6 +606,7 @@ struct ContentView: View {
         readerPlaybackService.stop()
         stopPlaybackTask()
         stopPlaybackWarmupTask()
+        stopPlaybackProgressPersistenceTask()
         cancelReadingNavigationTask()
         playbackState.isPlaying = true
         startPlayback(for: entry)
@@ -694,6 +697,7 @@ struct ContentView: View {
                             isSummaryPlaying: isSummaryPlaybackPlaying(for:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
+                            readingProgressFraction: readingPlaybackProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
                             onPlaySummary: playSummarizedLibraryEntry(_:),
@@ -724,6 +728,7 @@ struct ContentView: View {
                             isSummaryPlaying: isSummaryPlaybackPlaying(for:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
+                            readingProgressFraction: readingPlaybackProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
                             onPlaySummary: playSummarizedLibraryEntry(_:),
@@ -764,6 +769,7 @@ struct ContentView: View {
                             isSummaryPlaying: isSummaryPlaybackPlaying(for:),
                             audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
                             generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
+                            readingProgressFraction: readingPlaybackProgressFraction(for:),
                             onPrimaryAction: playLibraryEntry(_:),
                             onPlay: playLibraryEntry(_:),
                             onPlaySummary: playSummarizedLibraryEntry(_:),
@@ -2291,6 +2297,7 @@ struct ContentView: View {
         playbackChunkIndex = startingChunkIndex
 
         let elapsedSeconds = Int((Double(duration) * resumeProgress).rounded())
+        playbackProgressLastSavedElapsedSeconds = elapsedSeconds
 
         playbackState = PlaybackState(
             title: displayTitle ?? entry.title,
@@ -2325,6 +2332,7 @@ struct ContentView: View {
             },
             onFinished: {
                 guard self.playbackSessionToken == sessionToken else { return }
+                self.stopPlaybackProgressPersistenceTask()
                 self.playbackState.progress = 0
                 self.playbackState.elapsedSeconds = 0
                 self.playbackState.isPlaying = false
@@ -2336,14 +2344,19 @@ struct ContentView: View {
                     entry.progress = 0
                     try? self.modelContext.save()
                 }
-                self.persistPlayerProgress()
+                self.persistPlayerProgress(force: true)
             },
             onFailure: { message in
                 guard self.playbackSessionToken == sessionToken else { return }
+                self.stopPlaybackProgressPersistenceTask()
                 self.playbackState.isPlaying = false
                 self.uploadAlertMessage = message
             }
         )
+
+        if persistProgress {
+            startPlaybackProgressPersistenceTask(for: sessionToken)
+        }
     }
 
     @MainActor
@@ -2351,6 +2364,7 @@ struct ContentView: View {
         readerPlaybackService.stop()
         stopPlaybackTask()
         stopPlaybackWarmupTask()
+        stopPlaybackProgressPersistenceTask()
         cancelReadingNavigationTask()
         playbackState = PlaybackState()
         activeEntry = nil
@@ -2394,11 +2408,14 @@ struct ContentView: View {
         if playbackState.isPlaying {
             playbackState.isPlaying = false
             readerPlaybackService.pause()
-            persistPlayerProgress()
+            stopPlaybackProgressPersistenceTask()
+            persistPlayerProgress(force: true)
         } else if readerPlaybackService.isPaused, activeEntry != nil {
             readerPlaybackService.resume()
             playbackState.isPlaying = true
-            persistPlayerProgress()
+            if activePlaybackShouldPersistProgress || activePlaybackSummaryFilePath != nil {
+                startPlaybackProgressPersistenceTask(for: playbackSessionToken)
+            }
         } else {
             if let entry = activeEntry {
                 if let activePlaybackSummaryFilePath,
@@ -2417,8 +2434,6 @@ struct ContentView: View {
                 playbackState.isPlaying = false
             }
         }
-
-        persistPlayerProgress()
     }
 
     @MainActor
@@ -2504,20 +2519,55 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func persistPlayerProgress() {
+    private func persistPlayerProgress(force: Bool = false) {
         guard let activeEntry else { return }
 
         if activePlaybackSummaryFilePath != nil {
-            persistSummaryPlaybackProgress(for: activeEntry, force: true)
+            persistSummaryPlaybackProgress(for: activeEntry, force: force)
             return
         }
 
         guard activePlaybackShouldPersistProgress else { return }
 
+        let elapsedSeconds = max(0, playbackState.elapsedSeconds)
+        guard force || abs(elapsedSeconds - playbackProgressLastSavedElapsedSeconds) >= 5 else {
+            return
+        }
+
+        playbackProgressLastSavedElapsedSeconds = elapsedSeconds
         activeEntry.progress = playbackState.progress
-        syncReadingPositionState(for: activeEntry, progress: playbackState.progress)
+        syncReadingPositionState(for: activeEntry, progress: playbackState.progress, chunkIndex: playbackChunkIndex)
         activeEntry.lastOpened = .now
         try? modelContext.save()
+    }
+
+    @MainActor
+    private func startPlaybackProgressPersistenceTask(for sessionToken: UUID) {
+        stopPlaybackProgressPersistenceTask()
+
+        guard activePlaybackShouldPersistProgress || activePlaybackSummaryFilePath != nil else { return }
+
+        playbackProgressPersistenceTask = Task { [sessionToken] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                } catch {
+                    return
+                }
+
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard self.playbackSessionToken == sessionToken else { return }
+                    self.persistPlayerProgress()
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func stopPlaybackProgressPersistenceTask() {
+        playbackProgressPersistenceTask?.cancel()
+        playbackProgressPersistenceTask = nil
     }
 
     @MainActor
@@ -2549,13 +2599,17 @@ struct ContentView: View {
         playbackState.durationSeconds = update.durationSeconds
         playbackState.progress = update.progress
         playbackState.isPlaying = update.isPlaying
-        if activePlaybackSummaryFilePath != nil {
-            persistSummaryPlaybackProgress(for: entry)
-        } else if activePlaybackShouldPersistProgress {
-            syncReadingPositionState(for: entry, progress: update.progress, chunkIndex: update.chunkIndex)
-            entry.progress = update.progress
-            entry.lastOpened = .now
-            try? modelContext.save()
+        playbackChunkIndex = update.chunkIndex
+
+        if activePlaybackSummaryFilePath == nil, activePlaybackShouldPersistProgress {
+            let targetIndex = readingPositionIndex(for: entry, chunkIndex: update.chunkIndex)
+                ?? self.readingPositionIndex(for: entry, progress: update.progress)
+            playbackState.readingPositionIndexOverride = targetIndex
+            playbackState.readingPositionTotalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
+            playbackState.readingPositionText = targetIndex.flatMap {
+                readingPositionText(for: entry, targetIndex: $0)
+            } ?? readingPositionText(for: entry, progress: update.progress)
+            playbackState.readingPositionOverrideText = nil
         }
     }
 
@@ -2631,6 +2685,12 @@ struct ContentView: View {
 
         let savedFraction = entry.generatedAudioProgressFraction
         return entry.generatedAudioDurationSeconds == nil && savedFraction == 0 ? nil : savedFraction
+    }
+
+    private func readingPlaybackProgressFraction(for entry: LibraryEntry) -> Double? {
+        guard let activeEntry else { return nil }
+        guard activeEntry.persistentModelID == entry.persistentModelID else { return nil }
+        return playbackState.displayedProgress
     }
 
     @MainActor
