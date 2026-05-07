@@ -80,13 +80,13 @@ enum PDFExtractionMode: String, Codable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .directText:
-            return "Direct Text"
+            return "Text"
         case .ocr:
             return "OCR"
         case .hybrid:
             return "Hybrid"
         case .unknown:
-            return "Unknown"
+            return ""
         }
     }
 }

@@ -542,9 +542,7 @@ struct ContentView: View {
             case .dark, .system:
                 LinearGradient(
                     colors: [
-                        Color(red: 0.07, green: 0.09, blue: 0.08),
-                        Color(red: 0.05, green: 0.05, blue: 0.06),
-                        Color.black
+                        Color(red: 26/255, green: 35/255, blue: 30/255),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing

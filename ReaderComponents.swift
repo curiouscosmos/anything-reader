@@ -31,31 +31,15 @@ struct ReaderSidebarView: View {
             }
 
             // User-generated categories.
-            Section("Categories") {
-                if categories.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Button(action: onAddCategory) {
-                            Label("Category", systemImage: "plus")
-                                .foregroundStyle(Color.primary) // auto: black (light) / white (dark)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 6)
-                                .font(.system(size: 16))
-                        }
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.accentColor, lineWidth: 1.5)
-                        )
-                        .accessibility(hidden: true)
-                        .padding(.top, 8)
-                    }
-                } else {
+            if !categories.isEmpty {
+                Section("Categories") {
                     ForEach(categories) { category in
                         Label(category.name, systemImage: "folder.fill")
                             .tag(SidebarSelection.category(category.name))
                     }
                 }
+                .font(.system(size: 16))
             }
-            .font(.system(size: 16))
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
@@ -579,7 +563,7 @@ struct ReaderLibraryCardView: View {
             cardMenuButton
         }
         .frame(maxWidth: .infinity, minHeight: 380, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 0, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(Color.white.opacity(preferredMode == .light ? 0.24 : 0.40), lineWidth: 1)
@@ -1232,7 +1216,7 @@ struct ReaderPlayerBarView: View {
             mediaInfo
             Spacer()
             VStack(alignment: .trailing, spacing: 14) {
-                controls
+                // controls
                 ReaderVolumeControlView(volume: $volume, preferredMode: preferredMode)
                     .frame(width: 240)
             }
@@ -1251,18 +1235,16 @@ struct ReaderPlayerBarView: View {
     // Current item title, subtitle, and visual identity.
     private var mediaInfo: some View {
         HStack(spacing: 16) {
-            ReaderAvatarView(symbolName: playbackState.avatarSymbol, accentName: playbackState.accentName, preferredMode: preferredMode)
+//            ReaderAvatarView(symbolName: playbackState.avatarSymbol, accentName: playbackState.accentName, preferredMode: preferredMode)
+            roundControlButton(icon: playbackState.isPlaying ? "pause.fill" : "play.fill", isProminent: true) {
+                onTogglePlayPause()
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(playbackState.title)
                     .font(.headline)
                     .lineLimit(1)
                     .foregroundStyle(primaryTextColor)
-
-                Text(playbackState.subtitle)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                    .foregroundStyle(secondaryTextColor)
 
                 if !playbackState.displayedReadingPositionText.isEmpty || !jumpTargets.isEmpty {
                     HStack(spacing: 10) {
@@ -1280,7 +1262,7 @@ struct ReaderPlayerBarView: View {
                     .padding(.top, 2)
                 }
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                 seekBar
                         .frame(maxWidth: 520)
 
