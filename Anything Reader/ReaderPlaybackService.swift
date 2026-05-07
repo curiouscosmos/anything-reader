@@ -3,7 +3,7 @@
 //  Anything Reader
 //
 //  Narration player
-//  Queued Kokoro playback controller for library entries.
+//  Queued TTS playback controller for library entries.
 //  It synthesizes chunked audio ahead of time and schedules it on a single
 //  AVAudioPlayerNode so the handoff between chunks stays gap-free.
 //
@@ -22,7 +22,7 @@ struct ReaderPlaybackUpdate {
     let isPlaying: Bool
 }
 
-// Drives one library entry at a time through Kokoro-backed chunked playback.
+// Drives one library entry at a time through provider-backed chunked playback.
 // This service stays focused on live narration so generated-audio playback can
 // remain in its own isolated player service.
 @MainActor
@@ -106,7 +106,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
     func play(
         entry: LibraryEntry,
-        voice: KokoroVoiceOption,
+        voice: ReaderTTSVoiceSelection,
         startingProgress: Double,
         startingChunkIndex: Int? = nil,
         textFileURL: URL? = nil,
@@ -219,6 +219,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 if isFirstSessionChunk,
                    let cachedAudioURL = await ReaderPlaybackAudioCacheService.shared.cachedAudioURL(
                     for: entry,
+                    providerID: voice.providerID,
                     voiceName: voice.voiceName,
                     chunkText: chunkText
                    ) {
@@ -248,10 +249,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     continue
                 }
 
-                if await PhonemeCacheService.shared.cachedPhonemes(for: entry, chunkIndex: chunkIndex) == nil {
-                    let phonemes = await KokoroG2PService.shared.phonemize(chunkText)
+                if await PhonemeCacheService.shared.cachedPhonemes(for: entry, chunkIndex: chunkIndex, providerID: voice.providerID) == nil {
+                    let phonemes = await phonemes(for: chunkText, providerID: voice.providerID)
                     if !phonemes.isEmpty {
-                        await PhonemeCacheService.shared.store(phonemes, for: entry, chunkIndex: chunkIndex)
+                        await PhonemeCacheService.shared.store(phonemes, for: entry, chunkIndex: chunkIndex, providerID: voice.providerID)
                     }
                 }
 
@@ -420,7 +421,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private func primeAudioPrefetch(
         for entry: LibraryEntry,
         chunks: [String],
-        voice: KokoroVoiceOption,
+        voice: ReaderTTSVoiceSelection,
         startingAt index: Int,
         sessionID: UUID
     ) async {
@@ -441,15 +442,15 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             let chunkText = chunks[chunkIndex].trimmingCharacters(in: .whitespacesAndNewlines)
             guard !chunkText.isEmpty else { continue }
 
-            if await awaitCachedPhonemesMissing(for: entry, chunkIndex: chunkIndex, text: chunkText) {
-                let phonemes = await KokoroG2PService.shared.phonemize(chunkText)
+            if await awaitCachedPhonemesMissing(for: entry, chunkIndex: chunkIndex, text: chunkText, providerID: voice.providerID) {
+                let phonemes = await phonemes(for: chunkText, providerID: voice.providerID)
                 if !phonemes.isEmpty {
-                    Task { await PhonemeCacheService.shared.store(phonemes, for: entry, chunkIndex: chunkIndex) }
+                    Task { await PhonemeCacheService.shared.store(phonemes, for: entry, chunkIndex: chunkIndex, providerID: voice.providerID) }
                 }
             }
 
             let task = Task<URL, Error> {
-                try await KokoroSpeechService.shared.synthesize(text: chunkText, voice: voice)
+                try await ReaderTTSCoordinator.shared.synthesize(text: chunkText, voice: voice)
             }
             synthesisTasks[chunkIndex] = task
 
@@ -471,8 +472,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         }
     }
 
-    private func awaitCachedPhonemesMissing(for entry: LibraryEntry, chunkIndex: Int, text: String) async -> Bool {
-        if await PhonemeCacheService.shared.cachedPhonemes(for: entry, chunkIndex: chunkIndex) != nil {
+    private func awaitCachedPhonemesMissing(for entry: LibraryEntry, chunkIndex: Int, text: String, providerID: ReaderTTSProviderID) async -> Bool {
+        if await PhonemeCacheService.shared.cachedPhonemes(for: entry, chunkIndex: chunkIndex, providerID: providerID) != nil {
             return false
         }
 
@@ -483,7 +484,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private func synthesizedAudioURL(
         for chunkIndex: Int,
         entry: LibraryEntry,
-        voice: KokoroVoiceOption,
+        voice: ReaderTTSVoiceSelection,
         text: String,
         isPrimaryChunk: Bool,
         sessionID: UUID
@@ -500,6 +501,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         if isPrimaryChunk,
            let cachedAudioURL = await ReaderPlaybackAudioCacheService.shared.cachedAudioURL(
             for: entry,
+            providerID: voice.providerID,
             voiceName: voice.voiceName,
             chunkText: text
            ) {
@@ -515,7 +517,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         }
 
         let task = Task<URL, Error> {
-            try await KokoroSpeechService.shared.synthesize(text: text, voice: voice)
+            try await ReaderTTSCoordinator.shared.synthesize(text: text, voice: voice)
         }
 
         synthesisTasks[chunkIndex] = task
@@ -527,6 +529,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                let storedURL = await ReaderPlaybackAudioCacheService.shared.storeAudio(
                 at: url,
                 for: entry,
+                providerID: voice.providerID,
                 voiceName: voice.voiceName,
                 chunkText: text
                ) {
@@ -546,6 +549,15 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 synthesisTasks.removeValue(forKey: chunkIndex)
             }
             throw error
+        }
+    }
+
+    private func phonemes(for text: String, providerID: ReaderTTSProviderID) async -> String {
+        switch providerID {
+        case .kokoro:
+            return await KokoroG2PService.shared.phonemize(text)
+        case .moonshine:
+            return TextNormalizationService.normalize(text)
         }
     }
 

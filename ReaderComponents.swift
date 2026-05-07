@@ -395,6 +395,228 @@ struct ReaderHeroView: View {
     }
 }
 
+// Generic TTS hero that works across Kokoro and Moonshine.
+struct ReaderTTSHeroView: View {
+    let featured: LibraryEntry?
+    let preferredMode: AppearanceMode
+    let ttsStatus: ReaderTTSModelAvailability
+    let activeProviderID: ReaderTTSProviderID
+    let onPasteText: () -> Void
+    let onUploadFile: () -> Void
+    let onOpenLibrary: () -> Void
+    let onDownloadTTS: () -> Void
+    let isUploadDisabled: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            heroBackgroundImage
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Listen to anything")
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .foregroundStyle(heroPrimaryTextColor)
+
+                Text("From documents to audio, instantly and beautifully.")
+                    .font(.headline)
+                    .foregroundStyle(heroSecondaryTextColor)
+                    .frame(maxWidth: 800, alignment: .leading)
+
+                HStack(spacing: 12) {
+                    Button(action: onPasteText) {
+                        Label("Paste Text", systemImage: "doc.on.clipboard")
+                            .font(.headline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(heroPrimaryTextColor)
+                            .background(heroButtonBackground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("hero-paste-text-button")
+
+                    Button(action: onUploadFile) {
+                        Label("Upload", systemImage: "arrow.up.doc.fill")
+                            .font(.headline)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(heroPrimaryTextColor)
+                            .background(heroButtonBackground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isUploadDisabled)
+                    .opacity(isUploadDisabled ? 0.45 : 1)
+                    .accessibilityIdentifier("hero-upload-button")
+
+                    Button(action: onDownloadTTS) {
+                        Label(ttsButtonTitle, systemImage: ttsButtonIcon)
+                            .font(.headline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(heroPrimaryTextColor)
+                            .background(ttsButtonBackground, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(ttsButtonDisabled)
+                    .accessibilityIdentifier("hero-download-tts-button")
+                }
+
+                Text(ttsStatusMessage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(heroSecondaryTextColor)
+
+                Text(activeModelMessage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(heroSecondaryTextColor.opacity(0.95))
+            }
+            .padding(28)
+        }
+        .frame(maxWidth: .infinity, minHeight: 240, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .strokeBorder(heroBorderColor, lineWidth: 1)
+        )
+    }
+
+    private var heroBackgroundImage: some View {
+        ZStack(alignment: .trailing) {
+            LinearGradient(
+                colors: [
+                    Color.black,
+                    Color.black.opacity(0.8)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            if let image = bundledHeroImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 800)
+                    .frame(maxHeight: .infinity)
+                    .clipped()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(heroTintOverlay)
+    }
+
+    private var heroTintOverlay: some View {
+        LinearGradient(
+            colors: [
+                Color.black.opacity(preferredMode == .light ? 0.01 : 0.01),
+                Color.black.opacity(preferredMode == .light ? 0.01 : 0.01)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .blendMode(.multiply)
+    }
+
+    private var bundledHeroImage: NSImage? {
+        guard let url = Bundle.main.url(forResource: "hero_image", withExtension: "png") else {
+            return nil
+        }
+
+        return NSImage(contentsOf: url)
+    }
+
+    private var heroPrimaryTextColor: Color {
+        preferredMode == .light ? .black : .white
+    }
+
+    private var heroSecondaryTextColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.72) : Color.white.opacity(0.82)
+    }
+
+    private var heroButtonBackground: Color {
+        Color.green.opacity(preferredMode == .light ? 0.4 : 0.5)
+    }
+
+    private var ttsButtonBackground: Color {
+        switch ttsStatus {
+        case .installed:
+            return Color.green.opacity(preferredMode == .light ? 0.22 : 0.30)
+        case .downloading:
+            return Color.orange.opacity(preferredMode == .light ? 0.22 : 0.30)
+        case .failed:
+            return Color.red.opacity(preferredMode == .light ? 0.20 : 0.28)
+        case .checking, .notInstalled:
+            return heroButtonBackground
+        }
+    }
+
+    private var ttsButtonTitle: String {
+        switch ttsStatus {
+        case .checking:
+            return "Loading TTS..."
+        case .notInstalled:
+            return "Download TTS"
+        case .downloading(let providerID):
+            return "Downloading \(providerID.title)..."
+        case .installed(let providerID):
+            return "\(providerID.title) Ready"
+        case .failed:
+            return "Retry Download"
+        }
+    }
+
+    private var ttsButtonIcon: String {
+        switch ttsStatus {
+        case .checking:
+            return "clock"
+        case .notInstalled:
+            return "arrow.down.circle.fill"
+        case .downloading:
+            return "arrow.down.circle"
+        case .installed:
+            return "checkmark.seal.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var ttsButtonDisabled: Bool {
+        if case .checking = ttsStatus { return true }
+        if case .downloading = ttsStatus { return true }
+        return false
+    }
+
+    private var ttsStatusMessage: String {
+        switch ttsStatus {
+        case .checking:
+            return "Checking whether a TTS model is already downloaded."
+        case .notInstalled:
+            return "Download a TTS model to unlock offline voice playback."
+        case .downloading(let providerID):
+            return "\(providerID.title) is downloading in the background."
+        case .installed(let providerID):
+            return "\(providerID.title) is ready for offline voice playback."
+        case .failed(let message):
+            return "TTS model download failed: \(message)"
+        }
+    }
+
+    private var activeModelMessage: String {
+        switch ttsStatus {
+        case .checking:
+            return "Active model: checking..."
+        case .notInstalled:
+            return "Active model: none installed"
+        case .downloading(let providerID):
+            return "Active model: downloading \(providerID.title)"
+        case .installed(let providerID):
+            return "Active model: \(providerID.title)"
+        case .failed:
+            return "Active model: unavailable"
+        }
+    }
+
+    private var heroBorderColor: Color {
+        preferredMode == .light ? Color.black.opacity(0.10) : Color.white.opacity(0.12)
+    }
+}
+
 // MARK: - Library Section
 // Shared wrapper that renders a titled section and adaptive grid of cards.
 struct ReaderLibrarySectionView: View {

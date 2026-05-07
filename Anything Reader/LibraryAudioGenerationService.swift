@@ -3,7 +3,7 @@
 //  Anything Reader
 //
 //  Exports a full normalized document as a compressed local audio file using
-//  Kokoro synthesis workers and direct AAC encoding.
+//  the active TTS provider.
 //
 
 import AVFoundation
@@ -12,19 +12,16 @@ import Foundation
 actor LibraryAudioGenerationService {
     static let shared = LibraryAudioGenerationService()
 
-    private let workers = (0..<2).map { _ in KokoroSpeechRenderer() }
-
     private init() {}
 
-    func prewarm(voice: KokoroVoiceOption) async {
-        let renderer = workers[0]
-        _ = try? await renderer.prewarm(voice: voice)
+    func prewarm(voice: ReaderTTSVoiceSelection) async {
+        _ = try? await renderSamples(text: voice.sampleText, voice: voice)
     }
 
     func generateAudioFile(
         from normalizedTextFileURL: URL,
         entryTitle: String,
-        voice: KokoroVoiceOption,
+        voice: ReaderTTSVoiceSelection,
         destinationDirectoryURL: URL? = nil,
         progressHandler: (@Sendable (Double) async -> Void)? = nil
     ) async throws -> URL {
@@ -76,7 +73,7 @@ actor LibraryAudioGenerationService {
 
     private func writeAACFile(
         chunks: [String],
-        voice: KokoroVoiceOption,
+        voice: ReaderTTSVoiceSelection,
         to outputURL: URL,
         progressHandler: (@Sendable (Double) async -> Void)? = nil
     ) async throws {
@@ -108,46 +105,28 @@ actor LibraryAudioGenerationService {
             interleaved: false
         )
 
-        try await withThrowingTaskGroup(of: ChunkSamples.self) { group in
-            var nextIndexToWrite = 0
-            var pendingChunks: [Int: [Float]] = [:]
-            var isFirstChunk = true
-            var writtenChunkCount = 0
+        var writtenChunkCount = 0
+        var isFirstChunk = true
 
-            for (index, chunk) in chunks.enumerated() {
-                group.addTask {
-                    try Task.checkCancellation()
-
-                    let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmedChunk.isEmpty else {
-                        return ChunkSamples(index: index, samples: [])
-                    }
-
-                    let renderer = self.workers[index % self.workers.count]
-                    let samples = try await self.renderSamples(trimmedChunk, voice: voice, using: renderer)
-                    return ChunkSamples(index: index, samples: samples)
-                }
+        for chunk in chunks {
+            let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedChunk.isEmpty else {
+                continue
             }
 
-            for try await item in group {
-                pendingChunks[item.index] = item.samples
+            let samples = try await renderSamples(text: trimmedChunk, voice: voice)
+            if !samples.isEmpty {
+                try writeSamples(samples, to: audioFile, format: format)
 
-                while let samples = pendingChunks.removeValue(forKey: nextIndexToWrite) {
-                    if !samples.isEmpty {
-                        try writeSamples(samples, to: audioFile, format: format)
-
-                        if !isFirstChunk {
-                            try writeSilence(seconds: 0.08, to: audioFile, format: format)
-                        }
-                        isFirstChunk = false
-                    }
-
-                    nextIndexToWrite += 1
-                    writtenChunkCount += 1
-                    if let progressHandler {
-                        await progressHandler(min(1, Double(writtenChunkCount) / Double(chunks.count)))
-                    }
+                if !isFirstChunk {
+                    try writeSilence(seconds: 0.08, to: audioFile, format: format)
                 }
+                isFirstChunk = false
+            }
+
+            writtenChunkCount += 1
+            if let progressHandler {
+                await progressHandler(min(1, Double(writtenChunkCount) / Double(chunks.count)))
             }
         }
 
@@ -156,31 +135,37 @@ actor LibraryAudioGenerationService {
         }
     }
 
-    private func renderSamples(
-        _ text: String,
-        voice: KokoroVoiceOption,
-        using renderer: KokoroSpeechRenderer
-    ) async throws -> [Float] {
-        do {
-            return try await renderer.renderSamples(text: text, voice: voice)
-        } catch {
-            let fallbackChunks = fallbackChunks(for: text)
-            guard fallbackChunks.count > 1 else {
-                throw error
-            }
+    private func renderSamples(text: String, voice: ReaderTTSVoiceSelection) async throws -> [Float] {
+        let outputURL = try await synthesizeToWav(text: text, voice: voice)
+        return try readSamples(from: outputURL)
+    }
 
-            var samples: [Float] = []
-            for fallbackChunk in fallbackChunks {
-                try Task.checkCancellation()
-                let nestedSamples = try await renderSamples(
-                    fallbackChunk,
-                    voice: voice,
-                    using: renderer
-                )
-                samples.append(contentsOf: nestedSamples)
-            }
-            return samples
+    private func synthesizeToWav(text: String, voice: ReaderTTSVoiceSelection) async throws -> URL {
+        switch voice.providerID {
+        case .kokoro:
+            let kokoroVoice = KokoroVoiceCatalog.voice(named: voice.voiceName)
+            return try await KokoroSpeechService.shared.synthesize(text: text, voice: kokoroVoice)
+        case .moonshine:
+            return try await MoonshineSpeechService.shared.synthesize(text: text, voice: voice)
         }
+    }
+
+    private func readSamples(from url: URL) throws -> [Float] {
+        let audioFile = try AVAudioFile(forReading: url)
+        let format = audioFile.processingFormat
+        let frameCount = AVAudioFrameCount(audioFile.length)
+
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        try audioFile.read(into: buffer)
+
+        guard let channelData = buffer.floatChannelData?[0] else {
+            return []
+        }
+
+        return Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
     }
 
     private func writeSamples(_ samples: [Float], to audioFile: AVAudioFile, format: AVAudioFormat) throws {
@@ -221,7 +206,7 @@ actor LibraryAudioGenerationService {
 
     private func destinationURL(
         for entryTitle: String,
-        voice: KokoroVoiceOption,
+        voice: ReaderTTSVoiceSelection,
         destinationDirectoryURL: URL? = nil
     ) throws -> URL {
         let destinationDirectory: URL
@@ -245,67 +230,36 @@ actor LibraryAudioGenerationService {
         return FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
     }
 
-    private func fallbackChunks(for text: String) -> [String] {
-        let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        guard words.count > 1 else { return [text] }
-
-        let targetWordCount = max(1, min(words.count / 2, 40))
-        guard targetWordCount < words.count else { return [text] }
-
-        var chunks: [String] = []
-        var index = 0
-
-        while index < words.count {
-            let endIndex = min(index + targetWordCount, words.count)
-            let chunk = words[index..<endIndex].joined(separator: " ")
-            if !chunk.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                chunks.append(chunk)
-            }
-            index = endIndex
-        }
-
-        return chunks.isEmpty ? [text] : chunks
-    }
-
-    private func sanitizedFileName(_ name: String) -> String {
-        let allowed = CharacterSet.alphanumerics
-            .union(.whitespaces)
-            .union(CharacterSet(charactersIn: "-_()."))
-
-        let collapsed = name.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
-        let fileName = String(collapsed)
-            .replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return fileName.isEmpty ? "Generated Audio" : fileName
-    }
-
-    private func uploadedFilesDirectory() throws -> URL {
-        let fileManager = FileManager.default
-        guard let supportDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-
-        let appDirectory = supportDirectory.appendingPathComponent("Anything Reader", isDirectory: true)
-        let uploadsDirectory = appDirectory.appendingPathComponent("Uploaded Files", isDirectory: true)
-
-        if !fileManager.fileExists(atPath: uploadsDirectory.path) {
-            try fileManager.createDirectory(at: uploadsDirectory, withIntermediateDirectories: true)
-        }
-
-        return uploadsDirectory
-    }
-
     private static let filenameTimestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyyMMdd_HHmmssSSS"
+        formatter.dateFormat = "yyyy-MM-dd-HHmm"
         return formatter
     }()
+}
 
-    private struct ChunkSamples {
-        let index: Int
-        let samples: [Float]
-    }
+private func uploadedFilesDirectory() throws -> URL {
+    let fileManager = FileManager.default
+    let supportDirectory = try fileManager.url(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask,
+        appropriateFor: nil,
+        create: true
+    )
+
+    let baseDirectory = supportDirectory
+        .appendingPathComponent("Anything Reader", isDirectory: true)
+        .appendingPathComponent("Uploaded Files", isDirectory: true)
+
+    try fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+    return baseDirectory
+}
+
+private func sanitizedFileName(_ name: String) -> String {
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return "Document" }
+
+    let invalidCharacters = CharacterSet(charactersIn: "/\\:?%*|\"<>")
+    let components = trimmed.components(separatedBy: invalidCharacters)
+    let cleaned = components.joined(separator: "-")
+    return cleaned.isEmpty ? "Document" : cleaned
 }

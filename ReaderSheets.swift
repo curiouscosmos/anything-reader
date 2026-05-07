@@ -219,7 +219,7 @@ struct ReaderImportLanguageSheet: View {
 struct ReaderGenerateAudioSheet: View {
     @Binding var voiceName: String
 
-    let voiceOptions: [KokoroVoiceOption]
+    let voiceOptions: [ReaderTTSVoiceSelection]
     let onGenerate: () -> Void
     let onCancel: () -> Void
 
@@ -535,6 +535,376 @@ struct ReaderKokoroDownloadSheet: View {
             return "Smallest download, experimental quality tier."
         default:
             return option.qualityLabel
+        }
+    }
+
+    private var headerBackground: Color {
+        preferredMode == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.06)
+    }
+
+    private var rowBackground: Color {
+        preferredMode == .light ? Color.black.opacity(0.03) : Color.white.opacity(0.05)
+    }
+}
+
+struct ReaderTTSSettingsSheet: View {
+    @Binding var appearanceModeRawValue: String
+    @Binding var activeProviderIDRawValue: String
+    @Binding var kokoroVoiceName: String
+    @Binding var moonshineVoiceName: String
+    @ObservedObject var ttsCoordinator: ReaderTTSCoordinator
+    let isKokoroPlaying: Bool
+    let isMoonshinePlaying: Bool
+    let onPlaySample: (ReaderTTSVoiceSelection) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    settingSection(title: "Appearance") {
+                        Picker("Theme", selection: $appearanceModeRawValue) {
+                            ForEach(AppearanceMode.allCases) { mode in
+                                Text(mode.title).tag(mode.rawValue)
+                            }
+                        }
+                    }
+
+                    settingSection(title: "TTS Provider") {
+                        Picker("Active Provider", selection: $activeProviderIDRawValue) {
+                            ForEach(installedProviderIDs) { provider in
+                                Text(provider.title).tag(provider.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .disabled(installedProviderIDs.isEmpty)
+
+                        Text(providerNote)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    settingSection(title: "Voice") {
+                        Picker("Default Voice", selection: selectedVoiceBinding) {
+                            ForEach(currentVoiceOptions, id: \.id) { voice in
+                                Text("\(voice.genderSymbol) \(voice.dropdownLabel)")
+                                    .tag(voice.voiceName)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Button {
+                            onPlaySample(currentVoice)
+                        } label: {
+                            Label(isPlaying ? "Playing..." : "Play Sample", systemImage: "play.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isPlaying)
+
+                        Text(currentVoice.sampleText)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .accessibilityIdentifier("settings-sheet")
+            .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .accessibilityIdentifier("settings-sheet-done-button")
+                }
+            }
+        }
+    }
+
+    private var currentProviderID: ReaderTTSProviderID {
+        ReaderTTSProviderID(rawValue: activeProviderIDRawValue) ?? .kokoro
+    }
+
+    private var installedProviderIDs: [ReaderTTSProviderID] {
+        var providers: [ReaderTTSProviderID] = []
+
+        if ttsCoordinator.kokoroStore.isInstalled {
+            providers.append(.kokoro)
+        }
+
+        if ttsCoordinator.moonshineStore.isInstalled {
+            providers.append(.moonshine)
+        }
+
+        return providers
+    }
+
+    private var isPlaying: Bool {
+        switch currentProviderID {
+        case .kokoro:
+            return isKokoroPlaying
+        case .moonshine:
+            return isMoonshinePlaying
+        }
+    }
+
+    private var providerNote: String {
+        if installedProviderIDs.isEmpty {
+            return "No TTS model is installed yet. Open the download sheet to install Kokoro or Moonshine."
+        }
+
+        switch currentProviderID {
+        case .kokoro:
+            return "Kokoro keeps the existing offline voices and current playback behavior."
+        case .moonshine:
+            return "Moonshine uses its own local TTS runtime and is stored separately from Kokoro."
+        }
+    }
+
+    private var currentVoiceOptions: [ReaderTTSVoiceSelection] {
+        switch currentProviderID {
+        case .kokoro:
+            return KokoroVoiceCatalog.allVoices.map(\.readerTTSVoiceSelection)
+        case .moonshine:
+            return MoonshineVoiceCatalog.allVoices
+        }
+    }
+
+    private var selectedVoiceBinding: Binding<String> {
+        switch currentProviderID {
+        case .kokoro:
+            return $kokoroVoiceName
+        case .moonshine:
+            return $moonshineVoiceName
+        }
+    }
+
+    private var currentVoice: ReaderTTSVoiceSelection {
+        currentVoiceOptions.first(where: { $0.voiceName == selectedVoiceBinding.wrappedValue }) ?? currentVoiceOptions[0]
+    }
+
+    @ViewBuilder
+    private func settingSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(.thinMaterial, in: Rectangle())
+        }
+    }
+}
+
+struct ReaderTTSDownloadSheet: View {
+    @ObservedObject var kokoroModelStore: KokoroModelStore
+    @ObservedObject var moonshineModelStore: MoonshineModelStore
+    @ObservedObject var ttsCoordinator: ReaderTTSCoordinator
+    let preferredMode: AppearanceMode
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var pendingDeleteProviderID: ReaderTTSProviderID?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    headerSection
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        providerRow(
+                            providerID: .kokoro,
+                            subtitle: KokoroDownloadCatalog.defaultOption.subtitle,
+                            isInstalled: kokoroModelStore.isInstalled,
+                            isActive: ttsCoordinator.activeProviderID == .kokoro,
+                            isDownloading: isKokoroDownloading,
+                            onDownload: { kokoroModelStore.downloadModel(option: KokoroDownloadCatalog.defaultOption) },
+                            onActivate: { ttsCoordinator.setActiveProvider(.kokoro) },
+                            onDelete: { pendingDeleteProviderID = .kokoro }
+                        )
+
+                        providerRow(
+                            providerID: .moonshine,
+                            subtitle: MoonshineDownloadCatalog.defaultOption.subtitle,
+                            isInstalled: moonshineModelStore.isInstalled,
+                            isActive: ttsCoordinator.activeProviderID == .moonshine,
+                            isDownloading: isMoonshineDownloading,
+                            onDownload: { moonshineModelStore.downloadModel(option: MoonshineDownloadCatalog.defaultOption) },
+                            onActivate: { ttsCoordinator.setActiveProvider(.moonshine) },
+                            onDelete: { pendingDeleteProviderID = .moonshine }
+                        )
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle("Download TTS Model")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isInstalledAny ? "Done" : "TTS Model Required") {
+                        if isInstalledAny {
+                            dismiss()
+                        }
+                    }
+                    .disabled(!isInstalledAny)
+                }
+            }
+            .confirmationDialog(
+                "Delete downloaded model?",
+                isPresented: Binding(
+                    get: { pendingDeleteProviderID != nil },
+                    set: { if !$0 { pendingDeleteProviderID = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let pendingDeleteProviderID {
+                        switch pendingDeleteProviderID {
+                        case .kokoro:
+                            kokoroModelStore.deleteDownloadedModel(KokoroDownloadCatalog.defaultOption)
+                        case .moonshine:
+                            moonshineModelStore.deleteDownloadedModel(MoonshineDownloadCatalog.defaultOption)
+                        }
+                    }
+                    pendingDeleteProviderID = nil
+                }
+
+                Button("Cancel", role: .cancel) {
+                    pendingDeleteProviderID = nil
+                }
+            } message: {
+                Text("This removes the local model file from your device. You can download it again later.")
+            }
+        }
+        .interactiveDismissDisabled(!isInstalledAny)
+    }
+
+    private var isInstalledAny: Bool {
+        kokoroModelStore.isInstalled || moonshineModelStore.isInstalled
+    }
+
+    private var isKokoroDownloading: Bool {
+        if case .downloading = kokoroModelStore.status { return true }
+        return false
+    }
+
+    private var isMoonshineDownloading: Bool {
+        if case .downloading = moonshineModelStore.status { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Download TTS Model")
+                .font(.title2.weight(.bold))
+
+            Text("Choose one or both offline TTS providers. The active provider can be switched later in Settings without redownloading the other model.")
+                .foregroundStyle(.secondary)
+
+            Text("Models are listed independently so Kokoro and Moonshine can be installed side by side.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(headerBackground, in: Rectangle())
+    }
+
+    @ViewBuilder
+    private func providerRow(
+        providerID: ReaderTTSProviderID,
+        subtitle: String,
+        isInstalled: Bool,
+        isActive: Bool,
+        isDownloading: Bool,
+        onDownload: @escaping () -> Void,
+        onActivate: @escaping () -> Void,
+        onDelete: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(providerID.title)
+                            .font(.headline)
+
+                        if isActive {
+                            Text("Active")
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.18), in: Capsule())
+                        }
+
+                        if isInstalled && !isActive {
+                            Text("Installed")
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.18), in: Capsule())
+                        }
+                    }
+
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                if isInstalled {
+                    HStack(spacing: 12) {
+                        Button(isActive ? "Active" : "Use") {
+                            onActivate()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isActive)
+
+                        Button(role: .destructive) {
+                            onDelete()
+                        } label: {
+                            Image(systemName: "trash.fill")
+                                .font(.headline)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                } else {
+                    Button {
+                        onDownload()
+                    } label: {
+                        if isDownloading {
+                            Label("Downloading", systemImage: "arrow.down.circle")
+                        } else {
+                            Label("Download", systemImage: "arrow.down.circle.fill")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isDownloading)
+                }
+            }
+
+            Text(providerDescription(for: providerID))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(rowBackground, in: Rectangle())
+    }
+
+    private func providerDescription(for providerID: ReaderTTSProviderID) -> String {
+        switch providerID {
+        case .kokoro:
+            return "Kokoro keeps the existing voice catalog and runtime behavior."
+        case .moonshine:
+            return "Moonshine uses the new Moonshine Voice runtime and stores its model separately."
         }
     }
 

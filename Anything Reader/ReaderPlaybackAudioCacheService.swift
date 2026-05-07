@@ -16,9 +16,9 @@ actor ReaderPlaybackAudioCacheService {
 
     private init() {}
 
-    func cachedAudioURL(for entry: LibraryEntry, voiceName: String, chunkText: String) async -> URL? {
-        let cacheURL = cacheFileURL(for: entry, voiceName: voiceName, chunkText: chunkText)
-        let metadataURL = cacheMetadataURL(for: entry, voiceName: voiceName, chunkText: chunkText)
+    func cachedAudioURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) async -> URL? {
+        let cacheURL = cacheFileURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
+        let metadataURL = cacheMetadataURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
         let fileManager = FileManager.default
 
         guard fileManager.fileExists(atPath: cacheURL.path) else { return nil }
@@ -34,11 +34,12 @@ actor ReaderPlaybackAudioCacheService {
     func storeAudio(
         at sourceURL: URL,
         for entry: LibraryEntry,
+        providerID: ReaderTTSProviderID,
         voiceName: String,
         chunkText: String
     ) async -> URL? {
-        let cacheURL = cacheFileURL(for: entry, voiceName: voiceName, chunkText: chunkText)
-        let metadataURL = cacheMetadataURL(for: entry, voiceName: voiceName, chunkText: chunkText)
+        let cacheURL = cacheFileURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
+        let metadataURL = cacheMetadataURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
         let fileManager = FileManager.default
 
         do {
@@ -94,14 +95,14 @@ actor ReaderPlaybackAudioCacheService {
         try? FileManager.default.removeItem(at: entryCacheDirectory(for: entry))
     }
 
-    private func cacheFileURL(for entry: LibraryEntry, voiceName: String, chunkText: String) -> URL {
+    private func cacheFileURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> URL {
         entryCacheDirectory(for: entry)
-            .appendingPathComponent("\(cacheKey(for: entry, voiceName: voiceName, chunkText: chunkText)).wav")
+            .appendingPathComponent("\(cacheKey(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)).wav")
     }
 
-    private func cacheMetadataURL(for entry: LibraryEntry, voiceName: String, chunkText: String) -> URL {
+    private func cacheMetadataURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> URL {
         entryCacheDirectory(for: entry)
-            .appendingPathComponent("\(cacheKey(for: entry, voiceName: voiceName, chunkText: chunkText)).entryid")
+            .appendingPathComponent("\(cacheKey(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)).entryid")
     }
 
     private func cacheDirectory() -> URL {
@@ -126,8 +127,8 @@ actor ReaderPlaybackAudioCacheService {
         .joined(separator: "|")
     }
 
-    private func cacheKey(for entry: LibraryEntry, voiceName: String, chunkText: String) -> String {
-        hashedKey(from: "\(cacheEntryID(for: entry))|\(voiceName)|\(chunkText)")
+    private func cacheKey(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> String {
+        hashedKey(from: "\(cacheEntryID(for: entry))|\(providerID.rawValue)|\(voiceName)|\(chunkText)")
     }
 
     private func hashedKey(from string: String) -> String {

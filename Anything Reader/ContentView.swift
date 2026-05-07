@@ -23,7 +23,9 @@ struct ContentView: View {
     private var categories: [ReaderCategory]
 
     @AppStorage("appearanceMode") private var appearanceModeRawValue: String = AppearanceMode.system.rawValue
+    @AppStorage("activeTTSProviderID") private var activeTTSProviderIDRawValue: String = ReaderTTSProviderID.kokoro.rawValue
     @AppStorage("kokoroVoiceName") private var kokoroVoiceName: String = KokoroVoiceCatalog.defaultVoiceName
+    @AppStorage("moonshineVoiceName") private var moonshineVoiceName: String = MoonshineVoiceCatalog.defaultVoiceName
 
     @State private var selection: SidebarSelection = .home
     @State private var homeSearchText = ""
@@ -58,6 +60,7 @@ struct ContentView: View {
     @State private var pendingImportContext: PendingImportContext?
     @State private var pendingImportEntry: LibraryEntry?
     @State private var pendingAudioGenerationEntry: LibraryEntry?
+    @State private var pendingAudioProviderID: ReaderTTSProviderID = .kokoro
     @State private var detectedDocumentLanguage: TextLanguage = .english
     @State private var pendingDocumentLanguage: TextLanguage = .english
     @State private var pendingAudioVoiceName: String = KokoroVoiceCatalog.defaultVoiceName
@@ -95,7 +98,10 @@ struct ContentView: View {
     @State private var didPresentKokoroDownloadGate = false
     @State private var audioGenerationAlertMessage: String?
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
+    @StateObject private var moonshineModelStore = MoonshineModelStore.shared
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
+    @StateObject private var moonshineSpeechService = MoonshineSpeechService.shared
+    @StateObject private var ttsCoordinator = ReaderTTSCoordinator.shared
     @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
     @StateObject private var generatedAudioPlaybackService = GeneratedAudioPlaybackService.shared
     @State private var translationCoordinator = DocumentTranslationCoordinator()
@@ -241,22 +247,23 @@ struct ContentView: View {
             )
         }
         .sheet(isPresented: $isShowingSettings) {
-            ReaderSettingsSheet(
+            ReaderTTSSettingsSheet(
                 appearanceModeRawValue: $appearanceModeRawValue,
-                selectedVoiceName: $kokoroVoiceName,
-                voiceOptions: KokoroVoiceCatalog.allVoices,
-                isPlaying: kokoroSpeechService.isPlaying,
-                onPlaySample: playKokoroVoiceSample
+                activeProviderIDRawValue: $activeTTSProviderIDRawValue,
+                kokoroVoiceName: $kokoroVoiceName,
+                moonshineVoiceName: $moonshineVoiceName,
+                ttsCoordinator: ttsCoordinator,
+                isKokoroPlaying: kokoroSpeechService.isPlaying,
+                isMoonshinePlaying: moonshineSpeechService.isPlaying,
+                onPlaySample: playTTSVoiceSample
             )
         }
         .sheet(isPresented: $isShowingKokoroDownloadModal) {
-            ReaderKokoroDownloadSheet(
-                modelStore: kokoroModelStore,
+            ReaderTTSDownloadSheet(
+                kokoroModelStore: kokoroModelStore,
+                moonshineModelStore: moonshineModelStore,
+                ttsCoordinator: ttsCoordinator,
                 preferredMode: preferredMode,
-                onDownload: downloadKokoroModel(option:),
-                onClose: {
-                    isShowingKokoroDownloadModal = false
-                }
             )
         }
         .sheet(isPresented: $isShowingCategorySheet) {
@@ -278,7 +285,7 @@ struct ContentView: View {
         .sheet(item: $audioGenerationSheetEntry) { entry in
             ReaderGenerateAudioSheet(
                 voiceName: $pendingAudioVoiceName,
-                voiceOptions: KokoroVoiceCatalog.allVoices,
+                voiceOptions: ttsCoordinator.availableVoiceOptions(for: pendingAudioProviderID),
                 onGenerate: {
                     confirmPendingAudioGeneration(for: entry)
                 },
@@ -480,9 +487,9 @@ struct ContentView: View {
             cleanupGeneratedDemoContentIfNeeded()
             backfillMissingCoverArtIfNeeded()
             await backfillGeneratedAudioMetadataIfNeeded()
-            validateSelectedKokoroVoice()
-            kokoroModelStore.refreshInstallationStatus()
-            promptForKokoroDownloadIfNeeded()
+            validateSelectedTTSConfiguration()
+            ttsCoordinator.refreshInstallationStatus()
+            promptForTTSDownloadIfNeeded()
         }
         .task {
             do {
@@ -492,19 +499,38 @@ struct ContentView: View {
             }
             await monitorBrowserInbox()
         }
-        .onChange(of: kokoroModelStore.status) { _, newStatus in
-            switch newStatus {
-            case .installed:
-                successToastMessage = "TTS model downloaded and ready"
+        .onChange(of: kokoroModelStore.status) { _, _ in
+            ttsCoordinator.refreshInstallationStatus()
+            if case .installed(let providerID) = ttsCoordinator.availabilityStatus {
+                successToastMessage = "\(providerID.title) model downloaded and ready"
                 isShowingKokoroDownloadModal = false
-            case .failed(let message):
+            } else if case .failed(let message) = ttsCoordinator.availabilityStatus {
                 successToastMessage = "TTS model download failed: \(message)"
                 isShowingKokoroDownloadModal = true
-            default:
-                break
             }
         }
-        .onChange(of: kokoroVoiceName) { _, _ in
+        .onChange(of: moonshineModelStore.status) { _, _ in
+            ttsCoordinator.refreshInstallationStatus()
+            if case .installed(let providerID) = ttsCoordinator.availabilityStatus {
+                successToastMessage = "\(providerID.title) model downloaded and ready"
+                isShowingKokoroDownloadModal = false
+            } else if case .failed(let message) = ttsCoordinator.availabilityStatus {
+                successToastMessage = "TTS model download failed: \(message)"
+                isShowingKokoroDownloadModal = true
+            }
+        }
+        .onChange(of: activeTTSProviderIDRawValue) { _, newValue in
+            if let providerID = ReaderTTSProviderID(rawValue: newValue) {
+                ttsCoordinator.setActiveProvider(providerID)
+                restartPlaybackForSelectedVoiceIfNeeded()
+            }
+        }
+        .onChange(of: kokoroVoiceName) { _, newValue in
+            ttsCoordinator.setSelectedVoiceName(newValue, for: .kokoro)
+            restartPlaybackForSelectedVoiceIfNeeded()
+        }
+        .onChange(of: moonshineVoiceName) { _, newValue in
+            ttsCoordinator.setSelectedVoiceName(newValue, for: .moonshine)
             restartPlaybackForSelectedVoiceIfNeeded()
         }
         .onChange(of: successToastMessage) { _, newMessage in
@@ -554,10 +580,19 @@ struct ContentView: View {
         .ignoresSafeArea()
     }
 
-    private func validateSelectedKokoroVoice() {
-        let availableNames = Set(KokoroVoiceCatalog.allVoices.map(\.voiceName))
-        if !availableNames.contains(kokoroVoiceName) {
+    private func validateSelectedTTSConfiguration() {
+        let kokoroNames = Set(KokoroVoiceCatalog.allVoices.map(\.voiceName))
+        if !kokoroNames.contains(kokoroVoiceName) {
             kokoroVoiceName = KokoroVoiceCatalog.defaultVoiceName
+        }
+
+        let moonshineNames = Set(MoonshineVoiceCatalog.allVoices.map(\.voiceName))
+        if !moonshineNames.contains(moonshineVoiceName) {
+            moonshineVoiceName = MoonshineVoiceCatalog.defaultVoiceName
+        }
+
+        if ReaderTTSProviderID(rawValue: activeTTSProviderIDRawValue) == nil {
+            activeTTSProviderIDRawValue = ReaderTTSProviderID.kokoro.rawValue
         }
     }
 
@@ -591,9 +626,8 @@ struct ContentView: View {
         activeGeneratedAudioEntry != nil && generatedAudioPlaybackService.hasLoadedAudio
     }
 
-    private func playKokoroVoiceSample(_ voice: KokoroVoiceOption) {
-        kokoroSpeechService.prepareForPlayback()
-        kokoroSpeechService.playSample(for: voice)
+    private func playTTSVoiceSample(_ voice: ReaderTTSVoiceSelection) {
+        ttsCoordinator.playSample(for: voice)
         successToastMessage = "Playing \(voice.displayName) sample"
     }
 
@@ -612,32 +646,17 @@ struct ContentView: View {
         startPlayback(for: entry)
     }
 
-    private func promptForKokoroDownloadIfNeeded() {
+    private func promptForTTSDownloadIfNeeded() {
         guard !didPresentKokoroDownloadGate else { return }
         didPresentKokoroDownloadGate = true
 
-        if !kokoroModelStore.isInstalled {
+        if !kokoroModelStore.isInstalled && !moonshineModelStore.isInstalled {
             isShowingKokoroDownloadModal = true
         }
     }
 
     private func openKokoroDownloadModal() {
         isShowingKokoroDownloadModal = true
-    }
-
-    private func downloadKokoroModel(option: KokoroDownloadOption) {
-        switch kokoroModelStore.status {
-        case .checking, .downloading:
-            return
-        case .installed:
-            if !kokoroModelStore.isOptionDownloaded(option) {
-                kokoroModelStore.downloadModel(option: option)
-                successToastMessage = "Downloading \(option.displayName)"
-            }
-        case .notInstalled, .failed:
-            kokoroModelStore.downloadModel(option: option)
-            successToastMessage = "Downloading \(option.displayName)"
-        }
     }
 
     // MARK: - Detail Content
@@ -673,14 +692,15 @@ struct ContentView: View {
 
                     switch selection {
                     case .home:
-                        ReaderHeroView(
+                        ReaderTTSHeroView(
                             featured: sortedByDateAdded.first,
                             preferredMode: preferredMode,
-                            kokoroModelStatus: kokoroModelStore.status,
+                            ttsStatus: ttsCoordinator.availabilityStatus,
+                            activeProviderID: ttsCoordinator.activeProviderID,
                             onPasteText: { isShowingPasteSheet = true },
                             onUploadFile: { isShowingFileImporter = true },
                             onOpenLibrary: { selection = .recent },
-                            onDownloadKokoro: openKokoroDownloadModal,
+                            onDownloadTTS: openKokoroDownloadModal,
                             isUploadDisabled: isImportInFlight
                         )
 
@@ -2319,7 +2339,7 @@ struct ContentView: View {
             try? modelContext.save()
         }
 
-        let voice = KokoroVoiceCatalog.voice(named: kokoroVoiceName)
+        let voice = ttsCoordinator.activeVoiceSelection()
         readerPlaybackService.play(
             entry: entry,
             voice: voice,
@@ -2706,11 +2726,12 @@ struct ContentView: View {
         }
 
         pendingAudioGenerationEntry = entry
-        pendingAudioVoiceName = kokoroVoiceName
+        pendingAudioProviderID = ttsCoordinator.activeProviderID
+        pendingAudioVoiceName = ttsCoordinator.selectedVoiceName(for: pendingAudioProviderID)
         audioGenerationSheetEntry = entry
         audioGenerationProgressValue = nil
         audioGenerationPrewarmTask?.cancel()
-        let voice = KokoroVoiceCatalog.voice(named: pendingAudioVoiceName)
+        let voice = ttsCoordinator.voiceSelection(for: pendingAudioProviderID)
         audioGenerationPrewarmTask = Task {
             await LibraryAudioGenerationService.shared.prewarm(voice: voice)
         }
@@ -2732,8 +2753,9 @@ struct ContentView: View {
         beginIdleSleepAssertion(for: .audio)
 
         let voiceName = pendingAudioVoiceName
+        let providerID = pendingAudioProviderID
         audioGenerationTask = Task {
-            await processPendingAudioGeneration(for: entry, voiceName: voiceName)
+            await processPendingAudioGeneration(for: entry, voiceName: voiceName, providerID: providerID)
         }
     }
 
@@ -2746,11 +2768,12 @@ struct ContentView: View {
         pendingAudioGenerationEntry = nil
         audioGenerationSheetEntry = nil
         pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+        pendingAudioProviderID = .kokoro
         audioGenerationProgressValue = nil
     }
 
     @MainActor
-    private func processPendingAudioGeneration(for entry: LibraryEntry, voiceName: String) async {
+    private func processPendingAudioGeneration(for entry: LibraryEntry, voiceName: String, providerID: ReaderTTSProviderID) async {
         defer {
             audioGenerationTask = nil
             audioGenerationProgressValue = nil
@@ -2763,7 +2786,8 @@ struct ContentView: View {
             return
         }
 
-        guard let voice = KokoroVoiceCatalog.allVoices.first(where: { $0.voiceName == voiceName }) else {
+        let voiceOptions = ttsCoordinator.availableVoiceOptions(for: providerID)
+        guard let voice = voiceOptions.first(where: { $0.voiceName == voiceName }) else {
             pendingAudioGenerationEntry = nil
             audioGenerationAlertMessage = "The selected voice could not be found."
             return
@@ -2792,15 +2816,18 @@ struct ContentView: View {
 
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+            pendingAudioProviderID = .kokoro
             successToastMessage = "\(entry.title) audio file is ready."
             playSuccessTone()
         } catch is CancellationError {
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+            pendingAudioProviderID = .kokoro
             audioGenerationProgressValue = nil
         } catch {
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
+            pendingAudioProviderID = .kokoro
             audioGenerationProgressValue = nil
             audioGenerationAlertMessage = error.localizedDescription
         }
