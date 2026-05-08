@@ -1932,6 +1932,7 @@ struct ReaderProcessingOverlayView: View {
 // Centered loader shown while the first playback chunk is being prepared.
 struct ReaderPlaybackLoadingOverlayView: View {
     let message: String
+    let subtitle: String
 
     var body: some View {
         ZStack {
@@ -1944,6 +1945,11 @@ struct ReaderPlaybackLoadingOverlayView: View {
 
                 Text(message)
                     .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+                
+                Text(subtitle)
+                    .font(.caption)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
             }

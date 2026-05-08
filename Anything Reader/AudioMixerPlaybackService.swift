@@ -31,6 +31,8 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
     @Published var followsReaderPlayback: Bool
 
     private var player: AVAudioPlayer?
+    private var pendingReaderStopTask: Task<Void, Never>?
+    private var isReaderTransitioning = false
 
     private static let volumeStorageKey = "audioMixerVolume"
     private static let loopingStorageKey = "audioMixerLooping"
@@ -145,6 +147,7 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
     }
 
     func pause() {
+        cancelPendingReaderStop()
         guard let player, player.isPlaying else { return }
         player.pause()
         isPlaying = false
@@ -152,6 +155,7 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
     }
 
     func resume() {
+        cancelPendingReaderStop()
         guard let player, isPaused else { return }
         player.numberOfLoops = isLooping ? -1 : 0
         player.volume = Float(volume)
@@ -164,6 +168,7 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
     }
 
     func stopPlayback(resetSelection: Bool) {
+        cancelPendingReaderStop()
         player?.stop()
         player = nil
         isPlaying = false
@@ -190,19 +195,25 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
 
         switch state {
         case .playing:
+            endReaderPlaybackTransition()
+            cancelPendingReaderStop()
             if isPaused {
                 resume()
             } else if !isPlaying {
                 play(track: track)
             }
         case .paused:
+            endReaderPlaybackTransition()
+            cancelPendingReaderStop()
             if isPlaying {
                 pause()
             }
         case .stopped:
-            if isPlaying || isPaused {
-                stopPlayback(resetSelection: false)
+            guard !isReaderTransitioning else { return }
+            guard isPlaying || isPaused else {
+                return
             }
+            scheduleReaderStop()
         }
     }
 
@@ -234,5 +245,29 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
     private func hasLoadedAudio(for fileURL: URL) -> Bool {
         guard let player else { return false }
         return player.url?.standardizedFileURL.path == fileURL.standardizedFileURL.path
+    }
+
+    private func scheduleReaderStop() {
+        cancelPendingReaderStop()
+        pendingReaderStopTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard let self, followsReaderPlayback else { return }
+            stopPlayback(resetSelection: false)
+        }
+    }
+
+    private func cancelPendingReaderStop() {
+        pendingReaderStopTask?.cancel()
+        pendingReaderStopTask = nil
+    }
+
+    func beginReaderPlaybackTransition() {
+        isReaderTransitioning = true
+        cancelPendingReaderStop()
+    }
+
+    func endReaderPlaybackTransition() {
+        isReaderTransitioning = false
+        cancelPendingReaderStop()
     }
 }

@@ -370,7 +370,7 @@ struct ContentView: View {
         .tint(.green)
         .overlay {
             if readerPlaybackService.isBufferingFirstChunk {
-                ReaderPlaybackLoadingOverlayView(message: "Preparing first chunk")
+                ReaderPlaybackLoadingOverlayView(message: "Preparing first chunk", subtitle: "This only takes a few seconds")
             }
         }
         .overlay(alignment: .top) {
@@ -2449,6 +2449,7 @@ struct ContentView: View {
         persistProgress: Bool = true
     ) {
         let priorEntry = activeEntry
+        audioMixerPlaybackService.beginReaderPlaybackTransition()
         readerPlaybackService.stop()
         stopPlaybackTask()
         stopPlaybackWarmupTask()
@@ -2525,6 +2526,7 @@ struct ContentView: View {
                 self.playbackState.progress = 0
                 self.playbackState.elapsedSeconds = 0
                 self.playbackState.isPlaying = false
+                self.audioMixerPlaybackService.endReaderPlaybackTransition()
                 if self.activePlaybackSummaryFilePath != nil {
                     entry.summarizedTextPlaybackPositionSeconds = 0
                     self.summaryPlaybackLastSavedElapsedSeconds = 0
@@ -2534,11 +2536,13 @@ struct ContentView: View {
                     try? self.modelContext.save()
                 }
                 self.persistPlayerProgress(force: true)
+                self.syncAudioMixerPlaybackState()
             },
             onFailure: { message in
                 guard self.playbackSessionToken == sessionToken else { return }
                 self.stopPlaybackProgressPersistenceTask()
                 self.playbackState.isPlaying = false
+                self.audioMixerPlaybackService.endReaderPlaybackTransition()
                 self.uploadAlertMessage = message
             }
         )
@@ -2550,6 +2554,7 @@ struct ContentView: View {
 
     @MainActor
     private func startGeneratedAudioPlayback(for entry: LibraryEntry, fileURL: URL) {
+        audioMixerPlaybackService.beginReaderPlaybackTransition()
         readerPlaybackService.stop()
         stopPlaybackTask()
         stopPlaybackWarmupTask()
@@ -2583,10 +2588,13 @@ struct ContentView: View {
             },
             onFinished: {
                 self.persistGeneratedAudioPlaybackProgress(for: entry, elapsedSeconds: 0)
+                self.audioMixerPlaybackService.endReaderPlaybackTransition()
+                self.syncAudioMixerPlaybackState()
                 self.stopGeneratedAudioPlayback()
             },
             onFailure: { message in
                 self.stopGeneratedAudioPlayback()
+                self.audioMixerPlaybackService.endReaderPlaybackTransition()
                 self.generatedAudioAlertMessage = message
             }
         )
