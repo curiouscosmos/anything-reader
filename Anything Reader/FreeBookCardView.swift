@@ -5,6 +5,7 @@
 //  Card used to present free books from the downloaded catalog.
 //
 
+import AppKit
 import SwiftUI
 
 struct FreeBookCardView: View {
@@ -12,6 +13,9 @@ struct FreeBookCardView: View {
     var onView: (() -> Void)? = nil
     var onDownload: (() -> Void)? = nil
     var isDownloadDisabled: Bool = false
+
+    @State private var cachedCoverPath: String?
+    @State private var isResolvingCoverArt = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,6 +50,9 @@ struct FreeBookCardView: View {
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.12), radius: 18, x: 0, y: 10)
+        .task(id: coverCacheTaskID) {
+            await resolveCachedCoverArtIfNeeded()
+        }
     }
 
     private var coverImage: some View {
@@ -62,24 +69,14 @@ struct FreeBookCardView: View {
                     )
                 )
 
-            if let coverURL = book.coverURL {
-                AsyncImage(url: coverURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .controlSize(.small)
-
-                    case .success(let image):
-                        image
-                            .resizable()
-
-                    case .failure:
-                        placeholderCover
-
-                    @unknown default:
-                        placeholderCover
-                    }
-                }
+            if let cachedImage = cachedCoverImage {
+                Image(nsImage: cachedImage)
+                    .resizable()
+                    .scaledToFill()
+                    .clipped()
+            } else if isResolvingCoverArt {
+                ProgressView()
+                    .controlSize(.small)
             } else {
                 placeholderCover
             }
@@ -152,6 +149,28 @@ struct FreeBookCardView: View {
                 .font(.caption.weight(.semibold))
         }
         .foregroundStyle(.secondary)
+    }
+
+    private var cachedCoverImage: NSImage? {
+        guard let cachedCoverPath else { return nil }
+        return NSImage(contentsOf: URL(fileURLWithPath: cachedCoverPath))
+    }
+
+    private var coverCacheTaskID: String {
+        book.coverURL?.absoluteString ?? "book-\(book.id)"
+    }
+
+    @MainActor
+    private func resolveCachedCoverArtIfNeeded() async {
+        guard cachedCoverPath == nil else { return }
+        guard book.coverURL != nil else { return }
+
+        isResolvingCoverArt = true
+        defer { isResolvingCoverArt = false }
+
+        if let localURL = await FreeBookCoverArtCacheService.shared.cachedCoverURL(for: book.coverURL) {
+            cachedCoverPath = localURL.path
+        }
     }
 
     private var cardBackground: some ShapeStyle {

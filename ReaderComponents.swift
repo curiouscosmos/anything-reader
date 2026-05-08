@@ -175,7 +175,7 @@ struct ReaderHeroView: View {
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(heroPrimaryTextColor)
 
-                Text("From documents to audio - free, private, & offline")
+                Text("TTS, Translate, Summarize, & OCR - all on your Mac")
                     .font(.headline)
                     .foregroundStyle(heroSecondaryTextColor)
                     .frame(maxWidth: 800, alignment: .leading)
@@ -412,7 +412,7 @@ struct ReaderTTSHeroView: View {
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(heroPrimaryTextColor)
 
-                Text("From documents to audio - free, private, & offline")
+                Text("TTS, Translate, Summarize, & OCR - all on your Mac")
                     .font(.headline)
                     .foregroundStyle(heroSecondaryTextColor)
                     .frame(maxWidth: 800, alignment: .leading)

@@ -203,7 +203,7 @@ struct FreeBooksView: View {
 
     private var booksGrid: some View {
         ScrollViewReader { proxy in
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 Color.clear
                     .frame(height: 1)
                     .id(booksTopAnchorID)
