@@ -28,6 +28,9 @@ struct ReaderSidebarView: View {
 
                 Label("Free Books", systemImage: "books.vertical.fill")
                     .tag(SidebarSelection.freeBooks)
+
+                Label("Audio Mixer", systemImage: "music.note.list")
+                    .tag(SidebarSelection.audioMixer)
             }
 
             // User-generated categories.

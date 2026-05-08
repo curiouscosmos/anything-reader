@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var homeSearchText = ""
     @State private var recentSearchText = ""
     @State private var freeBooksSearchText = ""
+    @State private var audioMixerSearchText = ""
     @State private var categorySearchTexts: [String: String] = [:]
     @State private var visibleHomeEntryCount = 10
     @State private var visibleRecentEntryCount = 10
@@ -111,6 +112,8 @@ struct ContentView: View {
     @StateObject private var ttsCoordinator = ReaderTTSCoordinator.shared
     @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
     @StateObject private var generatedAudioPlaybackService = GeneratedAudioPlaybackService.shared
+    @StateObject private var audioMixerPlaybackService = AudioMixerPlaybackService.shared
+    @StateObject private var audioMixerLibraryService = AudioMixerLibraryService.shared
     @StateObject private var appUpdateChecker = AppUpdateChecker.shared
     @State private var translationCoordinator = DocumentTranslationCoordinator()
 
@@ -386,6 +389,7 @@ struct ContentView: View {
             validateSelectedTTSConfiguration()
             ttsCoordinator.refreshInstallationStatus()
             promptForTTSDownloadIfNeeded()
+            syncAudioMixerPlaybackState()
         }
         .task {
             do {
@@ -405,7 +409,7 @@ struct ContentView: View {
                 visibleHomeEntryCount = 10
             case .recent:
                 visibleRecentEntryCount = 10
-            case .freeBooks, .category(_):
+            case .freeBooks, .audioMixer, .category(_):
                 break
             }
         }
@@ -448,6 +452,18 @@ struct ContentView: View {
         .onChange(of: moonshineVoiceName) { _, newValue in
             ttsCoordinator.setSelectedVoiceName(newValue, for: .moonshine)
             restartPlaybackForSelectedVoiceIfNeeded()
+        }
+        .onChange(of: readerPlaybackService.isPlaying) { _, _ in
+            syncAudioMixerPlaybackState()
+        }
+        .onChange(of: readerPlaybackService.isPaused) { _, _ in
+            syncAudioMixerPlaybackState()
+        }
+        .onChange(of: generatedAudioPlaybackService.isPlaying) { _, _ in
+            syncAudioMixerPlaybackState()
+        }
+        .onChange(of: audioMixerPlaybackService.followsReaderPlayback) { _, _ in
+            syncAudioMixerPlaybackState()
         }
         .onChange(of: successToastMessage) { _, newMessage in
             toastDismissTask?.cancel()
@@ -571,6 +587,19 @@ struct ContentView: View {
         }
     }
 
+    private func syncAudioMixerPlaybackState() {
+        let playbackState: AudioMixerReaderPlaybackState
+        if readerPlaybackService.isPlaying || generatedAudioPlaybackService.isPlaying {
+            playbackState = .playing
+        } else if readerPlaybackService.isPaused {
+            playbackState = .paused
+        } else {
+            playbackState = .stopped
+        }
+
+        audioMixerPlaybackService.syncReaderPlaybackState(playbackState)
+    }
+
     private func openKokoroDownloadModal() {
         isShowingKokoroDownloadModal = true
     }
@@ -647,7 +676,7 @@ struct ContentView: View {
                             onDelete: deleteEntry
                         )
 
-                        case .freeBooks:
+                    case .freeBooks:
                         FreeBooksView(
                             searchText: $freeBooksSearchText,
                             isDownloadingBook: $isDownloadingFreeBook,
@@ -655,6 +684,14 @@ struct ContentView: View {
                             onDownloadBook: { book in
                                 freeBookDownloadRequest = book
                             }
+                        )
+
+                    case .audioMixer:
+                        AudioMixerView(
+                            libraryService: audioMixerLibraryService,
+                            playbackService: audioMixerPlaybackService,
+                            searchText: $audioMixerSearchText,
+                            preferredMode: preferredMode
                         )
 
                     case .category(let categoryName):
@@ -801,6 +838,8 @@ struct ContentView: View {
                 matchesSelection = true
             case .freeBooks:
                 matchesSelection = true
+            case .audioMixer:
+                matchesSelection = false
             case .category(let categoryName):
                 matchesSelection = entry.categoryName == categoryName
             }
@@ -839,6 +878,8 @@ struct ContentView: View {
             return $recentSearchText
         case .freeBooks:
             return $freeBooksSearchText
+        case .audioMixer:
+            return $audioMixerSearchText
         case .category(let categoryName):
             return Binding(
                 get: { categorySearchTexts[categoryName] ?? "" },
@@ -855,6 +896,8 @@ struct ContentView: View {
             return recentSearchText
         case .freeBooks:
             return freeBooksSearchText
+        case .audioMixer:
+            return audioMixerSearchText
         case .category(let categoryName):
             return categorySearchTexts[categoryName] ?? ""
         }
@@ -866,6 +909,8 @@ struct ContentView: View {
             return "Search books, text, categories"
         case .freeBooks:
             return "Search free books, authors, categories"
+        case .audioMixer:
+            return "Search audio tracks"
         }
     }
 

@@ -14,6 +14,7 @@ struct Anything_ReaderApp: App {
         let schema = Schema([
             LibraryEntry.self,
             ReaderCategory.self,
+            AudioMixerTrackRecord.self,
         ])
 
         do {

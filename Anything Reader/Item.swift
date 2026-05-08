@@ -611,3 +611,32 @@ final class ReaderCategory {
         self.createdAt = createdAt
     }
 }
+
+@Model
+final class AudioMixerTrackRecord {
+    @Attribute(.unique) var id: String
+    var title: String
+    var filePath: String
+    var isBundled: Bool
+    var sortOrder: Int
+    var createdAt: Date
+    var lastPlayedAt: Date?
+
+    init(
+        id: String = UUID().uuidString,
+        title: String,
+        filePath: String,
+        isBundled: Bool,
+        sortOrder: Int,
+        createdAt: Date = .now,
+        lastPlayedAt: Date? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.filePath = filePath
+        self.isBundled = isBundled
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+        self.lastPlayedAt = lastPlayedAt
+    }
+}

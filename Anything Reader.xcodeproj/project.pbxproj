@@ -62,6 +62,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		D15A56EF2FAE86F4005A9DEA /* audio */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = audio;
+			sourceTree = "<group>";
+		};
 		D1850FC82F9C1990008E9FF8 /* Anything Reader */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "Anything Reader";
@@ -138,6 +143,7 @@
 		D18510392F9D67AE008E9FF8 /* Assets */ = {
 			isa = PBXGroup;
 			children = (
+				D15A56EF2FAE86F4005A9DEA /* audio */,
 				D185103C2F9D67F9008E9FF8 /* voices-v1.0.bin */,
 				D12D9C452FA1802E001EC25F /* hero_image.png */,
 			);
@@ -168,6 +174,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				D15A56EF2FAE86F4005A9DEA /* audio */,
 				D1850FC82F9C1990008E9FF8 /* Anything Reader */,
 			);
 			name = "Anything Reader";

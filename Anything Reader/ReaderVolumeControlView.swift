@@ -29,7 +29,7 @@ struct ReaderVolumeControlView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(surfaceColor, in: Rectangle())
+        .background(surfaceColor, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var volumeSymbolName: String {
