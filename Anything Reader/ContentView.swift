@@ -102,6 +102,8 @@ struct ContentView: View {
     @State private var didPresentKokoroDownloadGate = false
     @State private var audioGenerationAlertMessage: String?
     @State private var isHomeDropTargeted = false
+    @State private var presentedUpdateVersion: String?
+    @State private var updateDialogNotice: AppUpdateNotice?
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
     @StateObject private var moonshineModelStore = MoonshineModelStore.shared
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
@@ -109,6 +111,7 @@ struct ContentView: View {
     @StateObject private var ttsCoordinator = ReaderTTSCoordinator.shared
     @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
     @StateObject private var generatedAudioPlaybackService = GeneratedAudioPlaybackService.shared
+    @StateObject private var appUpdateChecker = AppUpdateChecker.shared
     @State private var translationCoordinator = DocumentTranslationCoordinator()
 
     private enum ReadingNavigationDirection {
@@ -346,132 +349,20 @@ struct ContentView: View {
         ) { result in
             handleImportedFileSelection(result)
         }
-        .alert(
-            "Upload Failed",
-            isPresented: Binding(
-                get: { uploadAlertMessage != nil },
-                set: { if !$0 { uploadAlertMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                uploadAlertMessage = nil
-            }
-        } message: {
-            Text(uploadAlertMessage ?? "The selected file could not be imported.")
-        }
-        .alert(
-            "Browser Import Failed",
-            isPresented: Binding(
-                get: { browserImportAlertMessage != nil },
-                set: { if !$0 { browserImportAlertMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                browserImportAlertMessage = nil
-            }
-        } message: {
-            Text(browserImportAlertMessage ?? "The browser page could not be imported.")
-        }
-        .alert(
-            "Browser Host Install Failed",
-            isPresented: Binding(
-                get: { browserHostInstallAlertMessage != nil },
-                set: { if !$0 { browserHostInstallAlertMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                browserHostInstallAlertMessage = nil
-            }
-        } message: {
-            Text(browserHostInstallAlertMessage ?? "The Chrome manifest could not be installed.")
-        }
-        .alert(
-            "Normalization Failed",
-            isPresented: Binding(
-                get: { importFailureMessage != nil },
-                set: { if !$0 { importFailureMessage = nil } }
-            )
-        ) {
-            Button("Retry") {
-                retryPendingImport()
-            }
-
-            Button("Remove File", role: .destructive) {
-                discardPendingImport()
-            }
-        } message: {
-            Text(importFailureMessage ?? "The file could not be normalized.")
-        }
-        .alert(
-            "Viewer Unavailable",
-            isPresented: Binding(
-                get: { viewerAlertMessage != nil },
-                set: { if !$0 { viewerAlertMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                viewerAlertMessage = nil
-            }
-        } message: {
-            Text(viewerAlertMessage ?? "The normalized TXT file could not be opened.")
-        }
-        .confirmationDialog(
-            "Delete audio file?",
-            isPresented: Binding(
-                get: { pendingAudioDeletionEntry != nil },
-                set: { if !$0 { pendingAudioDeletionEntry = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete audio file", role: .destructive) {
-                confirmAudioDeletion()
-            }
-
-            Button("Cancel", role: .cancel) {
-                pendingAudioDeletionEntry = nil
-            }
-        } message: {
-            Text("This will remove the generated audio export from the local library and delete the file from disk.")
-        }
-        .alert(
-            "Audio Generation Failed",
-            isPresented: Binding(
-                get: { audioGenerationAlertMessage != nil },
-                set: { if !$0 { audioGenerationAlertMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                audioGenerationAlertMessage = nil
-            }
-        } message: {
-            Text(audioGenerationAlertMessage ?? "The audio file could not be generated.")
-        }
-        .alert(
-            "Audio Playback Failed",
-            isPresented: Binding(
-                get: { generatedAudioAlertMessage != nil },
-                set: { if !$0 { generatedAudioAlertMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                generatedAudioAlertMessage = nil
-            }
-        } message: {
-            Text(generatedAudioAlertMessage ?? "The generated audio file could not be played.")
-        }
-        .alert(
-            "Summary Failed",
-            isPresented: Binding(
-                get: { summaryGenerationAlertMessage != nil },
-                set: { if !$0 { summaryGenerationAlertMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                summaryGenerationAlertMessage = nil
-            }
-        } message: {
-            Text(summaryGenerationAlertMessage ?? "The summary could not be generated.")
-        }
+        .readerNotifications(
+            uploadAlertMessage: $uploadAlertMessage,
+            browserImportAlertMessage: $browserImportAlertMessage,
+            browserHostInstallAlertMessage: $browserHostInstallAlertMessage,
+            importFailureMessage: $importFailureMessage,
+            viewerAlertMessage: $viewerAlertMessage,
+            pendingAudioDeletionEntry: $pendingAudioDeletionEntry,
+            audioGenerationAlertMessage: $audioGenerationAlertMessage,
+            generatedAudioAlertMessage: $generatedAudioAlertMessage,
+            summaryGenerationAlertMessage: $summaryGenerationAlertMessage,
+            onRetryPendingImport: retryPendingImport,
+            onDiscardPendingImport: discardPendingImport,
+            onConfirmAudioDeletion: confirmAudioDeletion
+        )
         .preferredColorScheme(preferredMode.colorScheme)
         .tint(.green)
         .overlay {
@@ -504,6 +395,9 @@ struct ContentView: View {
             }
             await monitorBrowserInbox()
         }
+        .task {
+            appUpdateChecker.startMonitoring()
+        }
         .onChange(of: selection) { _, newValue in
             isHomeDropTargeted = false
             switch newValue {
@@ -532,6 +426,14 @@ struct ContentView: View {
                 successToastMessage = "TTS model download failed: \(message)"
                 isShowingKokoroDownloadModal = true
             }
+        }
+        .onChange(of: appUpdateChecker.notice) { _, newNotice in
+            guard let newNotice else { return }
+            guard presentedUpdateVersion != newNotice.currentVersion else { return }
+
+            presentedUpdateVersion = newNotice.currentVersion
+            updateDialogNotice = newNotice
+            presentUpdateDialog(for: newNotice)
         }
         .onChange(of: activeTTSProviderIDRawValue) { _, newValue in
             if let providerID = ReaderTTSProviderID(rawValue: newValue) {
@@ -814,6 +716,10 @@ struct ContentView: View {
         sortedByDateAdded: [LibraryEntry]
     ) -> some View {
         VStack(alignment: .leading, spacing: 24) {
+            if let notice = appUpdateChecker.notice {
+                updateBannerView(for: notice)
+            }
+
             ReaderTTSHeroView(
                 featured: featured,
                 preferredMode: preferredMode,
@@ -1543,6 +1449,57 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
                 .padding(24)
             )
+    }
+
+    private func updateBannerView(for notice: AppUpdateNotice) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(notice.title)
+                    .font(.headline.weight(.bold))
+                Text(notice.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button {
+                appUpdateChecker.openAppStore()
+            } label: {
+                Label("Download", systemImage: "arrow.down.circle.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.green.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    @MainActor
+    private func presentUpdateDialog(for notice: AppUpdateNotice) {
+        let alert = NSAlert()
+        alert.messageText = notice.title
+        alert.informativeText = notice.subtitle
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Download")
+
+        if !notice.isForceUpdateRequired {
+            alert.addButton(withTitle: "Later")
+        }
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            appUpdateChecker.openAppStore()
+        }
+
+        if response == .alertSecondButtonReturn {
+            updateDialogNotice = nil
+        }
     }
 
     @MainActor
