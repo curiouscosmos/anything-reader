@@ -101,6 +101,7 @@ struct ContentView: View {
     @State private var didBackfillMissingCoverArt = false
     @State private var didPresentKokoroDownloadGate = false
     @State private var audioGenerationAlertMessage: String?
+    @State private var isHomeDropTargeted = false
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
     @StateObject private var moonshineModelStore = MoonshineModelStore.shared
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
@@ -504,6 +505,7 @@ struct ContentView: View {
             await monitorBrowserInbox()
         }
         .onChange(of: selection) { _, newValue in
+            isHomeDropTargeted = false
             switch newValue {
             case .home:
                 visibleHomeEntryCount = 10
@@ -704,49 +706,9 @@ struct ContentView: View {
 
                     switch selection {
                     case .home:
-                        ReaderTTSHeroView(
+                        homeContent(
                             featured: sortedByDateAdded.first,
-                            preferredMode: preferredMode,
-                            ttsStatus: ttsCoordinator.availabilityStatus,
-                            activeProviderID: ttsCoordinator.activeProviderID,
-                            onPasteText: { isShowingPasteSheet = true },
-                            onUploadFile: { isShowingFileImporter = true },
-                            onOpenLibrary: { selection = .recent },
-                            onDownloadTTS: openKokoroDownloadModal,
-                            isUploadDisabled: isImportInFlight
-                        )
-
-                        ReaderLibrarySectionView(
-                            title: "Library",
-                            subtitle: "Everything you have imported or pasted",
-                            entries: sortedByDateAdded,
-                            visibleEntryCount: visibleHomeEntryCount,
-                            isLoadingMore: isLoadingMoreHomeEntries,
-                            onLoadMore: loadMoreHomeEntries,
-                            categories: categories,
-                            coverArtGenerationKeys: coverArtGenerationKeys,
-                            preferredMode: preferredMode,
-                            isEntryPlaying: isEntryPlaying(_:),
-                            isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
-                            isEntrySummarizing: isEntrySummarizing(_:),
-                            isSummaryPlaying: isSummaryPlaybackPlaying(for:),
-                            audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
-                            generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
-                            readingProgressFraction: readingPlaybackProgressFraction(for:),
-                            onPrimaryAction: playLibraryEntry(_:),
-                            onPlay: playLibraryEntry(_:),
-                            onPlaySummary: playSummarizedLibraryEntry(_:),
-                            onSummarize: summarizeLibraryEntry(_:),
-                            onCancelSummarization: cancelSummaryGenerationIfNeeded(for:),
-                            onOpenOriginalFile: openOriginalUploadedFile,
-                            onViewTextFile: openNormalizedTextViewer,
-                            onRevealLocation: revealLibraryEntryLocation,
-                            onGenerateAudio: openAudioGenerationSheet(for:),
-                            onStopAudioGeneration: stopAudioGeneration(for:),
-                            onDeleteAudio: openAudioDeletionConfirmation(for:),
-                            onClearCategory: { assign($0, to: nil) },
-                            onAssignCategory: { assign($0, to: $1) },
-                            onDelete: deleteEntry
+                            sortedByDateAdded: sortedByDateAdded
                         )
 
                     case .recent:
@@ -844,6 +806,72 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func homeContent(
+        featured: LibraryEntry?,
+        sortedByDateAdded: [LibraryEntry]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 24) {
+            ReaderTTSHeroView(
+                featured: featured,
+                preferredMode: preferredMode,
+                ttsStatus: ttsCoordinator.availabilityStatus,
+                activeProviderID: ttsCoordinator.activeProviderID,
+                onPasteText: { isShowingPasteSheet = true },
+                onUploadFile: { isShowingFileImporter = true },
+                onOpenLibrary: { selection = .recent },
+                onDownloadTTS: openKokoroDownloadModal,
+                isUploadDisabled: isImportInFlight
+            )
+
+            ReaderLibrarySectionView(
+                title: "Library",
+                subtitle: "Everything you have imported or pasted",
+                entries: sortedByDateAdded,
+                visibleEntryCount: visibleHomeEntryCount,
+                isLoadingMore: isLoadingMoreHomeEntries,
+                onLoadMore: loadMoreHomeEntries,
+                categories: categories,
+                coverArtGenerationKeys: coverArtGenerationKeys,
+                preferredMode: preferredMode,
+                isEntryPlaying: isEntryPlaying(_:),
+                isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
+                isEntrySummarizing: isEntrySummarizing(_:),
+                isSummaryPlaying: isSummaryPlaybackPlaying(for:),
+                audioGenerationProgressFraction: audioGenerationProgressFraction(for:),
+                generatedAudioProgressFraction: generatedAudioProgressFraction(for:),
+                readingProgressFraction: readingPlaybackProgressFraction(for:),
+                onPrimaryAction: playLibraryEntry(_:),
+                onPlay: playLibraryEntry(_:),
+                onPlaySummary: playSummarizedLibraryEntry(_:),
+                onSummarize: summarizeLibraryEntry(_:),
+                onCancelSummarization: cancelSummaryGenerationIfNeeded(for:),
+                onOpenOriginalFile: openOriginalUploadedFile,
+                onViewTextFile: openNormalizedTextViewer,
+                onRevealLocation: revealLibraryEntryLocation,
+                onGenerateAudio: openAudioGenerationSheet(for:),
+                onStopAudioGeneration: stopAudioGeneration(for:),
+                onDeleteAudio: openAudioDeletionConfirmation(for:),
+                onClearCategory: { assign($0, to: nil) },
+                onAssignCategory: { assign($0, to: $1) },
+                onDelete: deleteEntry
+            )
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 110)
+        .overlay {
+            if isHomeDropTargeted {
+                homeDropOverlay
+                    .padding(.horizontal, 24)
+                    .padding(.top, 20)
+                    .padding(.bottom, 110)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isHomeDropTargeted, perform: handleDroppedFiles)
     }
 
     private var filteredEntries: [LibraryEntry] {
@@ -1419,6 +1447,102 @@ struct ContentView: View {
             uploadAlertMessage = error.localizedDescription
             cleanupPendingImportArtifacts()
         }
+    }
+
+    private func handleDroppedFiles(_ providers: [NSItemProvider]) -> Bool {
+        guard providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else {
+            return false
+        }
+
+        Task {
+            await handleDroppedFilesAsync(providers)
+        }
+
+        return true
+    }
+
+    @MainActor
+    private func handleDroppedFilesAsync(_ providers: [NSItemProvider]) async {
+        guard let sourceURL = await firstDroppedFileURL(from: providers) else {
+            uploadAlertMessage = "The dropped file could not be read."
+            return
+        }
+
+        let fileExtension = sourceURL.pathExtension.lowercased()
+        guard isSupportedUploadFileExtension(fileExtension) else {
+            uploadAlertMessage = "Please drop a PDF, TXT, ePub, or image file."
+            return
+        }
+
+        await preparePendingImport(from: sourceURL)
+    }
+
+    private func firstDroppedFileURL(from providers: [NSItemProvider]) async -> URL? {
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            if let fileURL = await loadDroppedFileURL(from: provider) {
+                return fileURL
+            }
+        }
+
+        return nil
+    }
+
+    private func loadDroppedFileURL(from provider: NSItemProvider) async -> URL? {
+        await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                if let url = item as? URL {
+                    continuation.resume(returning: url)
+                    return
+                }
+
+                if let url = item as? NSURL {
+                    continuation.resume(returning: url as URL)
+                    return
+                }
+
+                if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    continuation.resume(returning: url)
+                    return
+                }
+
+                if let string = item as? String {
+                    if let url = URL(string: string) {
+                        continuation.resume(returning: url)
+                        return
+                    }
+
+                    continuation.resume(returning: URL(fileURLWithPath: string))
+                    return
+                }
+
+                continuation.resume(returning: nil)
+            }
+        }
+    }
+
+    private var homeDropOverlay: some View {
+        RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .fill(Color.green.opacity(0.12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(
+                        Color.green.opacity(0.72),
+                        style: StrokeStyle(lineWidth: 2, dash: [10, 8])
+                    )
+            )
+            .overlay(
+                VStack(spacing: 8) {
+                    Image(systemName: "arrow.down.doc.fill")
+                        .font(.system(size: 28, weight: .semibold))
+                    Text("Drop PDF, ePub, TXT, or image files here")
+                        .font(.headline)
+                    Text("The file will open in the upload flow after it is validated and staged locally.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .multilineTextAlignment(.center)
+                .padding(24)
+            )
     }
 
     @MainActor
@@ -2223,7 +2347,7 @@ struct ContentView: View {
     private func isSupportedUploadFileExtension(_ fileExtension: String) -> Bool {
         guard !fileExtension.isEmpty else { return false }
 
-        if ["pdf", "txt", "epub", "html", "htm"].contains(fileExtension) {
+        if ["pdf", "txt", "epub"].contains(fileExtension) {
             return true
         }
 
