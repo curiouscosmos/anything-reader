@@ -19,13 +19,14 @@ struct ReaderSettingsSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    settingSection(title: "Appearance") {
-                        Picker("Theme", selection: $appearanceModeRawValue) {
-                            ForEach(AppearanceMode.allCases) { mode in
-                                Text(mode.title).tag(mode.rawValue)
-                            }
-                        }
-                    }
+                    // Light mode not fully ready yet
+//                    settingSection(title: "Appearance") {
+//                        Picker("Theme", selection: $appearanceModeRawValue) {
+//                            ForEach(AppearanceMode.allCases) { mode in
+//                                Text(mode.title).tag(mode.rawValue)
+//                            }
+//                        }
+//                    }
 
                     settingSection(title: "Kokoro Voice") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -280,7 +281,7 @@ struct ReaderGenerateAudioSheet: View {
             Text("Anything Reader will synthesize the complete normalized document in the background and save the audio locally for later use.")
                 .foregroundStyle(.secondary)
             
-            Text("Note: Depending on your system, this can take several miutes to hours.")
+            Text("Note: Depending on your system, this can take several miutes or hours.")
                 .font(.body.weight(.bold))
                 .foregroundStyle(.secondary)
         }
@@ -487,7 +488,7 @@ struct ReaderKokoroDownloadSheet: View {
                         onDownload(option)
                     } label: {
                         if isDownloading {
-                            Label("Downloading", systemImage: "arrow.down.circle")
+                            downloadingButtonLabel
                         } else {
                             Label("Download", systemImage: "arrow.down.circle.fill")
                         }
@@ -538,6 +539,14 @@ struct ReaderKokoroDownloadSheet: View {
         }
     }
 
+    private var downloadingButtonLabel: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Downloading...")
+        }
+    }
+
     private var headerBackground: Color {
         preferredMode == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.06)
     }
@@ -563,13 +572,14 @@ struct ReaderTTSSettingsSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    settingSection(title: "Appearance") {
-                        Picker("Theme", selection: $appearanceModeRawValue) {
-                            ForEach(AppearanceMode.allCases) { mode in
-                                Text(mode.title).tag(mode.rawValue)
-                            }
-                        }
-                    }
+                    // Light mode not ready yet
+//                    settingSection(title: "Appearance") {
+//                        Picker("Theme", selection: $appearanceModeRawValue) {
+//                            ForEach(AppearanceMode.allCases) { mode in
+//                                Text(mode.title).tag(mode.rawValue)
+//                            }
+//                        }
+//                    }
 
                     settingSection(title: "TTS Provider") {
                         Picker("Active Provider", selection: $activeProviderIDRawValue) {
@@ -655,9 +665,9 @@ struct ReaderTTSSettingsSheet: View {
 
         switch currentProviderID {
         case .kokoro:
-            return "Kokoro keeps the existing offline voices and current playback behavior."
+            return "Kokoro offers wide variety of voices and can be used for both reading and dictation."
         case .moonshine:
-            return "Moonshine uses its own local TTS runtime and is stored separately from Kokoro."
+            return "Moonshine uses its own local TTS runtime and is more performant."
         }
     }
 
@@ -805,7 +815,7 @@ struct ReaderTTSDownloadSheet: View {
             Text("Download TTS Model")
                 .font(.title2.weight(.bold))
 
-            Text("Choose one or both offline TTS providers. The active provider can be switched later in Settings without redownloading the other model.")
+            Text("Choose one or both offline TTS providers. The active provider can be switched at anytime without redownloading the other model.")
                 .foregroundStyle(.secondary)
 
             Text("Models are listed independently so Kokoro and Moonshine can be installed side by side.")
@@ -880,7 +890,7 @@ struct ReaderTTSDownloadSheet: View {
                         onDownload()
                     } label: {
                         if isDownloading {
-                            Label("Downloading", systemImage: "arrow.down.circle")
+                            downloadingButtonLabel
                         } else {
                             Label("Download", systemImage: "arrow.down.circle.fill")
                         }
@@ -902,9 +912,17 @@ struct ReaderTTSDownloadSheet: View {
     private func providerDescription(for providerID: ReaderTTSProviderID) -> String {
         switch providerID {
         case .kokoro:
-            return "Kokoro keeps the existing voice catalog and runtime behavior."
+            return "Kokoro offers wide variety of voices & better quality than Moonshine but requires more memory."
         case .moonshine:
-            return "Moonshine uses the new Moonshine Voice runtime and stores its model separately."
+            return "Moonshine is compact & fast. It works great on low-spec devices."
+        }
+    }
+
+    private var downloadingButtonLabel: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Downloading...")
         }
     }
 
@@ -927,6 +945,14 @@ struct ReaderNewCategorySheet: View {
             Form {
                 Section("Category Name") {
                     TextField("", text: $categoryName)
+                        .textFieldStyle(.plain)
+                            // .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(height: 40)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                            )
                 }
 
                 Section {
@@ -959,6 +985,7 @@ struct ReaderNewCategorySheet: View {
 struct ReaderPasteTextSheet: View {
     @Binding var title: String
     @Binding var text: String
+    @FocusState private var isFocused: Bool
     let onPlay: () -> Void
 
     var body: some View {
@@ -967,25 +994,42 @@ struct ReaderPasteTextSheet: View {
                 Text("Paste text to listen")
                     .font(.title2.weight(.bold))
 
-                Text("The text will be saved locally with a random title and avatar, then queued into the player.")
-                    .foregroundStyle(.secondary)
-
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Title")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.body.weight(.semibold))
 
                     TextField("Optional title", text: $title)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(height: 40)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                            )
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Text")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.body.weight(.semibold))
 
                 TextEditor(text: $text)
-                    .frame(minHeight: 180)
-                    .padding(10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .textFieldStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(height: 180)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.clear)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                            )
+                            .focused($isFocused)
+                            .onAppear {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                        isFocused = true
+                                    }
+                            }
                 }
 
                 Spacer(minLength: 0)

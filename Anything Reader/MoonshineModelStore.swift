@@ -20,7 +20,7 @@ struct MoonshineDownloadOption: Identifiable, Hashable, Equatable {
     var id: String { localFileName }
 
     var subtitle: String {
-        isRecommended ? "\(qualityLabel) · Recommended" : qualityLabel
+        isRecommended ? "\(qualityLabel)" : qualityLabel
     }
 }
 
@@ -29,7 +29,7 @@ enum MoonshineDownloadCatalog {
         .init(
             localFileName: "moonshine.safetensors",
             displayName: "Moonshine",
-            qualityLabel: "Offline TTS asset tree",
+            qualityLabel: "Good quality",
             downloadURL: URL(string: "https://sandalbar.s3.us-west-2.amazonaws.com/TTS/moonshine.safetensors")!,
             isRecommended: true
         )

@@ -162,19 +162,21 @@ struct FreeBooksView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                Task {
-                    await store.resyncCatalog()
+            if store.isDatabaseDownloaded {
+                Button {
+                    Task {
+                        await store.resyncCatalog()
+                    }
+                } label: {
+                    Label("Resync Database", systemImage: "arrow.clockwise")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                 }
-            } label: {
-                Label("Resync Database", systemImage: "arrow.clockwise")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                .buttonStyle(.bordered)
+                .disabled(store.isDownloadingDatabase || store.isLoadingBooks || store.isLoadingMoreBooks)
+                .accessibilityIdentifier("free-books-resync-database-button")
             }
-            .buttonStyle(.bordered)
-            .disabled(store.isDownloadingDatabase || store.isLoadingBooks || store.isLoadingMoreBooks)
-            .accessibilityIdentifier("free-books-resync-database-button")
         }
     }
 
@@ -193,8 +195,7 @@ struct FreeBooksView: View {
                 Label(selectedTitle, systemImage: "line.3.horizontal.decrease.circle")
                     .font(.headline)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .padding(.vertical, 8)
             }
             .accessibilityIdentifier(menuIdentifier)
         }

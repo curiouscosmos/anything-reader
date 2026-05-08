@@ -29,7 +29,7 @@ enum KokoroDownloadCatalog {
     static let allOptions: [KokoroDownloadOption] = [
         .init(
             localFileName: "kokoro_q8f16.safetensors",
-            displayName: "Q8 F16",
+            displayName: "Kokoro",
             qualityLabel: "Highest quality",
             downloadURL: URL(string: "https://sandalbar.s3.us-west-2.amazonaws.com/Kokoro/Kokoro-82M-bf16-mlx.safetensors")!,
             isRecommended: true,

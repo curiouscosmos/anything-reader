@@ -43,7 +43,7 @@ struct ReaderSidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .navigationTitle("Anything Reader - Offline Text to Speech PDF")
+        .navigationTitle("Anything Reader - Offline & Private Text to Speech")
         .toolbar {
             ToolbarItem {
                 Button(action: onAddCategory) {
@@ -175,7 +175,7 @@ struct ReaderHeroView: View {
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(heroPrimaryTextColor)
 
-                Text("From documents to audio, instantly and beautifully.")
+                Text("From documents to audio - free, private, & offline")
                     .font(.headline)
                     .foregroundStyle(heroSecondaryTextColor)
                     .frame(maxWidth: 800, alignment: .leading)
@@ -221,10 +221,6 @@ struct ReaderHeroView: View {
                 Text(kokoroStatusMessage)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(heroSecondaryTextColor)
-
-                Text(kokoroActiveModelMessage)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(heroSecondaryTextColor.opacity(0.95))
             }
             .padding(28)
 
@@ -416,7 +412,7 @@ struct ReaderTTSHeroView: View {
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(heroPrimaryTextColor)
 
-                Text("From documents to audio, instantly and beautifully.")
+                Text("From documents to audio - free, private, & offline")
                     .font(.headline)
                     .foregroundStyle(heroSecondaryTextColor)
                     .frame(maxWidth: 800, alignment: .leading)
@@ -462,10 +458,6 @@ struct ReaderTTSHeroView: View {
                 Text(ttsStatusMessage)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(heroSecondaryTextColor)
-
-                Text(activeModelMessage)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(heroSecondaryTextColor.opacity(0.95))
             }
             .padding(28)
         }
@@ -623,6 +615,9 @@ struct ReaderLibrarySectionView: View {
     let title: String
     let subtitle: String
     let entries: [LibraryEntry]
+    let visibleEntryCount: Int
+    let isLoadingMore: Bool
+    let onLoadMore: () async -> Void
     let categories: [ReaderCategory]
     let coverArtGenerationKeys: Set<String>
     let preferredMode: AppearanceMode
@@ -665,7 +660,7 @@ struct ReaderLibrarySectionView: View {
                 emptyStateCard
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 16)], spacing: 16) {
-                    ForEach(entries) { entry in
+                    ForEach(visibleEntries) { entry in
                         ReaderLibraryCardView(
                             entry: entry,
                             categories: categories,
@@ -701,9 +696,46 @@ struct ReaderLibrarySectionView: View {
                         )
                     }
                 }
+
+                if entries.count > visibleEntries.count {
+                    HStack {
+                        Spacer()
+
+                        Button {
+                            Task {
+                                await onLoadMore()
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if isLoadingMore {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Loading...")
+                                } else {
+                                    Text("Load More")
+                                }
+                            }
+                            .font(.headline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: 120)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .disabled(isLoadingMore)
+
+                        Spacer()
+                    }
+                    .padding(.top, 8)
+                }
             }
         } // Add space at the bottom
         .padding(.bottom, 40)
+    }
+
+    private var visibleEntries: [LibraryEntry] {
+        Array(entries.prefix(visibleEntryCount))
     }
 
     private var emptyStateCard: some View {

@@ -32,6 +32,10 @@ struct ContentView: View {
     @State private var recentSearchText = ""
     @State private var freeBooksSearchText = ""
     @State private var categorySearchTexts: [String: String] = [:]
+    @State private var visibleHomeEntryCount = 10
+    @State private var visibleRecentEntryCount = 10
+    @State private var isLoadingMoreHomeEntries = false
+    @State private var isLoadingMoreRecentEntries = false
     @State private var freeBookDownloadRequest: FreeBook?
     @State private var freeBookDownloadSuccess: FreeBookDownloadSuccess?
     @State private var isDownloadingFreeBook = false
@@ -499,11 +503,20 @@ struct ContentView: View {
             }
             await monitorBrowserInbox()
         }
+        .onChange(of: selection) { _, newValue in
+            switch newValue {
+            case .home:
+                visibleHomeEntryCount = 10
+            case .recent:
+                visibleRecentEntryCount = 10
+            case .freeBooks, .category(_):
+                break
+            }
+        }
         .onChange(of: kokoroModelStore.status) { _, _ in
             ttsCoordinator.refreshInstallationStatus()
             if case .installed(let providerID) = ttsCoordinator.availabilityStatus {
                 successToastMessage = "\(providerID.title) model downloaded and ready"
-                isShowingKokoroDownloadModal = false
             } else if case .failed(let message) = ttsCoordinator.availabilityStatus {
                 successToastMessage = "TTS model download failed: \(message)"
                 isShowingKokoroDownloadModal = true
@@ -513,7 +526,6 @@ struct ContentView: View {
             ttsCoordinator.refreshInstallationStatus()
             if case .installed(let providerID) = ttsCoordinator.availabilityStatus {
                 successToastMessage = "\(providerID.title) model downloaded and ready"
-                isShowingKokoroDownloadModal = false
             } else if case .failed(let message) = ttsCoordinator.availabilityStatus {
                 successToastMessage = "TTS model download failed: \(message)"
                 isShowingKokoroDownloadModal = true
@@ -708,6 +720,9 @@ struct ContentView: View {
                             title: "Library",
                             subtitle: "Everything you have imported or pasted",
                             entries: sortedByDateAdded,
+                            visibleEntryCount: visibleHomeEntryCount,
+                            isLoadingMore: isLoadingMoreHomeEntries,
+                            onLoadMore: loadMoreHomeEntries,
                             categories: categories,
                             coverArtGenerationKeys: coverArtGenerationKeys,
                             preferredMode: preferredMode,
@@ -739,6 +754,9 @@ struct ContentView: View {
                             title: "Recently Played",
                             subtitle: "Your last opened books and pasted text",
                             entries: sortedByRecentlyPlayed,
+                            visibleEntryCount: visibleRecentEntryCount,
+                            isLoadingMore: isLoadingMoreRecentEntries,
+                            onLoadMore: loadMoreRecentEntries,
                             categories: categories,
                             coverArtGenerationKeys: coverArtGenerationKeys,
                             preferredMode: preferredMode,
@@ -780,6 +798,9 @@ struct ContentView: View {
                             title: categoryName,
                             subtitle: "All books filed into this category",
                             entries: sortedByDateAdded,
+                            visibleEntryCount: sortedByDateAdded.count,
+                            isLoadingMore: false,
+                            onLoadMore: {},
                             categories: categories,
                             coverArtGenerationKeys: coverArtGenerationKeys,
                             preferredMode: preferredMode,
@@ -812,7 +833,7 @@ struct ContentView: View {
                 .padding(.bottom, 110)
             }
             .scrollContentBackground(.hidden)
-            .navigationTitle("Anything Reader - Offline Text to Speech PDF")
+            .navigationTitle("Anything Reader - Offline & Private Text to Speech")
             .navigationDestination(isPresented: isPresentingViewer) {
                 if let viewerEntry {
                     NormalizedTextViewerScreen(
@@ -852,6 +873,28 @@ struct ContentView: View {
 
             return matchesQuery && matchesSelection
         }
+    }
+
+    @MainActor
+    private func loadMoreHomeEntries() async {
+        guard !isLoadingMoreHomeEntries else { return }
+
+        isLoadingMoreHomeEntries = true
+        defer { isLoadingMoreHomeEntries = false }
+
+        await Task.yield()
+        visibleHomeEntryCount += 10
+    }
+
+    @MainActor
+    private func loadMoreRecentEntries() async {
+        guard !isLoadingMoreRecentEntries else { return }
+
+        isLoadingMoreRecentEntries = true
+        defer { isLoadingMoreRecentEntries = false }
+
+        await Task.yield()
+        visibleRecentEntryCount += 10
     }
 
     private var activeSearchTextBinding: Binding<String> {
