@@ -19,7 +19,6 @@ struct RSSFeedsView: View {
     @AppStorage("rssFeedSourceFilter") private var rssFeedSourceFilterRawValue: String = RSSFeedSourceFilter.all.rawValue
     @State private var feedURLString = ""
     @State private var isSavingFeed = false
-    @State private var isShowingSavedFeeds = false
     @State private var isShowingAddFeedSheet = false
     @State private var alertMessage: String?
     @State private var readAloudItemID: String?
@@ -49,14 +48,9 @@ struct RSSFeedsView: View {
                 didResetLargeUnreadBatch = false
             }
         }
-        .sheet(isPresented: $isShowingSavedFeeds) {
-            RSSSavedFeedsSheet(
-                refreshService: refreshService,
-                preferredMode: preferredMode
-            )
-        }
         .sheet(isPresented: $isShowingAddFeedSheet) {
             RSSAddFeedSheet(
+                refreshService: refreshService,
                 feedURLString: $feedURLString,
                 isSavingFeed: $isSavingFeed,
                 preferredMode: preferredMode,
@@ -135,11 +129,6 @@ struct RSSFeedsView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 220)
-
-                Button("View Saved Feeds") {
-                    isShowingSavedFeeds = true
-                }
-                .buttonStyle(.bordered)
             }
 
             feedSourceFilterSection
@@ -747,6 +736,7 @@ private enum RSSFeedDateDisplayFormatter {
 }
 
 struct RSSAddFeedSheet: View {
+    @ObservedObject var refreshService: RSSFeedRefreshService
     @Binding var feedURLString: String
     @Binding var isSavingFeed: Bool
     let preferredMode: AppearanceMode
@@ -754,6 +744,7 @@ struct RSSAddFeedSheet: View {
     let onClose: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var feedPendingDeletion: RSSFeedSubscription?
 
     var body: some View {
         NavigationStack {
@@ -797,121 +788,89 @@ struct RSSAddFeedSheet: View {
                     .disabled(feedURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSavingFeed)
                 }
 
-                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Saved Feeds")
+                        .font(.headline.weight(.semibold))
 
-                HStack {
-                    Spacer(minLength: 0)
-                    Button("Close") {
-                        onClose()
-                        dismiss()
+                    if refreshService.subscriptions.isEmpty {
+                        ContentUnavailableView(
+                            "No saved feeds",
+                            systemImage: "dot.radiowaves.left.and.right",
+                            description: Text("Save an RSS feed URL to see it listed here.")
+                        )
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 10) {
+                                ForEach(refreshService.subscriptions) { subscription in
+                                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(subscription.url?.host ?? subscription.urlString)
+                                                .font(.headline)
+
+                                            Text(subscription.urlString)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .textSelection(.enabled)
+                                        }
+
+                                        Spacer(minLength: 0)
+
+                                        Button(role: .destructive) {
+                                            feedPendingDeletion = subscription
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                        .buttonStyle(.borderless)
+                                    }
+                                    .padding(12)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .fill(Color.secondary.opacity(preferredMode == .light ? 0.08 : 0.14))
+                                    )
+                                }
+                            }
+                        }
+                        .frame(maxHeight: .infinity)
                     }
-                    .buttonStyle(.bordered)
                 }
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 4)
             .frame(minWidth: 560, minHeight: 300)
             .background(
                 ReaderStyle.accentColor(named: "emerald").opacity(preferredMode == .light ? 0.08 : 0.12)
             )
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
+                    Button("Close") {
                         onClose()
                         dismiss()
                     }
                 }
             }
-        }
-    }
-}
-
-struct RSSSavedFeedsSheet: View {
-    @ObservedObject var refreshService: RSSFeedRefreshService
-    let preferredMode: AppearanceMode
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var alertMessage: String?
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                List {
-                    if refreshService.subscriptions.isEmpty {
-                        ContentUnavailableView(
-                            "No saved feeds",
-                            systemImage: "dot.radiowaves.left.and.right",
-                            description: Text("Save an RSS feed URL in the main screen to see it here.")
-                        )
-                    } else {
-                        ForEach(refreshService.subscriptions) { subscription in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(subscription.url?.host ?? subscription.urlString)
-                                            .font(.headline)
-
-                                        Text(subscription.urlString)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .textSelection(.enabled)
-                                    }
-
-                                    Spacer(minLength: 0)
-
-                                    Button(role: .destructive) {
-                                        do {
-                                            try refreshService.deleteFeed(subscription)
-                                        } catch {
-                                            alertMessage = error.localizedDescription
-                                        }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                    .buttonStyle(.borderless)
-                                }
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                }
-                .navigationTitle("Saved Feeds")
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Done") {
-                            dismiss()
-                        }
-                    }
-                }
-
-                Divider()
-                    .padding(.horizontal, 20)
-                    .padding(.top, 6)
-
-                HStack {
-                    Spacer(minLength: 0)
-                    Button("Close") {
-                        dismiss()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(ReaderStyle.accentColor(named: "emerald"))
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-            }
-            .alert(
-                "RSS Feed",
+            .confirmationDialog(
+                "Delete Saved Feed",
                 isPresented: Binding(
-                    get: { alertMessage != nil },
-                    set: { if !$0 { alertMessage = nil } }
-                )
-            ) {
-                Button("OK", role: .cancel) {
-                    alertMessage = nil
+                    get: { feedPendingDeletion != nil },
+                    set: { if !$0 { feedPendingDeletion = nil } }
+                ),
+                presenting: feedPendingDeletion
+            ) { subscription in
+                Button("Delete Feed", role: .destructive) {
+                    do {
+                        try refreshService.deleteFeed(subscription)
+                    } catch {
+                        // Keep the sheet open; the save sheet already exposes the remaining feeds.
+                    }
                 }
-            } message: {
-                Text(alertMessage ?? "The feed could not be deleted.")
+
+                Button("Cancel", role: .cancel) {
+                    feedPendingDeletion = nil
+                }
+            } message: { subscription in
+                Text("Delete \(subscription.url?.host ?? subscription.urlString)? This removes the saved feed link from the database.")
             }
         }
-        .frame(minWidth: 520, minHeight: 420)
     }
 }
