@@ -194,6 +194,7 @@ struct ContentView: View {
                 ReaderSidebarView(
                     categories: categories,
                     selection: $selection,
+                    rssUnreadCount: rssFeedRefreshService.unreadFeedItemCount,
                     onAddCategory: { isShowingCategorySheet = true }
                 )
             } detail: {

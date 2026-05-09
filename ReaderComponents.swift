@@ -14,6 +14,7 @@ import SwiftUI
 struct ReaderSidebarView: View {
     let categories: [ReaderCategory]
     @Binding var selection: SidebarSelection
+    let rssUnreadCount: Int
     let onAddCategory: () -> Void
 
     var body: some View {
@@ -32,8 +33,14 @@ struct ReaderSidebarView: View {
                 Label("Audio Mixer", systemImage: "music.note.list")
                     .tag(SidebarSelection.audioMixer)
 
-                Label("RSS Feed", systemImage: "dot.radiowaves.left.and.right")
-                    .tag(SidebarSelection.rssFeeds)
+                if rssUnreadCount > 0 {
+                    Label("RSS Feed", systemImage: "dot.radiowaves.left.and.right")
+                        .badge(rssUnreadCount)
+                        .tag(SidebarSelection.rssFeeds)
+                } else {
+                    Label("RSS Feed", systemImage: "dot.radiowaves.left.and.right")
+                        .tag(SidebarSelection.rssFeeds)
+                }
             }
 
             // User-generated categories.

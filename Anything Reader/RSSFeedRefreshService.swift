@@ -45,6 +45,8 @@ final class RSSFeedRefreshService: ObservableObject {
     static let shared = RSSFeedRefreshService()
 
     private static let seededDefaultsKey = "rssFeedDefaultSubscriptionsSeeded"
+    private static let retentionThreshold = 5_000
+    private static let retentionKeepCount = 1_000
     private static let defaultSubscriptionURLs = [
         "https://techcrunch.com/rss",
         "https://openai.com/blog/rss.xml",
@@ -90,6 +92,64 @@ final class RSSFeedRefreshService: ObservableObject {
     func deleteFeed(_ subscription: RSSFeedSubscription) throws {
         try RSSFeedSQLiteStore.shared.deleteSubscription(id: subscription.id)
         reloadCachedData()
+    }
+
+    func markFeedItemsSeen(ids: [String]) throws {
+        try RSSFeedSQLiteStore.shared.markItemsSeen(ids: ids)
+
+        let seenIDs = Set(ids)
+        feedItems = feedItems.map { item in
+            guard seenIDs.contains(item.id), !item.hasSeen else {
+                return item
+            }
+
+            return RSSFeedItemRecord(
+                id: item.id,
+                subscriptionID: item.subscriptionID,
+                subscriptionURLString: item.subscriptionURLString,
+                feedTitle: item.feedTitle,
+                itemIdentifier: item.itemIdentifier,
+                title: item.title,
+                summary: item.summary,
+                linkURLString: item.linkURLString,
+                imageURLString: item.imageURLString,
+                publishedAt: item.publishedAt,
+                fetchedAt: item.fetchedAt,
+                hasSeen: true
+            )
+        }
+    }
+
+    func markAllFeedItemsSeen() throws {
+        try RSSFeedSQLiteStore.shared.markAllItemsSeen()
+        feedItems = feedItems.map { item in
+            guard !item.hasSeen else {
+                return item
+            }
+
+            return RSSFeedItemRecord(
+                id: item.id,
+                subscriptionID: item.subscriptionID,
+                subscriptionURLString: item.subscriptionURLString,
+                feedTitle: item.feedTitle,
+                itemIdentifier: item.itemIdentifier,
+                title: item.title,
+                summary: item.summary,
+                linkURLString: item.linkURLString,
+                imageURLString: item.imageURLString,
+                publishedAt: item.publishedAt,
+                fetchedAt: item.fetchedAt,
+                hasSeen: true
+            )
+        }
+    }
+
+    var unreadFeedItemCount: Int {
+        feedItems.reduce(into: 0) { result, item in
+            if !item.hasSeen {
+                result += 1
+            }
+        }
     }
 
     func refreshNow() async {
@@ -160,8 +220,21 @@ final class RSSFeedRefreshService: ObservableObject {
 
             feedItems = try RSSFeedSQLiteStore.shared.loadItems()
             lastRefreshAt = .now
+            await cleanupFeedItemsIfNeeded()
         } catch {
             NSLog("RSS refresh failed: %@", error.localizedDescription)
+        }
+    }
+
+    private func cleanupFeedItemsIfNeeded() async {
+        do {
+            let count = try RSSFeedSQLiteStore.shared.itemCount()
+            guard count > Self.retentionThreshold else { return }
+
+            try RSSFeedSQLiteStore.shared.pruneItemsKeepingLatest(Self.retentionKeepCount)
+            feedItems = try RSSFeedSQLiteStore.shared.loadItems()
+        } catch {
+            NSLog("RSS retention cleanup failed: %@", error.localizedDescription)
         }
     }
 
@@ -184,7 +257,8 @@ final class RSSFeedRefreshService: ObservableObject {
                     linkURLString: item.linkURLString,
                     imageURLString: item.imageURLString ?? parsed.feedImageURLString,
                     publishedAt: publishedAt,
-                    fetchedAt: fetchedAt
+                    fetchedAt: fetchedAt,
+                    hasSeen: false
                 )
             }
 

@@ -16,6 +16,7 @@ struct RSSFeedsView: View {
     let onReadAloud: (RSSFeedItemRecord) async throws -> Void
 
     @AppStorage("rssFeedDisplayStyle") private var rssFeedDisplayStyleRawValue: String = RSSFeedDisplayStyle.list.rawValue
+    @AppStorage("rssFeedSourceFilter") private var rssFeedSourceFilterRawValue: String = RSSFeedSourceFilter.all.rawValue
     @State private var feedURLString = ""
     @State private var isSavingFeed = false
     @State private var isShowingSavedFeeds = false
@@ -24,6 +25,7 @@ struct RSSFeedsView: View {
     @State private var readAloudItemID: String?
     @State private var visibleFeedItemCount = 50
     @State private var isLoadingMoreFeedItems = false
+    @State private var didResetLargeUnreadBatch = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -37,6 +39,15 @@ struct RSSFeedsView: View {
         .onChange(of: searchText) { _, _ in
             visibleFeedItemCount = 50
             isLoadingMoreFeedItems = false
+        }
+        .onChange(of: rssFeedSourceFilter) { _, _ in
+            visibleFeedItemCount = 50
+            isLoadingMoreFeedItems = false
+        }
+        .onChange(of: refreshService.unreadFeedItemCount) { _, newValue in
+            if newValue <= 300 {
+                didResetLargeUnreadBatch = false
+            }
         }
         .sheet(isPresented: $isShowingSavedFeeds) {
             RSSSavedFeedsSheet(
@@ -131,6 +142,8 @@ struct RSSFeedsView: View {
                 .buttonStyle(.bordered)
             }
 
+            feedSourceFilterSection
+
             if cards.isEmpty {
                 emptyStateView
             } else {
@@ -146,6 +159,7 @@ struct RSSFeedsView: View {
                             RSSFeedItemCardView(
                                 card: card,
                                 preferredMode: preferredMode,
+                                hasSeen: card.hasSeen,
                                 isReadAloudLoading: readAloudItemID == card.id,
                                 onOpenArticle: { openArticle(card) },
                                 onReadAloud: { readAloud(card) }
@@ -163,6 +177,7 @@ struct RSSFeedsView: View {
                             RSSFeedItemListRowView(
                                 card: card,
                                 preferredMode: preferredMode,
+                                hasSeen: card.hasSeen,
                                 isReadAloudLoading: readAloudItemID == card.id,
                                 onOpenArticle: { openArticle(card) },
                                 onReadAloud: { readAloud(card) }
@@ -188,6 +203,12 @@ struct RSSFeedsView: View {
                 }
             }
         }
+        .task(id: visibleFeedItemIdentityKey) {
+            await markVisibleFeedItemsSeen(after: 1.5, ids: cards.map(\.id))
+        }
+        .task(id: refreshService.unreadFeedItemCount) {
+            await resetUnreadFeedItemsIfNeeded()
+        }
     }
 
     private var emptyStateView: some View {
@@ -204,20 +225,37 @@ struct RSSFeedsView: View {
 
     private var filteredCards: [RSSFeedItemRecord] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !query.isEmpty else {
-            return refreshService.feedItems
-        }
+        let sourceFilter = rssFeedSourceFilter
 
         return refreshService.feedItems.filter { item in
-            item.title.lowercased().contains(query)
-                || item.summary.lowercased().contains(query)
-                || item.feedTitle.lowercased().contains(query)
-                || item.linkURLString.lowercased().contains(query)
+            let matchesSearch: Bool
+            if query.isEmpty {
+                matchesSearch = true
+            } else {
+                matchesSearch = item.title.lowercased().contains(query)
+                    || item.summary.lowercased().contains(query)
+                    || item.feedTitle.lowercased().contains(query)
+                    || item.linkURLString.lowercased().contains(query)
+            }
+
+            let matchesSourceFilter: Bool
+            switch sourceFilter {
+            case .all:
+                matchesSourceFilter = true
+            case .feedTitle(let feedTitle):
+                matchesSourceFilter = item.feedTitle == feedTitle
+            }
+
+            return matchesSearch && matchesSourceFilter
         }
     }
 
     private var visibleCards: [RSSFeedItemRecord] {
         Array(filteredCards.prefix(visibleFeedItemCount))
+    }
+
+    private var visibleFeedItemIdentityKey: String {
+        visibleCards.map(\.id).joined(separator: "|")
     }
 
     private var canLoadMoreFeedItems: Bool {
@@ -238,6 +276,110 @@ struct RSSFeedsView: View {
             get: { rssFeedDisplayStyle },
             set: { rssFeedDisplayStyle = $0 }
         )
+    }
+
+    private var rssFeedSourceFilter: RSSFeedSourceFilter {
+        get {
+            RSSFeedSourceFilter(rawValue: rssFeedSourceFilterRawValue) ?? .all
+        }
+        nonmutating set {
+            rssFeedSourceFilterRawValue = newValue.rawValue
+        }
+    }
+
+    private var rssFeedSourceFilterBinding: Binding<RSSFeedSourceFilter> {
+        Binding(
+            get: { rssFeedSourceFilter },
+            set: { rssFeedSourceFilter = $0 }
+        )
+    }
+
+    private var availableFeedTitleFilters: [String] {
+        let titles = Set(refreshService.feedItems.map(\.feedTitle))
+        return titles.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var feedSourceFilterSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Feed Filters")
+                .font(.headline.weight(.semibold))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    filterButton(
+                        title: "All Feeds",
+                        isSelected: rssFeedSourceFilter == .all
+                    ) {
+                        rssFeedSourceFilter = .all
+                    }
+
+                    ForEach(availableFeedTitleFilters, id: \.self) { title in
+                        filterButton(
+                            title: title,
+                            isSelected: rssFeedSourceFilter == .feedTitle(title)
+                        ) {
+                            rssFeedSourceFilter = .feedTitle(title)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @MainActor
+    private func markVisibleFeedItemsSeen(after delay: TimeInterval, ids: [String]) async {
+        guard !ids.isEmpty else { return }
+
+        do {
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            try refreshService.markFeedItemsSeen(ids: ids)
+        } catch {
+            if !(error is CancellationError) {
+                NSLog("RSS seen-state update failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    private func filterButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? Color.white : .primary)
+        .background(
+            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                .fill(
+                    isSelected
+                    ? ReaderStyle.accentColor(named: "emerald")
+                    : Color.secondary.opacity(preferredMode == .light ? 0.12 : 0.18)
+                )
+        )
+    }
+
+    @MainActor
+    private func resetUnreadFeedItemsIfNeeded() async {
+        guard refreshService.unreadFeedItemCount > 300 else { return }
+        guard !didResetLargeUnreadBatch else { return }
+
+        didResetLargeUnreadBatch = true
+
+        do {
+            try await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            guard refreshService.unreadFeedItemCount > 300 else { return }
+            try refreshService.markAllFeedItemsSeen()
+        } catch {
+            if !(error is CancellationError) {
+                NSLog("RSS bulk seen reset failed: %@", error.localizedDescription)
+            }
+        }
     }
 
     @MainActor
@@ -303,6 +445,7 @@ struct RSSFeedsView: View {
 struct RSSFeedItemCardView: View {
     let card: RSSFeedItemRecord
     let preferredMode: AppearanceMode
+    let hasSeen: Bool
     let isReadAloudLoading: Bool
     let onOpenArticle: () -> Void
     let onReadAloud: () -> Void
@@ -310,9 +453,18 @@ struct RSSFeedItemCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(card.title)
-                    .font(.title)
-                    .lineLimit(3)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(card.title)
+                        .font(.title)
+                        .lineLimit(3)
+
+                    if !hasSeen {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel("Unread")
+                    }
+                }
 
                 Text(card.summary.isEmpty ? "No description provided." : card.summary)
                     .font(.body)
@@ -368,7 +520,11 @@ struct RSSFeedItemCardView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(hasSeen ? Color.clear : Color.orange.opacity(0.55), lineWidth: 1.5)
+        )
     }
 
     private var placeholderImage: some View {
@@ -386,11 +542,22 @@ struct RSSFeedItemCardView: View {
     private var hasOpenableArticleURL: Bool {
         card.linkURL != nil || URL(string: card.linkURLString) != nil
     }
+
+    private var cardBackground: AnyShapeStyle {
+        if hasSeen {
+            return AnyShapeStyle(.thinMaterial)
+        }
+
+        return preferredMode == .light
+            ? AnyShapeStyle(Color.orange.opacity(0.08))
+            : AnyShapeStyle(Color.orange.opacity(0.14))
+    }
 }
 
 struct RSSFeedItemListRowView: View {
     let card: RSSFeedItemRecord
     let preferredMode: AppearanceMode
+    let hasSeen: Bool
     let isReadAloudLoading: Bool
     let onOpenArticle: () -> Void
     let onReadAloud: () -> Void
@@ -401,9 +568,18 @@ struct RSSFeedItemListRowView: View {
                 .frame(width: 110, height: 110)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text(card.title)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(2)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(card.title)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(2)
+
+                    if !hasSeen {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel("Unread")
+                    }
+                }
 
                 Text(card.summary.isEmpty ? "No description provided." : card.summary)
                     .font(.subheadline)
@@ -460,7 +636,11 @@ struct RSSFeedItemListRowView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(hasSeen ? Color.clear : Color.orange.opacity(0.55), lineWidth: 1.5)
+        )
     }
 
     private var placeholderImage: some View {
@@ -477,6 +657,16 @@ struct RSSFeedItemListRowView: View {
     private var hasOpenableArticleURL: Bool {
         card.linkURL != nil || URL(string: card.linkURLString) != nil
     }
+
+    private var rowBackground: AnyShapeStyle {
+        if hasSeen {
+            return AnyShapeStyle(.thinMaterial)
+        }
+
+        return preferredMode == .light
+            ? AnyShapeStyle(Color.orange.opacity(0.08))
+            : AnyShapeStyle(Color.orange.opacity(0.14))
+    }
 }
 
 private enum RSSFeedDisplayStyle: String, CaseIterable, Identifiable {
@@ -484,6 +674,35 @@ private enum RSSFeedDisplayStyle: String, CaseIterable, Identifiable {
     case card
 
     var id: String { rawValue }
+}
+
+private enum RSSFeedSourceFilter: Hashable {
+    case all
+    case feedTitle(String)
+
+    static let allRawValue = "all"
+
+    var rawValue: String {
+        switch self {
+        case .all:
+            return Self.allRawValue
+        case .feedTitle(let title):
+            return title
+        }
+    }
+
+    init?(rawValue: String) {
+        guard rawValue != Self.allRawValue else {
+            self = .all
+            return
+        }
+
+        guard !rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        self = .feedTitle(rawValue)
+    }
 }
 
 private enum RSSFeedDateDisplayFormatter {

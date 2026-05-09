@@ -31,6 +31,7 @@ struct RSSFeedItemRecord: Identifiable, Hashable, Sendable {
     let imageURLString: String?
     let publishedAt: Date?
     let fetchedAt: Date
+    let hasSeen: Bool
 
     var linkURL: URL? {
         URL(string: linkURLString)
@@ -136,6 +137,14 @@ final class RSSFeedSQLiteStore {
         return try fetchItems(in: database)
     }
 
+    func itemCount() throws -> Int {
+        let database = try openDatabase()
+        defer { sqlite3_close(database) }
+
+        try ensureSchema(in: database)
+        return try fetchItemCount(in: database)
+    }
+
     func replaceItems(
         for subscription: RSSFeedSubscription,
         feedTitle: String,
@@ -145,12 +154,14 @@ final class RSSFeedSQLiteStore {
         defer { sqlite3_close(database) }
 
         try ensureSchema(in: database)
+        let existingSeenStates = try fetchSeenStates(for: subscription.id, in: database)
         try execute(sql: "DELETE FROM \(itemsTableName) WHERE subscription_id = ?;", bind: { statement in
             bindText(subscription.id, to: statement, index: 1)
         }, in: database)
 
         for item in items {
-            try insert(item, in: database, feedTitle: feedTitle, subscription: subscription)
+            let hasSeen = existingSeenStates[item.itemIdentifier] ?? item.hasSeen
+            try insert(item, in: database, feedTitle: feedTitle, subscription: subscription, hasSeen: hasSeen)
         }
 
         try execute(sql: "UPDATE \(tableName) SET last_fetched_at = ? WHERE id = ?;", bind: { statement in
@@ -168,6 +179,58 @@ final class RSSFeedSQLiteStore {
             bindText(dateFormatter.string(from: date), to: statement, index: 1)
             bindText(subscriptionID, to: statement, index: 2)
         }, in: database)
+    }
+
+    func markItemsSeen(ids: [String]) throws {
+        let uniqueIDs = Array(Set(ids)).sorted()
+        guard !uniqueIDs.isEmpty else { return }
+
+        let database = try openDatabase()
+        defer { sqlite3_close(database) }
+
+        try ensureSchema(in: database)
+
+        let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ", ")
+        let sql = "UPDATE \(itemsTableName) SET has_seen = 1 WHERE id IN (\(placeholders));"
+
+        try execute(sql: sql, bind: { statement in
+            for (index, id) in uniqueIDs.enumerated() {
+                bindText(id, to: statement, index: Int32(index + 1))
+            }
+        }, in: database)
+    }
+
+    func markAllItemsSeen() throws {
+        let database = try openDatabase()
+        defer { sqlite3_close(database) }
+
+        try ensureSchema(in: database)
+        try execute(sql: "UPDATE \(itemsTableName) SET has_seen = 1 WHERE has_seen = 0;", in: database)
+    }
+
+    func pruneItemsKeepingLatest(_ keepCount: Int) throws {
+        guard keepCount > 0 else { return }
+
+        let database = try openDatabase()
+        defer { sqlite3_close(database) }
+
+        try ensureSchema(in: database)
+
+        let totalCount = try fetchItemCount(in: database)
+        guard totalCount > keepCount else { return }
+
+        try execute(
+            sql: """
+            DELETE FROM \(itemsTableName)
+            WHERE id IN (
+                SELECT id
+                FROM \(itemsTableName)
+                ORDER BY published_at DESC, fetched_at DESC
+                LIMIT -1 OFFSET \(keepCount)
+            );
+            """,
+            in: database
+        )
     }
 
     private func fetchSubscriptions(in database: OpaquePointer) throws -> [RSSFeedSubscription] {
@@ -300,6 +363,31 @@ final class RSSFeedSQLiteStore {
 
         try execute(sql: subscriptionSQL, in: database)
         try execute(sql: itemsSQL, in: database)
+        try ensureHasSeenColumn(in: database)
+        try ensureIndexes(in: database)
+    }
+
+    private func ensureHasSeenColumn(in database: OpaquePointer) throws {
+        guard try !columnExists("has_seen", in: itemsTableName, database: database) else {
+            return
+        }
+
+        try execute(sql: "ALTER TABLE \(itemsTableName) ADD COLUMN has_seen INTEGER NOT NULL DEFAULT 0;", in: database)
+    }
+
+    private func ensureIndexes(in database: OpaquePointer) throws {
+        try execute(
+            sql: "CREATE INDEX IF NOT EXISTS idx_\(itemsTableName)_has_seen ON \(itemsTableName) (has_seen);",
+            in: database
+        )
+        try execute(
+            sql: "CREATE INDEX IF NOT EXISTS idx_\(itemsTableName)_published_at ON \(itemsTableName) (published_at DESC);",
+            in: database
+        )
+        try execute(
+            sql: "CREATE INDEX IF NOT EXISTS idx_\(itemsTableName)_feed_title ON \(itemsTableName) (feed_title);",
+            in: database
+        )
     }
 
     private func execute(sql: String, in database: OpaquePointer) throws {
@@ -396,9 +484,71 @@ final class RSSFeedSQLiteStore {
         return dateFormatter.date(from: text)
     }
 
+    private func boolValue(_ statement: OpaquePointer, index: Int32) -> Bool {
+        sqlite3_column_int(statement, index) != 0
+    }
+
+    private func columnExists(_ columnName: String, in tableName: String, database: OpaquePointer) throws -> Bool {
+        let sql = "PRAGMA table_info(\(tableName));"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw RSSFeedSQLiteStoreError.statementPreparationFailed
+        }
+        defer { sqlite3_finalize(statement) }
+
+        while true {
+            let stepResult = sqlite3_step(statement)
+            if stepResult == SQLITE_DONE {
+                break
+            }
+            guard stepResult == SQLITE_ROW else {
+                throw RSSFeedSQLiteStoreError.statementStepFailed
+            }
+
+            guard let name = stringValue(statement, index: 1) else { continue }
+            if name == columnName {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func fetchSeenStates(for subscriptionID: String, in database: OpaquePointer) throws -> [String: Bool] {
+        let sql = """
+        SELECT item_identifier, has_seen
+        FROM \(itemsTableName)
+        WHERE subscription_id = ?;
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw RSSFeedSQLiteStoreError.statementPreparationFailed
+        }
+        defer { sqlite3_finalize(statement) }
+
+        bindText(subscriptionID, to: statement, index: 1)
+
+        var states: [String: Bool] = [:]
+        while true {
+            let stepResult = sqlite3_step(statement)
+            if stepResult == SQLITE_DONE {
+                break
+            }
+            guard stepResult == SQLITE_ROW else {
+                throw RSSFeedSQLiteStoreError.statementStepFailed
+            }
+
+            guard let identifier = stringValue(statement, index: 0) else { continue }
+            states[identifier] = boolValue(statement, index: 1)
+        }
+
+        return states
+    }
+
     private func fetchItems(in database: OpaquePointer) throws -> [RSSFeedItemRecord] {
         let sql = """
-        SELECT id, subscription_id, subscription_url_string, feed_title, item_identifier, title, summary, link_url_string, image_url_string, published_at, fetched_at
+        SELECT id, subscription_id, subscription_url_string, feed_title, item_identifier, title, summary, link_url_string, image_url_string, published_at, fetched_at, has_seen
         FROM \(itemsTableName)
         ORDER BY published_at DESC, fetched_at DESC;
         """
@@ -445,7 +595,8 @@ final class RSSFeedSQLiteStore {
                     linkURLString: linkURLString,
                     imageURLString: stringValue(statement, index: 8),
                     publishedAt: dateValue(statement, index: 9),
-                    fetchedAt: fetchedAt
+                    fetchedAt: fetchedAt,
+                    hasSeen: boolValue(statement, index: 11)
                 )
             )
         }
@@ -453,10 +604,31 @@ final class RSSFeedSQLiteStore {
         return records
     }
 
-    private func insert(_ item: RSSFeedItemRecord, in database: OpaquePointer, feedTitle: String, subscription: RSSFeedSubscription) throws {
+    private func fetchItemCount(in database: OpaquePointer) throws -> Int {
+        let sql = "SELECT COUNT(*) FROM \(itemsTableName);"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw RSSFeedSQLiteStoreError.statementPreparationFailed
+        }
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw RSSFeedSQLiteStoreError.statementStepFailed
+        }
+
+        return Int(sqlite3_column_int64(statement, 0))
+    }
+
+    private func insert(
+        _ item: RSSFeedItemRecord,
+        in database: OpaquePointer,
+        feedTitle: String,
+        subscription: RSSFeedSubscription,
+        hasSeen: Bool
+    ) throws {
         let sql = """
-        INSERT INTO \(itemsTableName) (id, subscription_id, subscription_url_string, feed_title, item_identifier, title, summary, link_url_string, image_url_string, published_at, fetched_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT INTO \(itemsTableName) (id, subscription_id, subscription_url_string, feed_title, item_identifier, title, summary, link_url_string, image_url_string, published_at, fetched_at, has_seen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
 
         var statement: OpaquePointer?
@@ -485,6 +657,7 @@ final class RSSFeedSQLiteStore {
             sqlite3_bind_null(statement, 10)
         }
         bindText(dateFormatter.string(from: item.fetchedAt), to: statement, index: 11)
+        sqlite3_bind_int(statement, 12, hasSeen ? 1 : 0)
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw RSSFeedSQLiteStoreError.statementStepFailed
