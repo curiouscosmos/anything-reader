@@ -19,6 +19,7 @@ struct RSSFeedsView: View {
     @State private var feedURLString = ""
     @State private var isSavingFeed = false
     @State private var isShowingSavedFeeds = false
+    @State private var isShowingAddFeedSheet = false
     @State private var alertMessage: String?
     @State private var readAloudItemID: String?
     @State private var visibleFeedItemCount = 50
@@ -27,7 +28,6 @@ struct RSSFeedsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             headerSection
-            addFeedSection
             feedCardsSection
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -42,6 +42,17 @@ struct RSSFeedsView: View {
             RSSSavedFeedsSheet(
                 refreshService: refreshService,
                 preferredMode: preferredMode
+            )
+        }
+        .sheet(isPresented: $isShowingAddFeedSheet) {
+            RSSAddFeedSheet(
+                feedURLString: $feedURLString,
+                isSavingFeed: $isSavingFeed,
+                preferredMode: preferredMode,
+                onSave: saveFeed,
+                onClose: {
+                    isShowingAddFeedSheet = false
+                }
             )
         }
         .alert(
@@ -60,9 +71,19 @@ struct RSSFeedsView: View {
     }
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("RSS Feed")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("RSS Feed")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+
+                Spacer(minLength: 0)
+
+                Button("Add Feed Link") {
+                    isShowingAddFeedSheet = true
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(ReaderStyle.accentColor(named: "emerald"))
+            }
 
             Text("Save RSS feed URLs, refresh them while the app is open, and browse the latest items as cards.")
                 .font(.headline)
@@ -76,59 +97,6 @@ struct RSSFeedsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var addFeedSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Add Feed")
-                    .font(.title2.weight(.bold))
-
-                Spacer(minLength: 0)
-
-                Button("View Saved Feeds") {
-                    isShowingSavedFeeds = true
-                }
-                .buttonStyle(.bordered)
-            }
-
-            HStack(spacing: 12) {
-                TextField("https://example.com/feed.xml", text: $feedURLString)
-                    .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
-                    .onSubmit(saveFeed)
-
-                Button(action: saveFeed) {
-                    if isSavingFeed {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Saving...")
-                        }
-                    } else {
-                        Text("Save Feed")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(ReaderStyle.accentColor(named: "emerald"))
-                .disabled(feedURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSavingFeed)
-            }
-
-            if refreshService.isRefreshing {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Fetching feed updates...")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding(20)
-        .background(
-            ReaderStyle.accentColor(named: "emerald").opacity(preferredMode == .light ? 0.10 : 0.14),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
     }
 
     private var feedCardsSection: some View {
@@ -156,6 +124,11 @@ struct RSSFeedsView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 220)
+
+                Button("View Saved Feeds") {
+                    isShowingSavedFeeds = true
+                }
+                .buttonStyle(.bordered)
             }
 
             if cards.isEmpty {
@@ -514,15 +487,104 @@ private enum RSSFeedDisplayStyle: String, CaseIterable, Identifiable {
 }
 
 private enum RSSFeedDateDisplayFormatter {
-    private static let formatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "h:mma, MMM d"
-        return formatter
-    }()
-
     static func string(from date: Date) -> String {
-        formatter.string(from: date)
+        let seconds = max(0, Int(Date().timeIntervalSince(date)))
+
+        if seconds < 60 {
+            return "\(seconds) sec ago"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "\(minutes) min\(minutes == 1 ? "" : "s") ago"
+        }
+
+        let hours = minutes / 60
+        if hours < 24 {
+            return "\(hours) hour\(hours == 1 ? "" : "s") ago"
+        }
+
+        let days = hours / 24
+        return "\(days) day\(days == 1 ? "" : "s") ago"
+    }
+}
+
+struct RSSAddFeedSheet: View {
+    @Binding var feedURLString: String
+    @Binding var isSavingFeed: Bool
+    let preferredMode: AppearanceMode
+    let onSave: () -> Void
+    let onClose: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Add Feed Link")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+
+                Text("Paste an RSS feed URL below. The app will save it in the database and begin fetching items while the app is open.")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("https://example.com/feed.xml", text: $feedURLString)
+                        .textFieldStyle(.roundedBorder)
+                        .disableAutocorrection(true)
+                        .onSubmit(onSave)
+
+                    if isSavingFeed {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Saving feed...")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Button(action: onSave) {
+                        if isSavingFeed {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Saving...")
+                            }
+                        } else {
+                            Text("Save Feed")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(ReaderStyle.accentColor(named: "emerald"))
+                    .disabled(feedURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSavingFeed)
+                }
+
+                Spacer(minLength: 0)
+
+                HStack {
+                    Spacer(minLength: 0)
+                    Button("Close") {
+                        onClose()
+                        dismiss()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(24)
+            .frame(minWidth: 560, minHeight: 300)
+            .background(
+                ReaderStyle.accentColor(named: "emerald").opacity(preferredMode == .light ? 0.08 : 0.12)
+            )
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onClose()
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
