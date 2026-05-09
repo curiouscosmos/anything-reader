@@ -163,7 +163,7 @@ final class RSSFeedRefreshService: ObservableObject {
 
         while !Task.isCancelled {
             do {
-                try await Task.sleep(nanoseconds: 3_600_000_000_000)
+                try await Task.sleep(nanoseconds: 1_800_000_000_000)
             } catch {
                 break
             }

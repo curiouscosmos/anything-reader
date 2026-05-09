@@ -242,6 +242,8 @@ struct RSSFeedsView: View {
             switch sourceFilter {
             case .all:
                 matchesSourceFilter = true
+            case .unread:
+                matchesSourceFilter = !item.hasSeen
             case .feedTitle(let feedTitle):
                 matchesSourceFilter = item.feedTitle == feedTitle
             }
@@ -306,6 +308,13 @@ struct RSSFeedsView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
+                    filterButton(
+                        title: "Unread Feeds",
+                        isSelected: rssFeedSourceFilter == .unread
+                    ) {
+                        rssFeedSourceFilter = .unread
+                    }
+
                     filterButton(
                         title: "All Feeds",
                         isSelected: rssFeedSourceFilter == .all
@@ -678,14 +687,18 @@ private enum RSSFeedDisplayStyle: String, CaseIterable, Identifiable {
 
 private enum RSSFeedSourceFilter: Hashable {
     case all
+    case unread
     case feedTitle(String)
 
     static let allRawValue = "all"
+    static let unreadRawValue = "unread"
 
     var rawValue: String {
         switch self {
         case .all:
             return Self.allRawValue
+        case .unread:
+            return Self.unreadRawValue
         case .feedTitle(let title):
             return title
         }
@@ -694,6 +707,11 @@ private enum RSSFeedSourceFilter: Hashable {
     init?(rawValue: String) {
         guard rawValue != Self.allRawValue else {
             self = .all
+            return
+        }
+
+        guard rawValue != Self.unreadRawValue else {
+            self = .unread
             return
         }
 
