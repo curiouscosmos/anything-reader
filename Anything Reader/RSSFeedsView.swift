@@ -20,6 +20,8 @@ struct RSSFeedsView: View {
     @State private var isShowingSavedFeeds = false
     @State private var alertMessage: String?
     @State private var readAloudItemID: String?
+    @State private var visibleFeedItemCount = 50
+    @State private var isLoadingMoreFeedItems = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -30,6 +32,10 @@ struct RSSFeedsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .task {
             refreshService.startIfNeeded()
+        }
+        .onChange(of: searchText) { _, _ in
+            visibleFeedItemCount = 50
+            isLoadingMoreFeedItems = false
         }
         .sheet(isPresented: $isShowingSavedFeeds) {
             RSSSavedFeedsSheet(
@@ -125,7 +131,8 @@ struct RSSFeedsView: View {
     }
 
     private var feedCardsSection: some View {
-        let cards = filteredCards
+        let cards = visibleCards
+        let totalCount = filteredCards.count
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
@@ -133,7 +140,7 @@ struct RSSFeedsView: View {
                     Text("Feed Content")
                         .font(.title2.weight(.bold))
 
-                    Text("\(cards.count) item\(cards.count == 1 ? "" : "s")")
+                    Text("\(cards.count) of \(totalCount) item\(totalCount == 1 ? "" : "s")")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -159,7 +166,23 @@ struct RSSFeedsView: View {
                             onOpenArticle: { openArticle(card) },
                             onReadAloud: { readAloud(card) }
                         )
+                        .onAppear {
+                            if card.id == cards.last?.id {
+                                loadMoreFeedItemsIfNeeded()
+                            }
+                        }
                     }
+                }
+
+                if canLoadMoreFeedItems || isLoadingMoreFeedItems {
+                    HStack {
+                        Spacer(minLength: 0)
+                        ProgressView()
+                            .controlSize(.small)
+                            .opacity(isLoadingMoreFeedItems ? 1 : 0.7)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 8)
                 }
             }
         }
@@ -189,6 +212,24 @@ struct RSSFeedsView: View {
                 || item.feedTitle.lowercased().contains(query)
                 || item.linkURLString.lowercased().contains(query)
         }
+    }
+
+    private var visibleCards: [RSSFeedItemRecord] {
+        Array(filteredCards.prefix(visibleFeedItemCount))
+    }
+
+    private var canLoadMoreFeedItems: Bool {
+        visibleFeedItemCount < filteredCards.count
+    }
+
+    @MainActor
+    private func loadMoreFeedItemsIfNeeded() {
+        guard !isLoadingMoreFeedItems else { return }
+        guard canLoadMoreFeedItems else { return }
+
+        isLoadingMoreFeedItems = true
+        visibleFeedItemCount = min(visibleFeedItemCount + 50, filteredCards.count)
+        isLoadingMoreFeedItems = false
     }
 
     @MainActor
