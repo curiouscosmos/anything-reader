@@ -6,6 +6,7 @@ nonisolated struct BrowserNativeMessage: Codable, Identifiable, Hashable, Sendab
     let text: String
     let pageURL: String?
     let site: String?
+    let summarize: Bool?
     let receivedAt: Date
 }
 
@@ -79,21 +80,11 @@ actor BrowserNativeMessagingService {
         let source = Self.embeddedHostSource
         let fileManager = FileManager.default
 
-        var shouldCompile = true
-        if fileManager.fileExists(atPath: sourceURL.path),
-           let existingSource = try? String(contentsOf: sourceURL, encoding: .utf8),
-           existingSource == source,
-           fileManager.isExecutableFile(atPath: executableURL.path) {
-            shouldCompile = false
-        }
+        let sourceDirectoryURL = sourceURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: sourceDirectoryURL, withIntermediateDirectories: true)
 
-        if shouldCompile {
-            let sourceDirectoryURL = sourceURL.deletingLastPathComponent()
-            try fileManager.createDirectory(at: sourceDirectoryURL, withIntermediateDirectories: true)
-
-            try source.write(to: sourceURL, atomically: true, encoding: .utf8)
-            try compileHost(from: sourceURL, to: executableURL)
-        }
+        try source.write(to: sourceURL, atomically: true, encoding: .utf8)
+        try compileHost(from: sourceURL, to: executableURL)
 
         return executableURL
     }
@@ -285,6 +276,7 @@ struct BrowserNativeMessage: Codable {
     let text: String
     let pageURL: String?
     let site: String?
+    let summarize: Bool?
     let receivedAt: Date
 }
 
@@ -326,7 +318,7 @@ enum AnythingReaderHost {
     private static func decodeMessage(from data: Data) throws -> BrowserNativeMessage {
         let jsonObject = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
 
-        let text = firstStringValue(
+        let text = preferredTextValue(
             for: ["text", "content", "body", "pageText", "selection"],
             in: jsonObject
         )
@@ -349,6 +341,10 @@ enum AnythingReaderHost {
             for: ["pageURL", "pageUrl", "url", "sourceURL", "sourceUrl", "href"],
             in: jsonObject
         )
+        let summarize = firstBoolValue(
+            for: ["summarize", "shouldSummarize"],
+            in: jsonObject
+        )
 
         return BrowserNativeMessage(
             id: UUID().uuidString,
@@ -368,6 +364,7 @@ enum AnythingReaderHost {
                 )?.trimmingCharacters(in: .whitespacesAndNewlines)
                 return (trimmedSite?.isEmpty == false) ? trimmedSite : nil
             }(),
+            summarize: summarize,
             receivedAt: Date()
         )
     }
@@ -481,6 +478,74 @@ enum AnythingReaderHost {
         if let array = jsonObject as? [Any] {
             for value in array {
                 if let nested = firstStringValue(for: keys, in: value) {
+                    return nested
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func preferredTextValue(for keys: [String], in jsonObject: Any) -> String? {
+        var candidates: [String] = []
+        collectTextCandidates(for: keys, in: jsonObject, into: &candidates)
+
+        return candidates
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { !isPlaceholderText($0) }
+            .max { lhs, rhs in lhs.count < rhs.count }
+    }
+
+    private static func collectTextCandidates(for keys: [String], in jsonObject: Any, into candidates: inout [String]) {
+        if let string = jsonObject as? String {
+            candidates.append(string)
+            return
+        }
+
+        if let dictionary = jsonObject as? [String: Any] {
+            for key in keys {
+                if let value = dictionary[key] {
+                    collectTextCandidates(for: keys, in: value, into: &candidates)
+                }
+            }
+
+            for value in dictionary.values {
+                collectTextCandidates(for: keys, in: value, into: &candidates)
+            }
+            return
+        }
+
+        if let array = jsonObject as? [Any] {
+            for value in array {
+                collectTextCandidates(for: keys, in: value, into: &candidates)
+            }
+        }
+    }
+
+    private static func isPlaceholderText(_ text: String) -> Bool {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "anything-reader:page-text"
+    }
+
+    private static func firstBoolValue(for keys: [String], in jsonObject: Any) -> Bool? {
+        if let dictionary = jsonObject as? [String: Any] {
+            for key in keys {
+                if let value = dictionary[key] as? Bool {
+                    return value
+                }
+            }
+
+            for value in dictionary.values {
+                if let nested = firstBoolValue(for: keys, in: value) {
+                    return nested
+                }
+            }
+        }
+
+        if let array = jsonObject as? [Any] {
+            for value in array {
+                if let nested = firstBoolValue(for: keys, in: value) {
                     return nested
                 }
             }

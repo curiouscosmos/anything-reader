@@ -2035,6 +2035,44 @@ struct ReaderPlaybackLoadingOverlayView: View {
     }
 }
 
+// Centered loader shown while an import is being summarized or normalized.
+struct ReaderImportLoadingOverlayView: View {
+    let message: String
+    let subtitle: String
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.32)
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.extraLarge)
+
+                Text(message)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+
+                Button("Cancel", role: .cancel, action: onCancel)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .padding(.top, 6)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.20), radius: 16, y: 6)
+        }
+    }
+}
+
 // MARK: - Toast
 // Lightweight success banner displayed when a file is ready.
 struct ReaderToastView: View {

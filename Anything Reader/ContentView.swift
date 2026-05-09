@@ -94,6 +94,7 @@ struct ContentView: View {
     @State private var audioGenerationTask: Task<Void, Never>?
     @State private var audioGenerationPrewarmTask: Task<Void, Never>?
     @State private var summaryGenerationTask: Task<Void, Never>?
+    @State private var pendingImportTask: Task<Void, Never>?
     @State private var playbackChunks: [String] = []
     @State private var playbackChunkIndex: Int = 0
     @State private var playbackSessionToken = UUID()
@@ -179,6 +180,7 @@ struct ContentView: View {
         let fileExtension: String
         let sourceKind: ReaderSourceKind
         let shouldAutoPlay: Bool
+        let shouldSummarize: Bool
         let importCategoryName: String?
         var createdFileURLs: [URL]
     }
@@ -375,7 +377,13 @@ struct ContentView: View {
         .preferredColorScheme(preferredMode.colorScheme)
         .tint(.green)
         .overlay {
-            if readerPlaybackService.isBufferingFirstChunk {
+            if isProcessingImport, pendingImportContext?.shouldSummarize == true {
+                ReaderImportLoadingOverlayView(
+                    message: "Summarizing file...",
+                    subtitle: "This can take a few minutes.",
+                    onCancel: discardPendingImport
+                )
+            } else if readerPlaybackService.isBufferingFirstChunk {
                 ReaderPlaybackLoadingOverlayView(message: "Preparing first chunk", subtitle: "This only takes a few seconds")
             }
         }
@@ -1344,19 +1352,39 @@ struct ContentView: View {
         }
 
         let resolvedTitle = browserTitle(for: message)
-        guard let browserEntry = storePlainTextEntry(
-            title: resolvedTitle,
-            subtitle: browserSubtitle(for: message),
-            text: trimmedText,
-            fileName: sanitizedStorageFileName(for: resolvedTitle),
-            categoryName: browserCategoryName(for: message)
-        ) else {
-            browserImportAlertMessage = "The browser page could not be imported."
-            return
-        }
 
-        successToastMessage = "Imported browser page"
-        startPlayback(for: browserEntry)
+        Task { @MainActor in
+            do {
+                let tempURL = try createTemporaryBrowserTextFile(
+                    title: resolvedTitle,
+                    text: trimmedText
+                )
+                defer {
+                    try? FileManager.default.removeItem(at: tempURL)
+                }
+
+                await preparePendingImport(
+                    from: tempURL,
+                    shouldAutoPlay: true,
+                    shouldSummarize: message.summarize == true,
+                    showImportLanguageSheet: false,
+                    importCategoryName: browserCategoryName(for: message)
+                )
+            } catch {
+                browserImportAlertMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func createTemporaryBrowserTextFile(title: String, text: String) throws -> URL {
+        let fileManager = FileManager.default
+        let directoryURL = fileManager.temporaryDirectory.appendingPathComponent("Browser Text Imports", isDirectory: true)
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let fileName = sanitizedStorageFileName(for: title.isEmpty ? "Browser Page" : title)
+        let fileURL = directoryURL.appendingPathComponent(fileName).appendingPathExtension("txt")
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
     }
 
     private func browserTitle(for message: BrowserNativeMessage) -> String {
@@ -1390,9 +1418,9 @@ struct ContentView: View {
         return "Saved from browser extension."
     }
 
-    private func browserCategoryName(for message: BrowserNativeMessage) -> String? {
+    private func browserCategoryName(for message: BrowserNativeMessage) -> String {
         let trimmedSite = message.site?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedSite.isEmpty ? nil : trimmedSite
+        return trimmedSite.isEmpty ? "Web" : trimmedSite
     }
 
     @MainActor
@@ -1457,6 +1485,8 @@ struct ContentView: View {
     private func preparePendingImport(
         from sourceURL: URL,
         shouldAutoPlay: Bool = false,
+        shouldSummarize: Bool = false,
+        showImportLanguageSheet: Bool = true,
         importCategoryName: String? = nil
     ) async {
         audioMixerPlaybackService.beginReaderPlaybackTransition()
@@ -1479,15 +1509,29 @@ struct ContentView: View {
                 fileExtension: fileExtension,
                 sourceKind: readerSourceKind(for: fileExtension),
                 shouldAutoPlay: shouldAutoPlay,
+                shouldSummarize: shouldSummarize,
                 importCategoryName: importCategoryName,
                 createdFileURLs: [stagedURL]
             )
             isTranslateDocument = false
             translateToLanguage = .english
-            isProcessingImport = true
-            processingImportMessage = "Preparing import options…"
-            isProcessingImport = false
-            isShowingImportLanguageSheet = true
+            if showImportLanguageSheet {
+                isProcessingImport = true
+                processingImportMessage = "Preparing import options…"
+                isProcessingImport = false
+                isShowingImportLanguageSheet = true
+            } else {
+                isShowingImportLanguageSheet = false
+                isProcessingImport = true
+                processingImportMessage = shouldSummarize ? "Summarizing file..." : "Preparing import..."
+                beginIdleSleepAssertion(for: shouldSummarize ? .summarizing : .importing)
+                createPendingImportEntry()
+
+                let selectedLanguage = pendingDocumentLanguage
+                pendingImportTask = Task { @MainActor in
+                    await processPendingImport(documentLanguage: selectedLanguage)
+                }
+            }
         } catch {
             uploadAlertMessage = error.localizedDescription
             audioMixerPlaybackService.endReaderPlaybackTransition()
@@ -1688,7 +1732,7 @@ struct ContentView: View {
         createPendingImportEntry()
 
         let selectedLanguage = pendingDocumentLanguage
-        Task {
+        pendingImportTask = Task { @MainActor in
             await processPendingImport(documentLanguage: selectedLanguage)
         }
     }
@@ -1698,7 +1742,8 @@ struct ContentView: View {
         guard let context = pendingImportContext else { return }
         guard let placeholderEntry = pendingImportEntry else { return }
         defer {
-            endIdleSleepAssertion(for: .importing)
+            pendingImportTask = nil
+            endIdleSleepAssertion(for: context.shouldSummarize ? .summarizing : .importing)
         }
 
         do {
@@ -1718,7 +1763,20 @@ struct ContentView: View {
             let finalText: String
             let normalizedLanguage: TextLanguage
 
-            if shouldTranslate {
+            if context.shouldSummarize {
+                await MainActor.run {
+                    processingImportMessage = "Summarizing file..."
+                }
+
+                let sourceLanguage = draft.detectedLanguage
+                let summarizedText = try await FileSummarizationService.shared.summarize(
+                    text: draft.rawText,
+                    language: sourceLanguage
+                )
+                try Task.checkCancellation()
+                finalText = summarizedText
+                normalizedLanguage = sourceLanguage
+            } else if shouldTranslate {
                 let targetLanguage = await MainActor.run(body: { translateToLanguage })
                 guard let translationSourceLanguage = draft.detectedLanguage.localeLanguage,
                       let translationTargetLanguage = targetLanguage.localeLanguage else {
@@ -1823,6 +1881,7 @@ struct ContentView: View {
                     }
                     isProcessingImport = false
                     pendingImportEntry = nil
+                    pendingImportTask = nil
                     audioMixerPlaybackService.endReaderPlaybackTransition()
                 }
                 return
@@ -1835,6 +1894,7 @@ struct ContentView: View {
                     try? modelContext.save()
                 }
                 importFailureMessage = error.localizedDescription
+                pendingImportTask = nil
                 audioMixerPlaybackService.endReaderPlaybackTransition()
             }
         }
@@ -1848,11 +1908,15 @@ struct ContentView: View {
         processingImportMessage = "Retrying normalization…"
         beginIdleSleepAssertion(for: .importing)
         createPendingImportEntry()
-        Task { await processPendingImport(documentLanguage: pendingDocumentLanguage) }
+        pendingImportTask = Task { @MainActor in
+            await processPendingImport(documentLanguage: pendingDocumentLanguage)
+        }
     }
 
     @MainActor
     private func discardPendingImport() {
+        pendingImportTask?.cancel()
+        pendingImportTask = nil
         cleanupPendingImportArtifacts()
         audioMixerPlaybackService.endReaderPlaybackTransition()
         clearPendingImportState(showing: nil)
@@ -1862,6 +1926,7 @@ struct ContentView: View {
     private func cleanupPendingImportArtifacts() {
         guard let context = pendingImportContext else { return }
         let fileManager = FileManager.default
+        let shouldSummarize = context.shouldSummarize
         context.createdFileURLs.forEach { url in
             if fileManager.fileExists(atPath: url.path) {
                 try? fileManager.removeItem(at: url)
@@ -1877,21 +1942,24 @@ struct ContentView: View {
         }
         pendingImportEntry = nil
         pendingImportContext = nil
+        pendingImportTask = nil
         detectedDocumentLanguage = .english
         pendingDocumentLanguage = .english
         isShowingImportLanguageSheet = false
         isProcessingImport = false
         processingImportMessage = ""
+        endIdleSleepAssertion(for: shouldSummarize ? .summarizing : .importing)
     }
 
     @MainActor
     private func clearPendingImportState(showing message: String?) {
+        let shouldSummarize = pendingImportContext?.shouldSummarize ?? false
         isProcessingImport = false
         processingImportMessage = ""
         pendingImportContext = nil
         pendingImportEntry = nil
+        pendingImportTask = nil
         translationCoordinator.cancel()
-        endIdleSleepAssertion(for: .importing)
         detectedDocumentLanguage = .english
         pendingDocumentLanguage = .english
         isShowingImportLanguageSheet = false
@@ -1904,6 +1972,8 @@ struct ContentView: View {
         } else {
             successToastMessage = nil
         }
+
+        endIdleSleepAssertion(for: shouldSummarize ? .summarizing : .importing)
     }
 
     private var isImportInFlight: Bool {
