@@ -2096,3 +2096,329 @@ struct ReaderToastView: View {
         .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
     }
 }
+
+// MARK: - RSS Home Ticker
+// Rotating home-screen preview for the newest RSS items.
+struct RSSHomeTickerView: View {
+    let feedItems: [RSSFeedItemRecord]
+    let preferredMode: AppearanceMode
+    let onOpenArticle: (RSSFeedItemRecord) -> Void
+    let onReadAloud: (RSSFeedItemRecord) async -> Void
+
+    private let maximumVisibleItems = 50
+    private let displayDuration: TimeInterval = 10
+    private let fadeDuration: TimeInterval = 0.7
+
+    @State private var currentIndex = 0
+    @State private var isHovered = false
+    @State private var isVisible = true
+    @State private var isReadAloudLoading = false
+    @State private var cycleStartedAt: Date?
+    @State private var accumulatedPausedTime: TimeInterval = 0
+    @State private var pauseStartedAt: Date?
+
+    private var visibleItems: [RSSFeedItemRecord] {
+        let sortedItems = feedItems.sorted { lhs, rhs in
+            let lhsDate = lhs.publishedAt ?? lhs.fetchedAt
+            let rhsDate = rhs.publishedAt ?? rhs.fetchedAt
+            if lhsDate == rhsDate {
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+            return lhsDate > rhsDate
+        }
+
+        return Array(sortedItems.prefix(maximumVisibleItems))
+    }
+
+    private var feedIdentityKey: String {
+        visibleItems.map(\.id).joined(separator: "|")
+    }
+
+    private var currentFeedItem: RSSFeedItemRecord? {
+        guard !visibleItems.isEmpty else { return nil }
+        return visibleItems[min(currentIndex, visibleItems.count - 1)]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Latest RSS")
+                        .font(.title2.weight(.bold))
+
+                    Text("Top 50 items cycle every 10 seconds. Hover to pause.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+
+                Text("\(visibleItems.count) item\(visibleItems.count == 1 ? "" : "s")")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.thinMaterial, in: Capsule())
+            }
+
+            if visibleItems.isEmpty {
+                ContentUnavailableView(
+                    "No RSS feeds yet",
+                    systemImage: "dot.radiowaves.left.and.right",
+                    description: Text("Add RSS feeds to preview the latest items here.")
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    progressLine
+
+                    if let currentFeedItem {
+                        ZStack {
+                        RSSHomeTickerRowView(
+                            item: currentFeedItem,
+                            preferredMode: preferredMode,
+                            isReadAloudLoading: isReadAloudLoading,
+                            onOpenArticle: { onOpenArticle(currentFeedItem) },
+                            onReadAloud: {
+                                Task {
+                                    await readAloud(currentFeedItem)
+                                }
+                            }
+                        )
+                        .id(currentFeedItem.id)
+                        }
+                        .opacity(isVisible ? 1 : 0)
+                    }
+                }
+                .padding(18)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+                .onHover { hovering in
+                    if hovering == isHovered {
+                        return
+                    }
+
+                    isHovered = hovering
+                    if hovering {
+                        if pauseStartedAt == nil {
+                            pauseStartedAt = Date()
+                        }
+                    } else if let pauseStartedAt {
+                        accumulatedPausedTime += Date().timeIntervalSince(pauseStartedAt)
+                        self.pauseStartedAt = nil
+                    }
+                }
+                .task(id: feedIdentityKey) {
+                    await runTickerLoop()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var progressLine: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(preferredMode == .light ? 0.10 : 0.16))
+
+                    Capsule()
+                        .fill(ReaderStyle.accentColor(named: "emerald"))
+                        .frame(width: max(0, proxy.size.width * tickerProgressFraction))
+                }
+            }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
+    }
+
+    private var tickerProgressFraction: Double {
+        guard let cycleStartedAt else { return 0 }
+
+        let now = Date()
+        var elapsed = now.timeIntervalSince(cycleStartedAt) - accumulatedPausedTime
+        if let pauseStartedAt {
+            elapsed -= now.timeIntervalSince(pauseStartedAt)
+        }
+
+        guard elapsed.isFinite else { return 0 }
+        return min(max(elapsed / displayDuration, 0), 1)
+    }
+
+    private var currentCycleElapsedTime: TimeInterval {
+        tickerProgressFraction * displayDuration
+    }
+
+    @MainActor
+    private func readAloud(_ item: RSSFeedItemRecord) async {
+        guard !isReadAloudLoading else { return }
+        isReadAloudLoading = true
+        defer { isReadAloudLoading = false }
+
+        await onReadAloud(item)
+    }
+
+    @MainActor
+    private func runTickerLoop() async {
+        currentIndex = 0
+        isVisible = true
+        cycleStartedAt = .now
+        accumulatedPausedTime = 0
+        pauseStartedAt = nil
+
+        guard !visibleItems.isEmpty else { return }
+
+        while !Task.isCancelled {
+            guard !isHovered else {
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                continue
+            }
+
+            while currentCycleElapsedTime < displayDuration {
+                if Task.isCancelled {
+                    return
+                }
+
+                if isHovered {
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                    continue
+                }
+
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+
+            if Task.isCancelled || visibleItems.isEmpty {
+                return
+            }
+
+            withAnimation(.easeInOut(duration: fadeDuration)) {
+                isVisible = false
+            }
+
+            try? await Task.sleep(nanoseconds: UInt64(fadeDuration * 1_000_000_000))
+            if Task.isCancelled || visibleItems.isEmpty {
+                return
+            }
+
+            currentIndex = (currentIndex + 1) % visibleItems.count
+            cycleStartedAt = .now
+            accumulatedPausedTime = 0
+            pauseStartedAt = nil
+
+            withAnimation(.easeInOut(duration: fadeDuration)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
+private struct RSSHomeTickerRowView: View {
+    let item: RSSFeedItemRecord
+    let preferredMode: AppearanceMode
+    let isReadAloudLoading: Bool
+    let onOpenArticle: () -> Void
+    let onReadAloud: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(item.feedTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(ReaderStyle.accentColor(named: "emerald"))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(RSSRelativeTimeFormatter.string(from: item.publishedAt ?? item.fetchedAt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(item.title)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(2)
+
+                Text(item.summary.isEmpty ? "No description provided." : item.summary)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+
+                HStack(spacing: 10) {
+                    Button {
+                        onOpenArticle()
+                    } label: {
+                        Label("Read Article", systemImage: "safari")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isReadAloudLoading)
+
+                    Button {
+                        onReadAloud()
+                    } label: {
+                        if isReadAloudLoading {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Reading...")
+                            }
+                            .font(.subheadline.weight(.semibold))
+                        } else {
+                            Label("Read Aloud", systemImage: "speaker.wave.2.fill")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(ReaderStyle.accentColor(named: "emerald"))
+                    .disabled(isReadAloudLoading)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private var rowBackground: AnyShapeStyle {
+        if preferredMode == .light {
+            return AnyShapeStyle(Color.orange.opacity(0.06))
+        }
+
+        return AnyShapeStyle(Color.orange.opacity(0.12))
+    }
+}
+
+private enum RSSRelativeTimeFormatter {
+    static func string(from date: Date) -> String {
+        let seconds = max(0, Int(Date().timeIntervalSince(date)))
+
+        if seconds < 60 {
+            return "\(seconds) sec ago"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return "\(minutes) min\(minutes == 1 ? "" : "s") ago"
+        }
+
+        let hours = minutes / 60
+        if hours < 24 {
+            return "\(hours) hour\(hours == 1 ? "" : "s") ago"
+        }
+
+        let days = hours / 24
+        return "\(days) day\(days == 1 ? "" : "s") ago"
+    }
+}

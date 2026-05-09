@@ -811,6 +811,26 @@ struct ContentView: View {
                 isUploadDisabled: isImportInFlight
             )
 
+            if !rssFeedRefreshService.feedItems.isEmpty {
+                RSSHomeTickerView(
+                    feedItems: rssFeedRefreshService.feedItems,
+                    preferredMode: preferredMode,
+                    onOpenArticle: { item in
+                        guard let url = item.linkURL ?? URL(string: item.linkURLString) else { return }
+                        NSWorkspace.shared.open(url)
+                    },
+                    onReadAloud: { item in
+                        do {
+                            try await prepareRSSArticleReadAloudImport(from: item)
+                        } catch {
+                            await MainActor.run {
+                                browserImportAlertMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                )
+            }
+
             ReaderLibrarySectionView(
                 title: "Library",
                 subtitle: "Everything you have imported or pasted",
