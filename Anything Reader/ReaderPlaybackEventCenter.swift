@@ -30,6 +30,7 @@ struct ReaderPlaybackEvent: Sendable {
 
 extension Notification.Name {
     static let readerPlaybackEvent = Notification.Name("ReaderPlaybackEvent")
+    static let navigateToRSSFeeds = Notification.Name("NavigateToRSSFeeds")
 }
 
 enum ReaderPlaybackEventCenter {

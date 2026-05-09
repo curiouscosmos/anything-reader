@@ -211,6 +211,12 @@ struct ContentView: View {
         .task {
             await promptForRSSPushNotificationsIfNeededOnLaunch()
         }
+        .task {
+            await observeRSSFeedNavigationRequests()
+        }
+        .task {
+            await handlePendingSidebarSelection()
+        }
         .safeAreaInset(edge: .bottom) {
             if shouldShowGeneratedAudioPlayerBar, let entry = activeGeneratedAudioEntry {
                 GeneratedAudioPlayerBarView(
@@ -3554,6 +3560,43 @@ struct ContentView: View {
         guard !allowed else { return }
 
         isShowingRSSPushNotificationsPermissionSheet = true
+    }
+
+    @MainActor
+    private func handlePendingSidebarSelection() async {
+        let userDefaults = UserDefaults.standard
+        guard let rawValue = userDefaults.string(forKey: "pendingSidebarSelection") else { return }
+        userDefaults.removeObject(forKey: "pendingSidebarSelection")
+
+        guard let selection = sidebarSelection(from: rawValue) else { return }
+        self.selection = selection
+    }
+
+    private func sidebarSelection(from rawValue: String) -> SidebarSelection? {
+        switch rawValue {
+        case "home":
+            return .home
+        case "recent":
+            return .recent
+        case "freeBooks":
+            return .freeBooks
+        case "audioMixer":
+            return .audioMixer
+        case "rssFeeds":
+            return .rssFeeds
+        default:
+            if rawValue.hasPrefix("category:") {
+                return .category(String(rawValue.dropFirst("category:".count)))
+            }
+            return nil
+        }
+    }
+
+    @MainActor
+    private func observeRSSFeedNavigationRequests() async {
+        for await _ in NotificationCenter.default.notifications(named: .navigateToRSSFeeds) {
+            selection = .rssFeeds
+        }
     }
 }
 

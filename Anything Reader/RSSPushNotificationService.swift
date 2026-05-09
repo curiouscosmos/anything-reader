@@ -100,15 +100,11 @@ final class RSSPushNotificationService: NSObject, UNUserNotificationCenterDelega
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let userInfo = response.notification.request.content.userInfo
-        guard let linkURLString = userInfo["linkURLString"] as? String,
-              let url = URL(string: linkURLString) else {
-            completionHandler()
-            return
-        }
+        UserDefaults.standard.set("rssFeeds", forKey: "pendingSidebarSelection")
 
         Task { @MainActor in
-            NSWorkspace.shared.open(url)
+            NSApp.activate(ignoringOtherApps: true)
+            NotificationCenter.default.post(name: .navigateToRSSFeeds, object: nil)
             completionHandler()
         }
     }
