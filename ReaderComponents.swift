@@ -634,6 +634,7 @@ struct ReaderLibrarySectionView: View {
     let categories: [ReaderCategory]
     let coverArtGenerationKeys: Set<String>
     let preferredMode: AppearanceMode
+    let onDeleteCategory: (() -> Void)?
     let isEntryPlaying: (LibraryEntry) -> Bool
     let isEntryGeneratingAudio: (LibraryEntry) -> Bool
     let isEntrySummarizing: (LibraryEntry) -> Bool
@@ -667,6 +668,15 @@ struct ReaderLibrarySectionView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+
+                if let onDeleteCategory {
+                    Button(role: .destructive, action: onDeleteCategory) {
+                        Label("Delete Category", systemImage: "trash")
+                            .font(.headline)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                }
             }
 
             if entries.isEmpty {
@@ -808,6 +818,8 @@ struct ReaderLibraryCardView: View {
 
     @State private var isShowingDeleteConfirmation = false
     @State private var isShowingCardMenu = false
+    @State private var isShowingMoveCategorySheet = false
+    @State private var selectedMoveCategoryName: String?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -853,6 +865,74 @@ struct ReaderLibraryCardView: View {
         } message: {
             Text("This will permanently remove the book/text from the local database.")
         }
+        .sheet(isPresented: $isShowingMoveCategorySheet) {
+            categoryPickerSheet
+        }
+    }
+
+    private var categoryPickerSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Select Category")
+                    .font(.title2.weight(.bold))
+
+                Text("Choose a category to move this item into.")
+                    .foregroundStyle(.secondary)
+
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(categories) { category in
+                            Button {
+                                selectedMoveCategoryName = category.name
+                            } label: {
+                                HStack {
+                                    Label(category.name, systemImage: "folder.fill")
+                                        .font(.body.weight(.medium))
+                                    Spacer()
+                                    if selectedMoveCategoryName == category.name {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(sheetRowBackground(isSelected: selectedMoveCategoryName == category.name), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                HStack {
+                    Button("Cancel", role: .cancel) {
+                        isShowingMoveCategorySheet = false
+                    }
+
+                    Spacer()
+
+                    Button("Move") {
+                        if let selectedMoveCategoryName {
+                            onAssignCategory(selectedMoveCategoryName)
+                        }
+                        isShowingMoveCategorySheet = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(selectedMoveCategoryName == nil)
+                }
+            }
+            .padding(20)
+            .frame(minWidth: 360, minHeight: 420)
+            .navigationTitle("Move to Category")
+        }
+    }
+
+    private func sheetRowBackground(isSelected: Bool) -> Color {
+        if isSelected {
+            return preferredMode == .light ? Color.green.opacity(0.14) : Color.green.opacity(0.22)
+        }
+
+        return preferredMode == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.06)
     }
 
     private var summaryPlayButton: some View {
@@ -934,15 +1014,6 @@ struct ReaderLibraryCardView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(pdfExtractionBadgeBackground(for: extractionMode), in: Capsule())
-                    }
-
-                    if let categoryName = entry.categoryName {
-                        Text(categoryName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.12), in: Capsule())
                     }
 
                     if hasGeneratedAudio {
@@ -1078,7 +1149,10 @@ struct ReaderLibraryCardView: View {
                 isSummarizing: isSummarizing,
                 isGeneratingAudio: isGeneratingAudio,
                 onClearCategory: onClearCategory,
-                onAssignCategory: onAssignCategory,
+                onSelectCategory: {
+                    selectedMoveCategoryName = entry.categoryName ?? categories.first?.name
+                    isShowingMoveCategorySheet = true
+                },
                 onDelete: {
                     isShowingDeleteConfirmation = true
                 },
@@ -1207,7 +1281,7 @@ struct ReaderCardMenuPopoverView: View {
     let isSummarizing: Bool
     let isGeneratingAudio: Bool
     let onClearCategory: () -> Void
-    let onAssignCategory: (String) -> Void
+    let onSelectCategory: () -> Void
     let onDelete: () -> Void
     let isLoading: Bool
 
@@ -1243,17 +1317,7 @@ struct ReaderCardMenuPopoverView: View {
 
             if !categories.isEmpty {
                 Divider()
-
-                Text("Move to")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-
-                ForEach(categories) { category in
-                    menuButton(title: category.name, systemImage: "folder.fill", action: {
-                        onAssignCategory(category.name)
-                    })
-                }
+                menuButton(title: "Select Category", systemImage: "folder.fill", action: onSelectCategory)
             }
         }
         .padding(.vertical, 12)

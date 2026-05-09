@@ -5,6 +5,7 @@ nonisolated struct BrowserNativeMessage: Codable, Identifiable, Hashable, Sendab
     let title: String?
     let text: String
     let pageURL: String?
+    let site: String?
     let receivedAt: Date
 }
 
@@ -283,6 +284,7 @@ struct BrowserNativeMessage: Codable {
     let title: String?
     let text: String
     let pageURL: String?
+    let site: String?
     let receivedAt: Date
 }
 
@@ -358,6 +360,13 @@ enum AnythingReaderHost {
             pageURL: {
                 let trimmedURL = pageURL?.trimmingCharacters(in: .whitespacesAndNewlines)
                 return (trimmedURL?.isEmpty == false) ? trimmedURL : nil
+            }(),
+            site: {
+                let trimmedSite = firstStringValue(
+                    for: ["site", "siteName", "domain", "host"],
+                    in: jsonObject
+                )?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return (trimmedSite?.isEmpty == false) ? trimmedSite : nil
             }(),
             receivedAt: Date()
         )

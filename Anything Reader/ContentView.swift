@@ -73,6 +73,7 @@ struct ContentView: View {
     @State private var audioGenerationProgressValue: Double?
     @State private var isTranslateDocument = false
     @State private var translateToLanguage: TextLanguage = .english
+    @State private var pendingCategoryDeletionName: String?
     @State private var importAwakeAssertion: NSObjectProtocol?
     @State private var audioGenerationAwakeAssertion: NSObjectProtocol?
     @State private var summaryGenerationAwakeAssertion: NSObjectProtocol?
@@ -387,6 +388,31 @@ struct ContentView: View {
         .overlay {
             DocumentTranslationHostView(coordinator: translationCoordinator)
         }
+        .confirmationDialog(
+            "Delete Category?",
+            isPresented: Binding(
+                get: { pendingCategoryDeletionName != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingCategoryDeletionName = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Category", role: .destructive) {
+                if let categoryName = pendingCategoryDeletionName {
+                    deleteCategory(named: categoryName)
+                }
+                pendingCategoryDeletionName = nil
+            }
+
+            Button("Cancel", role: .cancel) {
+                pendingCategoryDeletionName = nil
+            }
+        } message: {
+            Text("This will remove the category from all library items that use it.")
+        }
         .task {
             cleanupGeneratedDemoContentIfNeeded()
             backfillMissingCoverArtIfNeeded()
@@ -645,6 +671,7 @@ struct ContentView: View {
                             categories: categories,
                             coverArtGenerationKeys: coverArtGenerationKeys,
                             preferredMode: preferredMode,
+                            onDeleteCategory: nil,
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             isEntrySummarizing: isEntrySummarizing(_:),
@@ -711,6 +738,7 @@ struct ContentView: View {
                             categories: categories,
                             coverArtGenerationKeys: coverArtGenerationKeys,
                             preferredMode: preferredMode,
+                            onDeleteCategory: { pendingCategoryDeletionName = categoryName },
                             isEntryPlaying: isEntryPlaying(_:),
                             isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                             isEntrySummarizing: isEntrySummarizing(_:),
@@ -785,6 +813,7 @@ struct ContentView: View {
                 categories: categories,
                 coverArtGenerationKeys: coverArtGenerationKeys,
                 preferredMode: preferredMode,
+                onDeleteCategory: nil,
                 isEntryPlaying: isEntryPlaying(_:),
                 isEntryGeneratingAudio: isEntryGeneratingAudio(_:),
                 isEntrySummarizing: isEntrySummarizing(_:),
@@ -995,6 +1024,23 @@ struct ContentView: View {
         modelContext.insert(category)
         try? modelContext.save()
         return category
+    }
+
+    @MainActor
+    private func deleteCategory(named categoryName: String) {
+        guard let category = categories.first(where: { $0.name == categoryName }) else { return }
+
+        libraryEntries
+            .filter { $0.categoryName == categoryName }
+            .forEach { $0.categoryName = nil }
+
+        if case .category(let selectedCategoryName) = selection,
+           selectedCategoryName == categoryName {
+            selection = .recent
+        }
+
+        modelContext.delete(category)
+        try? modelContext.save()
     }
 
     @MainActor
@@ -1302,7 +1348,8 @@ struct ContentView: View {
             title: resolvedTitle,
             subtitle: browserSubtitle(for: message),
             text: trimmedText,
-            fileName: sanitizedStorageFileName(for: resolvedTitle)
+            fileName: sanitizedStorageFileName(for: resolvedTitle),
+            categoryName: browserCategoryName(for: message)
         ) else {
             browserImportAlertMessage = "The browser page could not be imported."
             return
@@ -1341,6 +1388,11 @@ struct ContentView: View {
         }
 
         return "Saved from browser extension."
+    }
+
+    private func browserCategoryName(for message: BrowserNativeMessage) -> String? {
+        let trimmedSite = message.site?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedSite.isEmpty ? nil : trimmedSite
     }
 
     @MainActor
