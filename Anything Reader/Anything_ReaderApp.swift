@@ -27,6 +27,10 @@ struct Anything_ReaderApp: App {
         }
     }()
 
+    init() {
+        StartupLaunchService.shared.registerAtLoginOnFirstInstallIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
