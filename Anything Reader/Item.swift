@@ -603,11 +603,13 @@ final class LibraryEntry {
 final class ReaderCategory {
     var name: String
     var accentName: String
+    var iconName: String
     var createdAt: Date
 
-    init(name: String, accentName: String, createdAt: Date = .now) {
+    init(name: String, accentName: String, iconName: String, createdAt: Date = .now) {
         self.name = name
         self.accentName = accentName
+        self.iconName = iconName
         self.createdAt = createdAt
     }
 }

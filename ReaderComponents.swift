@@ -47,7 +47,7 @@ struct ReaderSidebarView: View {
             if !categories.isEmpty {
                 Section("Categories") {
                     ForEach(categories) { category in
-                        Label(category.name, systemImage: "folder.fill")
+                        Label(category.name, systemImage: category.iconName.isEmpty ? "folder.fill" : category.iconName)
                             .tag(SidebarSelection.category(category.name))
                     }
                 }

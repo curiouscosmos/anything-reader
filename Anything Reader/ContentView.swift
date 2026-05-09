@@ -152,6 +152,21 @@ struct ContentView: View {
         "sky"
     ]
 
+    private static let categoryIconPalette = [
+        "folder.fill",
+        "bookmark.fill",
+        "tag.fill",
+        "books.vertical.fill",
+        "doc.text.fill",
+        "sparkles",
+        "star.fill",
+        "tray.full.fill",
+        "note.text",
+        "rectangle.stack.fill",
+        "paperclip",
+        "folder.badge.plus"
+    ]
+
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "dd"
@@ -443,6 +458,7 @@ struct ContentView: View {
         .task {
             cleanupGeneratedDemoContentIfNeeded()
             backfillMissingCoverArtIfNeeded()
+            backfillCategoryIconsIfNeeded()
             await backfillGeneratedAudioMetadataIfNeeded()
             audioMixerLibraryService.loadIfNeeded(using: modelContext)
             audioMixerLibraryService.repairLibraryIfNeeded(using: modelContext)
@@ -1051,7 +1067,8 @@ struct ContentView: View {
 
         let category = ReaderCategory(
             name: trimmedName,
-            accentName: Self.accentPalette.randomElement() ?? "emerald"
+            accentName: Self.accentPalette.randomElement() ?? "emerald",
+            iconName: Self.categoryIconPalette.randomElement() ?? "folder.fill"
         )
         modelContext.insert(category)
         try? modelContext.save()
@@ -1064,16 +1081,35 @@ struct ContentView: View {
     @MainActor
     private func ensureCategory(named categoryName: String) -> ReaderCategory {
         if let existingCategory = categories.first(where: { $0.name == categoryName }) {
+            if existingCategory.iconName.isEmpty {
+                existingCategory.iconName = Self.categoryIconPalette.randomElement() ?? "folder.fill"
+                try? modelContext.save()
+            }
             return existingCategory
         }
 
         let category = ReaderCategory(
             name: categoryName,
-            accentName: Self.accentPalette.randomElement() ?? "emerald"
+            accentName: Self.accentPalette.randomElement() ?? "emerald",
+            iconName: Self.categoryIconPalette.randomElement() ?? "folder.fill"
         )
         modelContext.insert(category)
         try? modelContext.save()
         return category
+    }
+
+    @MainActor
+    private func backfillCategoryIconsIfNeeded() {
+        var didUpdateCategories = false
+
+        for category in categories where category.iconName.isEmpty {
+            category.iconName = Self.categoryIconPalette.randomElement() ?? "folder.fill"
+            didUpdateCategories = true
+        }
+
+        if didUpdateCategories {
+            try? modelContext.save()
+        }
     }
 
     @MainActor
