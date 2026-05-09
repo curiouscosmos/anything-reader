@@ -421,6 +421,15 @@ struct ReaderTTSHeroView: View {
             heroBackgroundImage
 
             VStack(alignment: .leading, spacing: 14) {
+                if let image = bundledLogoImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 140, height: 140)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .accessibilityHidden(true)
+                }
+
                 Text("Listen to anything")
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(heroPrimaryTextColor)
@@ -520,6 +529,14 @@ struct ReaderTTSHeroView: View {
 
     private var bundledHeroImage: NSImage? {
         guard let url = Bundle.main.url(forResource: "hero_image", withExtension: "png") else {
+            return nil
+        }
+
+        return NSImage(contentsOf: url)
+    }
+
+    private var bundledLogoImage: NSImage? {
+        guard let url = Bundle.main.url(forResource: "logo", withExtension: "png") else {
             return nil
         }
 
