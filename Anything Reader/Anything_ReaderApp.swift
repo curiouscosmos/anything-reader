@@ -29,6 +29,7 @@ struct Anything_ReaderApp: App {
 
     init() {
         StartupLaunchService.shared.registerAtLoginOnFirstInstallIfNeeded()
+        _ = RSSPushNotificationService.shared
     }
 
     var body: some Scene {

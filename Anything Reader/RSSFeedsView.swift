@@ -14,6 +14,7 @@ struct RSSFeedsView: View {
     let preferredMode: AppearanceMode
     let onFeedSaved: () -> Void
     let onReadAloud: (RSSFeedItemRecord) async throws -> Void
+    let onRequestPushNotificationsPermission: () -> Void
 
     @AppStorage("rssFeedDisplayStyle") private var rssFeedDisplayStyleRawValue: String = RSSFeedDisplayStyle.list.rawValue
     @AppStorage("rssFeedSourceFilter") private var rssFeedSourceFilterRawValue: String = RSSFeedSourceFilter.all.rawValue
@@ -25,6 +26,7 @@ struct RSSFeedsView: View {
     @State private var visibleFeedItemCount = 50
     @State private var isLoadingMoreFeedItems = false
     @State private var didResetLargeUnreadBatch = false
+    @State private var newFeedPushNotificationsEnabled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -53,8 +55,12 @@ struct RSSFeedsView: View {
                 refreshService: refreshService,
                 feedURLString: $feedURLString,
                 isSavingFeed: $isSavingFeed,
+                pushNotificationsEnabled: $newFeedPushNotificationsEnabled,
                 preferredMode: preferredMode,
                 onSave: saveFeed,
+                onRequestPushNotificationsPermission: {
+                    onRequestPushNotificationsPermission()
+                },
                 onClose: {
                     isShowingAddFeedSheet = false
                 }
@@ -84,6 +90,7 @@ struct RSSFeedsView: View {
                 Spacer(minLength: 0)
 
                 Button("Add Feed Link") {
+                    newFeedPushNotificationsEnabled = false
                     isShowingAddFeedSheet = true
                 }
                 .buttonStyle(.borderedProminent)
@@ -399,8 +406,12 @@ struct RSSFeedsView: View {
         defer { isSavingFeed = false }
 
         do {
-            try refreshService.saveFeed(urlString: trimmed)
+            try refreshService.saveFeed(
+                urlString: trimmed,
+                pushNotificationsEnabled: newFeedPushNotificationsEnabled
+            )
             feedURLString = ""
+            newFeedPushNotificationsEnabled = false
             onFeedSaved()
             Task {
                 await refreshService.refreshNow()
@@ -739,8 +750,10 @@ struct RSSAddFeedSheet: View {
     @ObservedObject var refreshService: RSSFeedRefreshService
     @Binding var feedURLString: String
     @Binding var isSavingFeed: Bool
+    @Binding var pushNotificationsEnabled: Bool
     let preferredMode: AppearanceMode
     let onSave: () -> Void
+    let onRequestPushNotificationsPermission: () -> Void
     let onClose: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -761,6 +774,31 @@ struct RSSAddFeedSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .disableAutocorrection(true)
                         .onSubmit(onSave)
+
+                    Toggle(isOn: $pushNotificationsEnabled) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Push Notifications")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Notify me when this feed publishes new items.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .onChange(of: pushNotificationsEnabled) { _, newValue in
+                        guard newValue else { return }
+
+                        Task {
+                            let allowed = await RSSPushNotificationService.shared.requestNotificationAuthorizationIfNeeded()
+                            guard allowed else {
+                                await MainActor.run {
+                                    pushNotificationsEnabled = false
+                                    requestPushNotificationsPermissionAfterDismissal()
+                                }
+                                return
+                            }
+                        }
+                    }
 
                     if isSavingFeed {
                         HStack(spacing: 10) {
@@ -802,31 +840,23 @@ struct RSSAddFeedSheet: View {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 10) {
                                 ForEach(refreshService.subscriptions) { subscription in
-                                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(subscription.url?.host ?? subscription.urlString)
-                                                .font(.headline)
-
-                                            Text(subscription.urlString)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .textSelection(.enabled)
-                                        }
-
-                                        Spacer(minLength: 0)
-
-                                        Button(role: .destructive) {
+                                    RSSSavedFeedRowView(
+                                        subscription: subscription,
+                                        preferredMode: preferredMode,
+                                        onDelete: {
                                             feedPendingDeletion = subscription
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
+                                        },
+                                        onRequestPushNotificationsPermission: {
+                                            requestPushNotificationsPermissionAfterDismissal()
+                                        },
+                                        onTogglePushNotificationsEnabled: { newValue in
+                                            try refreshService.updatePushNotificationsEnabled(
+                                                for: subscription,
+                                                enabled: newValue
+                                            )
                                         }
-                                        .buttonStyle(.borderless)
-                                    }
-                                    .padding(12)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .fill(Color.secondary.opacity(preferredMode == .light ? 0.08 : 0.14))
                                     )
+                                    .id(subscription.id)
                                 }
                             }
                         }
@@ -870,6 +900,169 @@ struct RSSAddFeedSheet: View {
                 }
             } message: { subscription in
                 Text("Delete \(subscription.url?.host ?? subscription.urlString)? This removes the saved feed link from the database.")
+            }
+        }
+    }
+
+    @MainActor
+    private func requestPushNotificationsPermissionAfterDismissal() {
+        onClose()
+        dismiss()
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            onRequestPushNotificationsPermission()
+        }
+    }
+}
+private struct RSSSavedFeedRowView: View {
+    let subscription: RSSFeedSubscription
+    let preferredMode: AppearanceMode
+    let onDelete: () -> Void
+    let onRequestPushNotificationsPermission: () -> Void
+    let onTogglePushNotificationsEnabled: (Bool) throws -> Void
+
+    @State private var isPushNotificationsEnabled: Bool
+    @State private var isUpdatingPushNotifications = false
+
+    init(
+        subscription: RSSFeedSubscription,
+        preferredMode: AppearanceMode,
+        onDelete: @escaping () -> Void,
+        onRequestPushNotificationsPermission: @escaping () -> Void,
+        onTogglePushNotificationsEnabled: @escaping (Bool) throws -> Void
+    ) {
+        self.subscription = subscription
+        self.preferredMode = preferredMode
+        self.onDelete = onDelete
+        self.onRequestPushNotificationsPermission = onRequestPushNotificationsPermission
+        self.onTogglePushNotificationsEnabled = onTogglePushNotificationsEnabled
+        _isPushNotificationsEnabled = State(initialValue: subscription.pushNotificationsEnabled)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(subscription.url?.host ?? subscription.urlString)
+                        .font(.headline)
+
+                    Text(subscription.urlString)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                Spacer(minLength: 0)
+
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(.borderless)
+            }
+
+            Toggle(isOn: $isPushNotificationsEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Push Notifications")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Notify me when this feed publishes new items.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+            .disabled(isUpdatingPushNotifications)
+            .onChange(of: isPushNotificationsEnabled) { _, newValue in
+                handleToggleChange(newValue)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.secondary.opacity(preferredMode == .light ? 0.08 : 0.14))
+        )
+        .onChange(of: subscription.pushNotificationsEnabled) { _, newValue in
+            guard newValue != isPushNotificationsEnabled else { return }
+            isPushNotificationsEnabled = newValue
+        }
+    }
+
+    @MainActor
+    private func handleToggleChange(_ newValue: Bool) {
+        guard !isUpdatingPushNotifications else { return }
+
+        isUpdatingPushNotifications = true
+        Task {
+            defer {
+                Task { @MainActor in
+                    isUpdatingPushNotifications = false
+                }
+            }
+
+            if newValue {
+                let allowed = await RSSPushNotificationService.shared.requestNotificationAuthorizationIfNeeded()
+                guard allowed else {
+                    await MainActor.run {
+                        isPushNotificationsEnabled = false
+                        onRequestPushNotificationsPermission()
+                    }
+                    return
+                }
+            }
+
+            do {
+                try onTogglePushNotificationsEnabled(newValue)
+            } catch {
+                NSLog("RSS push notification toggle failed: %@", error.localizedDescription)
+                await MainActor.run {
+                    isPushNotificationsEnabled = subscription.pushNotificationsEnabled
+                }
+            }
+        }
+    }
+}
+
+struct RSSPushNotificationsPermissionSheet: View {
+    let preferredMode: AppearanceMode
+    let onClose: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Enable Push Notifications")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+
+                Text("Anything Reader needs notification access in System Settings before it can notify you about new RSS items.")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                Text("Open System Settings, choose Notifications, and enable Anything Reader.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Link(destination: URL(string: "x-apple.systempreferences:com.apple.preference.notifications")!) {
+                    Label("Open Notification Settings", systemImage: "gearshape")
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 4)
+            .frame(minWidth: 520, minHeight: 220)
+            .background(
+                ReaderStyle.accentColor(named: "emerald").opacity(preferredMode == .light ? 0.08 : 0.12)
+            )
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Close") {
+                        onClose()
+                        dismiss()
+                    }
+                }
             }
         }
     }

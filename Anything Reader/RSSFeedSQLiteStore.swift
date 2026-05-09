@@ -13,6 +13,7 @@ struct RSSFeedSubscription: Identifiable, Hashable, Sendable {
     let urlString: String
     let createdAt: Date
     let lastFetchedAt: Date?
+    let pushNotificationsEnabled: Bool
 
     var url: URL? {
         URL(string: urlString)
@@ -93,7 +94,10 @@ final class RSSFeedSQLiteStore {
         return try fetchSubscriptions(in: database)
     }
 
-    func saveSubscription(from rawURLString: String) throws -> RSSFeedSaveOutcome {
+    func saveSubscription(
+        from rawURLString: String,
+        pushNotificationsEnabled: Bool = false
+    ) throws -> RSSFeedSaveOutcome {
         let normalizedURLString = try canonicalFeedURLString(from: rawURLString)
         let database = try openDatabase()
         defer { sqlite3_close(database) }
@@ -109,7 +113,8 @@ final class RSSFeedSQLiteStore {
             id: UUID().uuidString,
             urlString: normalizedURLString,
             createdAt: now,
-            lastFetchedAt: nil
+            lastFetchedAt: nil,
+            pushNotificationsEnabled: pushNotificationsEnabled
         )
 
         try insert(subscription, in: database)
@@ -135,6 +140,14 @@ final class RSSFeedSQLiteStore {
 
         try ensureSchema(in: database)
         return try fetchItems(in: database)
+    }
+
+    func loadItemIdentifiers(for subscriptionID: String) throws -> Set<String> {
+        let database = try openDatabase()
+        defer { sqlite3_close(database) }
+
+        try ensureSchema(in: database)
+        return try fetchItemIdentifiers(for: subscriptionID, in: database)
     }
 
     func itemCount() throws -> Int {
@@ -237,6 +250,17 @@ final class RSSFeedSQLiteStore {
         }, in: database)
     }
 
+    func updatePushNotificationsEnabled(for subscriptionID: String, enabled: Bool) throws {
+        let database = try openDatabase()
+        defer { sqlite3_close(database) }
+
+        try ensureSchema(in: database)
+        try execute(sql: "UPDATE \(tableName) SET push_notifications_enabled = ? WHERE id = ?;", bind: { statement in
+            sqlite3_bind_int(statement, 1, enabled ? 1 : 0)
+            bindText(subscriptionID, to: statement, index: 2)
+        }, in: database)
+    }
+
     func pruneItemsKeepingLatest(_ keepCount: Int) throws {
         guard keepCount > 0 else { return }
 
@@ -264,7 +288,7 @@ final class RSSFeedSQLiteStore {
 
     private func fetchSubscriptions(in database: OpaquePointer) throws -> [RSSFeedSubscription] {
         let sql = """
-        SELECT id, url_string, created_at, last_fetched_at
+        SELECT id, url_string, created_at, last_fetched_at, push_notifications_enabled
         FROM \(tableName)
         ORDER BY created_at DESC;
         """
@@ -298,7 +322,8 @@ final class RSSFeedSQLiteStore {
                     id: id,
                     urlString: urlString,
                     createdAt: createdAt,
-                    lastFetchedAt: dateValue(statement, index: 3)
+                    lastFetchedAt: dateValue(statement, index: 3),
+                    pushNotificationsEnabled: boolValue(statement, index: 4)
                 )
             )
         }
@@ -308,7 +333,7 @@ final class RSSFeedSQLiteStore {
 
     private func fetchSubscription(for urlString: String, in database: OpaquePointer) throws -> RSSFeedSubscription? {
         let sql = """
-        SELECT id, url_string, created_at, last_fetched_at
+        SELECT id, url_string, created_at, last_fetched_at, push_notifications_enabled
         FROM \(tableName)
         WHERE url_string = ?
         LIMIT 1;
@@ -338,14 +363,15 @@ final class RSSFeedSQLiteStore {
             id: id,
             urlString: fetchedURLString,
             createdAt: createdAt,
-            lastFetchedAt: dateValue(statement, index: 3)
+            lastFetchedAt: dateValue(statement, index: 3),
+            pushNotificationsEnabled: boolValue(statement, index: 4)
         )
     }
 
     private func insert(_ subscription: RSSFeedSubscription, in database: OpaquePointer) throws {
         let sql = """
-        INSERT INTO \(tableName) (id, url_string, created_at, last_fetched_at)
-        VALUES (?, ?, ?, ?);
+        INSERT INTO \(tableName) (id, url_string, created_at, last_fetched_at, push_notifications_enabled)
+        VALUES (?, ?, ?, ?, ?);
         """
 
         var statement: OpaquePointer?
@@ -358,6 +384,7 @@ final class RSSFeedSQLiteStore {
         bindText(subscription.urlString, to: statement, index: 2)
         bindText(dateFormatter.string(from: subscription.createdAt), to: statement, index: 3)
         sqlite3_bind_null(statement, 4)
+        sqlite3_bind_int(statement, 5, subscription.pushNotificationsEnabled ? 1 : 0)
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw RSSFeedSQLiteStoreError.statementStepFailed
@@ -370,7 +397,8 @@ final class RSSFeedSQLiteStore {
             id TEXT PRIMARY KEY NOT NULL,
             url_string TEXT NOT NULL UNIQUE,
             created_at TEXT NOT NULL,
-            last_fetched_at TEXT
+            last_fetched_at TEXT,
+            push_notifications_enabled INTEGER NOT NULL DEFAULT 0
         );
         """
 
@@ -393,6 +421,7 @@ final class RSSFeedSQLiteStore {
         try execute(sql: subscriptionSQL, in: database)
         try execute(sql: itemsSQL, in: database)
         try ensureHasSeenColumn(in: database)
+        try ensurePushNotificationsColumn(in: database)
         try ensureIndexes(in: database)
     }
 
@@ -402,6 +431,14 @@ final class RSSFeedSQLiteStore {
         }
 
         try execute(sql: "ALTER TABLE \(itemsTableName) ADD COLUMN has_seen INTEGER NOT NULL DEFAULT 0;", in: database)
+    }
+
+    private func ensurePushNotificationsColumn(in database: OpaquePointer) throws {
+        guard try !columnExists("push_notifications_enabled", in: tableName, database: database) else {
+            return
+        }
+
+        try execute(sql: "ALTER TABLE \(tableName) ADD COLUMN push_notifications_enabled INTEGER NOT NULL DEFAULT 0;", in: database)
     }
 
     private func ensureIndexes(in database: OpaquePointer) throws {
@@ -573,6 +610,38 @@ final class RSSFeedSQLiteStore {
         }
 
         return states
+    }
+
+    private func fetchItemIdentifiers(for subscriptionID: String, in database: OpaquePointer) throws -> Set<String> {
+        let sql = """
+        SELECT item_identifier
+        FROM \(itemsTableName)
+        WHERE subscription_id = ?;
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw RSSFeedSQLiteStoreError.statementPreparationFailed
+        }
+        defer { sqlite3_finalize(statement) }
+
+        bindText(subscriptionID, to: statement, index: 1)
+
+        var identifiers: Set<String> = []
+        while true {
+            let stepResult = sqlite3_step(statement)
+            if stepResult == SQLITE_DONE {
+                break
+            }
+            guard stepResult == SQLITE_ROW else {
+                throw RSSFeedSQLiteStoreError.statementStepFailed
+            }
+
+            guard let identifier = stringValue(statement, index: 0) else { continue }
+            identifiers.insert(identifier)
+        }
+
+        return identifiers
     }
 
     private func fetchItems(in database: OpaquePointer) throws -> [RSSFeedItemRecord] {

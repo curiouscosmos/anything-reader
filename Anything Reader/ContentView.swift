@@ -46,6 +46,8 @@ struct ContentView: View {
     @State private var isShowingSettings = false
     @State private var isShowingKokoroDownloadModal = false
     @State private var isShowingCategorySheet = false
+    @State private var isShowingRSSPushNotificationsPermissionSheet = false
+    @AppStorage("didPromptForRSSPushNotificationsOnFirstLaunch") private var didPromptForRSSPushNotificationsOnFirstLaunch = false
     @State private var isShowingFileImporter = false
     @State private var isShowingImportLanguageSheet = false
     @State private var audioGenerationSheetEntry: LibraryEntry?
@@ -206,6 +208,9 @@ struct ContentView: View {
             }
             .navigationSplitViewStyle(.balanced)
         }
+        .task {
+            await promptForRSSPushNotificationsIfNeededOnLaunch()
+        }
         .safeAreaInset(edge: .bottom) {
             if shouldShowGeneratedAudioPlayerBar, let entry = activeGeneratedAudioEntry {
                 GeneratedAudioPlayerBarView(
@@ -289,6 +294,14 @@ struct ContentView: View {
             ReaderNewCategorySheet(
                 categoryName: $newCategoryName,
                 onCreate: createCategory
+            )
+        }
+        .sheet(isPresented: $isShowingRSSPushNotificationsPermissionSheet) {
+            RSSPushNotificationsPermissionSheet(
+                preferredMode: preferredMode,
+                onClose: {
+                    isShowingRSSPushNotificationsPermissionSheet = false
+                }
             )
         }
         .sheet(isPresented: $isShowingImportLanguageSheet) {
@@ -732,6 +745,9 @@ struct ContentView: View {
                             },
                             onReadAloud: { item in
                                 try await prepareRSSArticleReadAloudImport(from: item)
+                            },
+                            onRequestPushNotificationsPermission: {
+                                isShowingRSSPushNotificationsPermissionSheet = true
                             }
                         )
 
@@ -3527,6 +3543,17 @@ struct ContentView: View {
     private func cancelReadingNavigationTask() {
         readingNavigationTask?.cancel()
         readingNavigationTask = nil
+    }
+
+    @MainActor
+    private func promptForRSSPushNotificationsIfNeededOnLaunch() async {
+        guard !didPromptForRSSPushNotificationsOnFirstLaunch else { return }
+        didPromptForRSSPushNotificationsOnFirstLaunch = true
+
+        let allowed = await RSSPushNotificationService.shared.canSendNotifications()
+        guard !allowed else { return }
+
+        isShowingRSSPushNotificationsPermissionSheet = true
     }
 }
 

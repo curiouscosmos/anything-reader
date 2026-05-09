@@ -89,9 +89,47 @@ final class RSSFeedRefreshService: ObservableObject {
         reloadCachedData()
     }
 
+    func saveFeed(urlString: String, pushNotificationsEnabled: Bool) throws {
+        let outcome = try RSSFeedSQLiteStore.shared.saveSubscription(
+            from: urlString,
+            pushNotificationsEnabled: pushNotificationsEnabled
+        )
+
+        let subscription: RSSFeedSubscription
+        switch outcome {
+        case .inserted(let insertedSubscription):
+            subscription = insertedSubscription
+        case .alreadyExists(let existingSubscription):
+            subscription = existingSubscription
+        }
+
+        if pushNotificationsEnabled {
+            try RSSFeedSQLiteStore.shared.updatePushNotificationsEnabled(
+                for: subscription.id,
+                enabled: true
+            )
+        }
+
+        reloadCachedData()
+    }
+
     func deleteFeed(_ subscription: RSSFeedSubscription) throws {
         try RSSFeedSQLiteStore.shared.deleteSubscription(id: subscription.id)
         reloadCachedData()
+    }
+
+    func updatePushNotificationsEnabled(for subscription: RSSFeedSubscription, enabled: Bool) throws {
+        try RSSFeedSQLiteStore.shared.updatePushNotificationsEnabled(for: subscription.id, enabled: enabled)
+        subscriptions = subscriptions.map { existing in
+            guard existing.id == subscription.id else { return existing }
+            return RSSFeedSubscription(
+                id: existing.id,
+                urlString: existing.urlString,
+                createdAt: existing.createdAt,
+                lastFetchedAt: existing.lastFetchedAt,
+                pushNotificationsEnabled: enabled
+            )
+        }
     }
 
     func markFeedItemsSeen(ids: [String]) throws {
@@ -259,6 +297,7 @@ final class RSSFeedRefreshService: ObservableObject {
         guard let url = subscription.url else { return }
 
         do {
+            let previousItemIdentifiers = try RSSFeedSQLiteStore.shared.loadItemIdentifiers(for: subscription.id)
             let parsed = try await RSSFeedParserService.shared.fetchFeed(from: url)
             let fetchedAt = Date()
             let records = parsed.items.map { item in
@@ -281,6 +320,16 @@ final class RSSFeedRefreshService: ObservableObject {
 
             try RSSFeedSQLiteStore.shared.replaceItems(for: subscription, feedTitle: parsed.feedTitle, items: records)
             try RSSFeedSQLiteStore.shared.updateLastFetchedAt(for: subscription.id, at: fetchedAt)
+
+            if subscription.pushNotificationsEnabled, subscription.lastFetchedAt != nil {
+                let newItems = records.filter { !previousItemIdentifiers.contains($0.itemIdentifier) }
+                if !newItems.isEmpty {
+                    await RSSPushNotificationService.shared.scheduleNewItemNotifications(
+                        feedTitle: parsed.feedTitle,
+                        items: newItems
+                    )
+                }
+            }
         } catch {
             NSLog("RSS feed refresh failed for %@: %@", subscription.urlString, error.localizedDescription)
         }
