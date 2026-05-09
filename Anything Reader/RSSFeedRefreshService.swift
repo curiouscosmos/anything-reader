@@ -137,8 +137,10 @@ final class RSSFeedRefreshService: ObservableObject {
 
         do {
             let parsed = try await RSSFeedParserService.shared.fetchFeed(from: url)
+            let fetchedAt = Date()
             let records = parsed.items.map { item in
-                RSSFeedItemRecord(
+                let publishedAt = item.publishedAt ?? fetchedAt
+                return RSSFeedItemRecord(
                     id: "\(subscription.id)::\(item.itemIdentifier)",
                     subscriptionID: subscription.id,
                     subscriptionURLString: subscription.urlString,
@@ -148,13 +150,13 @@ final class RSSFeedRefreshService: ObservableObject {
                     summary: item.summary,
                     linkURLString: item.linkURLString,
                     imageURLString: item.imageURLString ?? parsed.feedImageURLString,
-                    publishedAt: item.publishedAt,
-                    fetchedAt: .now
+                    publishedAt: publishedAt,
+                    fetchedAt: fetchedAt
                 )
             }
 
             try RSSFeedSQLiteStore.shared.replaceItems(for: subscription, feedTitle: parsed.feedTitle, items: records)
-            try RSSFeedSQLiteStore.shared.updateLastFetchedAt(for: subscription.id, at: .now)
+            try RSSFeedSQLiteStore.shared.updateLastFetchedAt(for: subscription.id, at: fetchedAt)
         } catch {
             NSLog("RSS feed refresh failed for %@: %@", subscription.urlString, error.localizedDescription)
         }
