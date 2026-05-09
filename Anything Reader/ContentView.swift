@@ -178,6 +178,7 @@ struct ContentView: View {
         let fileExtension: String
         let sourceKind: ReaderSourceKind
         let shouldAutoPlay: Bool
+        let importCategoryName: String?
         var createdFileURLs: [URL]
     }
 
@@ -982,6 +983,21 @@ struct ContentView: View {
     }
 
     @MainActor
+    private func ensureCategory(named categoryName: String) -> ReaderCategory {
+        if let existingCategory = categories.first(where: { $0.name == categoryName }) {
+            return existingCategory
+        }
+
+        let category = ReaderCategory(
+            name: categoryName,
+            accentName: Self.accentPalette.randomElement() ?? "emerald"
+        )
+        modelContext.insert(category)
+        try? modelContext.save()
+        return category
+    }
+
+    @MainActor
     private func assign(_ entry: LibraryEntry, to categoryName: String?) {
         entry.categoryName = categoryName
         entry.lastOpened = .now
@@ -1241,12 +1257,13 @@ struct ContentView: View {
         guard !trimmedText.isEmpty else { return }
 
         let trimmedTitle = pastedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedTitle = trimmedTitle.isEmpty ? generatedPastedTitle() : trimmedTitle
+        let resolvedTitle = trimmedTitle.isEmpty ? pastedTextExcerptTitle(from: trimmedText) : trimmedTitle
         guard let pastedEntry = storePlainTextEntry(
             title: resolvedTitle,
             subtitle: "Pasted text saved locally for later.",
             text: trimmedText,
-            fileName: sanitizedStorageFileName(for: resolvedTitle)
+            fileName: sanitizedStorageFileName(for: resolvedTitle),
+            categoryName: "Pasted Text"
         ) else {
             uploadAlertMessage = "The pasted text could not be imported."
             return
@@ -1258,14 +1275,18 @@ struct ContentView: View {
         startPlayback(for: pastedEntry)
     }
 
-    private func generatedPastedTitle() -> String {
-        let now = Date()
-        let calendar = Calendar.current
-        let noteNumber = libraryEntries.filter { entry in
-            entry.sourceKind == .pastedText && calendar.isDate(entry.createdAt, inSameDayAs: now)
-        }.count + 1
+    private func pastedTextExcerptTitle(from text: String) -> String {
+        let condensed = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return "Note: #\(noteNumber)"
+        guard !condensed.isEmpty else { return "Pasted Text" }
+
+        let excerpt = String(condensed.prefix(28))
+        return condensed.count > excerpt.count ? "\(excerpt)..." : excerpt
     }
 
     @MainActor
@@ -1327,7 +1348,8 @@ struct ContentView: View {
         title: String,
         subtitle: String,
         text: String,
-        fileName: String
+        fileName: String,
+        categoryName: String? = nil
     ) -> LibraryEntry? {
         let detectedLanguage = TextNormalizationService.detectLanguage(for: text)
         let normalizedText = TextNormalizationService.normalize(text, language: detectedLanguage)
@@ -1348,7 +1370,7 @@ struct ContentView: View {
             normalizedTextFilePath: storedURL.path,
             coverImageFilePath: nil,
             fileSizeBytes: Int64(textData.count),
-            categoryName: nil,
+            categoryName: categoryName.flatMap { ensureCategory(named: $0).name },
             avatarSymbolName: Self.fallbackAvatars.randomElement() ?? "waveform",
             accentName: Self.accentPalette.randomElement() ?? "emerald",
             phonemeText: nil,
@@ -1380,7 +1402,11 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func preparePendingImport(from sourceURL: URL, shouldAutoPlay: Bool = false) async {
+    private func preparePendingImport(
+        from sourceURL: URL,
+        shouldAutoPlay: Bool = false,
+        importCategoryName: String? = nil
+    ) async {
         audioMixerPlaybackService.beginReaderPlaybackTransition()
         do {
             let stagedResult = try stageImportedFile(from: sourceURL)
@@ -1401,6 +1427,7 @@ struct ContentView: View {
                 fileExtension: fileExtension,
                 sourceKind: readerSourceKind(for: fileExtension),
                 shouldAutoPlay: shouldAutoPlay,
+                importCategoryName: importCategoryName,
                 createdFileURLs: [stagedURL]
             )
             isTranslateDocument = false
@@ -1431,7 +1458,7 @@ struct ContentView: View {
                 try? FileManager.default.removeItem(at: tempURL)
             }
 
-            await preparePendingImport(from: tempURL, shouldAutoPlay: true)
+            await preparePendingImport(from: tempURL, shouldAutoPlay: true, importCategoryName: "RSS Feed")
         } catch {
             audioMixerPlaybackService.endReaderPlaybackTransition()
             throw error
@@ -1702,7 +1729,12 @@ struct ContentView: View {
             placeholderEntry.normalizedTextFilePath = ingest.normalizedTextFileURL.path
             placeholderEntry.coverImageFilePath = context.sourceKind == .image ? context.stagedURL.path : nil
             placeholderEntry.fileSizeBytes = ingest.fileSizeBytes
-            placeholderEntry.categoryName = nil
+            if let importCategoryName = context.importCategoryName {
+                let category = ensureCategory(named: importCategoryName)
+                placeholderEntry.categoryName = category.name
+            } else {
+                placeholderEntry.categoryName = nil
+            }
             placeholderEntry.avatarSymbolName = avatarSymbol(for: ingest.sourceKind)
             placeholderEntry.accentName = placeholderEntry.accentName.isEmpty ? (Self.accentPalette.randomElement() ?? "emerald") : placeholderEntry.accentName
             placeholderEntry.phonemeText = nil
@@ -2160,7 +2192,7 @@ struct ContentView: View {
                 normalizedTextFilePath: ingest.normalizedTextFileURL.path,
                 coverImageFilePath: coverImageFilePath,
                 fileSizeBytes: ingest.fileSizeBytes,
-                categoryName: nil,
+                categoryName: ensureCategory(named: "Books").name,
                 avatarSymbolName: ReaderSourceKind.text.systemImage,
                 accentName: Self.accentPalette.randomElement() ?? "emerald",
                 phonemeText: nil,
