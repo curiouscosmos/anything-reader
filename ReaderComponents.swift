@@ -2174,19 +2174,34 @@ struct RSSHomeTickerView: View {
                     progressLine
 
                     if let currentFeedItem {
-                        ZStack {
-                        RSSHomeTickerRowView(
-                            item: currentFeedItem,
-                            preferredMode: preferredMode,
-                            isReadAloudLoading: isReadAloudLoading,
-                            onOpenArticle: { onOpenArticle(currentFeedItem) },
-                            onReadAloud: {
-                                Task {
-                                    await readAloud(currentFeedItem)
+                        ZStack(alignment: .bottomTrailing) {
+                            RSSHomeTickerRowView(
+                                item: currentFeedItem,
+                                preferredMode: preferredMode,
+                                isReadAloudLoading: isReadAloudLoading,
+                                onOpenArticle: { onOpenArticle(currentFeedItem) },
+                                onReadAloud: {
+                                    Task {
+                                        await readAloud(currentFeedItem)
+                                    }
                                 }
+                            )
+                            .id(currentFeedItem.id)
+
+                            HStack(spacing: 8) {
+                                tickerControlButton(
+                                    systemImage: "chevron.left",
+                                    accessibilityLabel: "Previous feed",
+                                    action: { moveFeed(by: -1) }
+                                )
+
+                                tickerControlButton(
+                                    systemImage: "chevron.right",
+                                    accessibilityLabel: "Next feed",
+                                    action: { moveFeed(by: 1) }
+                                )
                             }
-                        )
-                        .id(currentFeedItem.id)
+                            .padding(10)
                         }
                         .opacity(isVisible ? 1 : 0)
                     }
@@ -2261,6 +2276,52 @@ struct RSSHomeTickerView: View {
         defer { isReadAloudLoading = false }
 
         await onReadAloud(item)
+    }
+
+    @MainActor
+    private func moveFeed(by offset: Int) {
+        guard !visibleItems.isEmpty else { return }
+
+        let count = visibleItems.count
+        let normalizedOffset = ((offset % count) + count) % count
+        guard normalizedOffset != 0 else { return }
+
+        withAnimation(.easeInOut(duration: fadeDuration)) {
+            isVisible = false
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(fadeDuration * 1_000_000_000))
+            guard !Task.isCancelled, !visibleItems.isEmpty else { return }
+
+            currentIndex = (currentIndex + normalizedOffset) % count
+            cycleStartedAt = .now
+            accumulatedPausedTime = 0
+            pauseStartedAt = nil
+
+            withAnimation(.easeInOut(duration: fadeDuration)) {
+                isVisible = true
+            }
+        }
+    }
+
+    private func tickerControlButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.semibold))
+                .frame(width: 28, height: 28)
+                .foregroundStyle(.primary)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(
+                    Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(accessibilityLabel))
     }
 
     @MainActor
