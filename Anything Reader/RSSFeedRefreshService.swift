@@ -218,11 +218,28 @@ final class RSSFeedRefreshService: ObservableObject {
                 await refresh(subscription)
             }
 
+            await maintainFeedReadState()
             feedItems = try RSSFeedSQLiteStore.shared.loadItems()
             lastRefreshAt = .now
             await cleanupFeedItemsIfNeeded()
         } catch {
             NSLog("RSS refresh failed: %@", error.localizedDescription)
+        }
+    }
+
+    private func maintainFeedReadState() async {
+        do {
+            let cutoffDate = Calendar.current.date(byAdding: .day, value: -2, to: .now) ?? Date().addingTimeInterval(-172_800)
+            try RSSFeedSQLiteStore.shared.markItemsSeen(olderThan: cutoffDate)
+
+            let unreadCount = try RSSFeedSQLiteStore.shared.unreadItemCount()
+            if unreadCount > 300 {
+                try RSSFeedSQLiteStore.shared.markAllItemsSeen()
+            }
+
+            feedItems = try RSSFeedSQLiteStore.shared.loadItems()
+        } catch {
+            NSLog("RSS read-state maintenance failed: %@", error.localizedDescription)
         }
     }
 

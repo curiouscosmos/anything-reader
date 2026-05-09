@@ -145,6 +145,14 @@ final class RSSFeedSQLiteStore {
         return try fetchItemCount(in: database)
     }
 
+    func unreadItemCount() throws -> Int {
+        let database = try openDatabase()
+        defer { sqlite3_close(database) }
+
+        try ensureSchema(in: database)
+        return try fetchUnreadItemCount(in: database)
+    }
+
     func replaceItems(
         for subscription: RSSFeedSubscription,
         feedTitle: String,
@@ -206,6 +214,27 @@ final class RSSFeedSQLiteStore {
 
         try ensureSchema(in: database)
         try execute(sql: "UPDATE \(itemsTableName) SET has_seen = 1 WHERE has_seen = 0;", in: database)
+    }
+
+    func markItemsSeen(olderThan cutoffDate: Date) throws {
+        let database = try openDatabase()
+        defer { sqlite3_close(database) }
+
+        try ensureSchema(in: database)
+
+        let cutoffString = dateFormatter.string(from: cutoffDate)
+        try execute(sql: """
+        UPDATE \(itemsTableName)
+        SET has_seen = 1
+        WHERE has_seen = 0
+          AND (
+                (published_at IS NOT NULL AND published_at < ?)
+                OR (published_at IS NULL AND fetched_at < ?)
+          );
+        """, bind: { statement in
+            bindText(cutoffString, to: statement, index: 1)
+            bindText(cutoffString, to: statement, index: 2)
+        }, in: database)
     }
 
     func pruneItemsKeepingLatest(_ keepCount: Int) throws {
@@ -606,6 +635,21 @@ final class RSSFeedSQLiteStore {
 
     private func fetchItemCount(in database: OpaquePointer) throws -> Int {
         let sql = "SELECT COUNT(*) FROM \(itemsTableName);"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw RSSFeedSQLiteStoreError.statementPreparationFailed
+        }
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw RSSFeedSQLiteStoreError.statementStepFailed
+        }
+
+        return Int(sqlite3_column_int64(statement, 0))
+    }
+
+    private func fetchUnreadItemCount(in database: OpaquePointer) throws -> Int {
+        let sql = "SELECT COUNT(*) FROM \(itemsTableName) WHERE has_seen = 0;"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
             throw RSSFeedSQLiteStoreError.statementPreparationFailed
