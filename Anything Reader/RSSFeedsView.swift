@@ -15,6 +15,7 @@ struct RSSFeedsView: View {
     let onFeedSaved: () -> Void
     let onReadAloud: (RSSFeedItemRecord) async throws -> Void
 
+    @AppStorage("rssFeedDisplayStyle") private var rssFeedDisplayStyleRawValue: String = RSSFeedDisplayStyle.list.rawValue
     @State private var feedURLString = ""
     @State private var isSavingFeed = false
     @State private var isShowingSavedFeeds = false
@@ -146,29 +147,57 @@ struct RSSFeedsView: View {
                 }
 
                 Spacer(minLength: 0)
+
+                Picker("View", selection: rssFeedDisplayStyleBinding) {
+                    Text("List View")
+                        .tag(RSSFeedDisplayStyle.list)
+                    Text("Card View")
+                        .tag(RSSFeedDisplayStyle.card)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
             }
 
             if cards.isEmpty {
                 emptyStateView
             } else {
-                LazyVGrid(
-                    columns: [
-                        GridItem(.adaptive(minimum: 290), spacing: 16, alignment: .top)
-                    ],
-                    alignment: .leading,
-                    spacing: 16
-                ) {
-                    ForEach(cards) { card in
-                        RSSFeedItemCardView(
-                            card: card,
-                            preferredMode: preferredMode,
-                            isReadAloudLoading: readAloudItemID == card.id,
-                            onOpenArticle: { openArticle(card) },
-                            onReadAloud: { readAloud(card) }
-                        )
-                        .onAppear {
-                            if card.id == cards.last?.id {
-                                loadMoreFeedItemsIfNeeded()
+                if rssFeedDisplayStyle == .card {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.adaptive(minimum: 290), spacing: 16, alignment: .top)
+                        ],
+                        alignment: .leading,
+                        spacing: 16
+                    ) {
+                        ForEach(cards) { card in
+                            RSSFeedItemCardView(
+                                card: card,
+                                preferredMode: preferredMode,
+                                isReadAloudLoading: readAloudItemID == card.id,
+                                onOpenArticle: { openArticle(card) },
+                                onReadAloud: { readAloud(card) }
+                            )
+                            .onAppear {
+                                if card.id == cards.last?.id {
+                                    loadMoreFeedItemsIfNeeded()
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(cards) { card in
+                            RSSFeedItemListRowView(
+                                card: card,
+                                preferredMode: preferredMode,
+                                isReadAloudLoading: readAloudItemID == card.id,
+                                onOpenArticle: { openArticle(card) },
+                                onReadAloud: { readAloud(card) }
+                            )
+                            .onAppear {
+                                if card.id == cards.last?.id {
+                                    loadMoreFeedItemsIfNeeded()
+                                }
                             }
                         }
                     }
@@ -220,6 +249,22 @@ struct RSSFeedsView: View {
 
     private var canLoadMoreFeedItems: Bool {
         visibleFeedItemCount < filteredCards.count
+    }
+
+    private var rssFeedDisplayStyle: RSSFeedDisplayStyle {
+        get {
+            RSSFeedDisplayStyle(rawValue: rssFeedDisplayStyleRawValue) ?? .list
+        }
+        nonmutating set {
+            rssFeedDisplayStyleRawValue = newValue.rawValue
+        }
+    }
+
+    private var rssFeedDisplayStyleBinding: Binding<RSSFeedDisplayStyle> {
+        Binding(
+            get: { rssFeedDisplayStyle },
+            set: { rssFeedDisplayStyle = $0 }
+        )
     }
 
     @MainActor
@@ -310,7 +355,7 @@ struct RSSFeedItemCardView: View {
                     Spacer(minLength: 0)
 
                     if let publishedAt = card.publishedAt {
-                        Text(publishedAt.formatted(date: .abbreviated, time: .omitted))
+                        Text(RSSFeedDateDisplayFormatter.string(from: publishedAt))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -367,6 +412,117 @@ struct RSSFeedItemCardView: View {
 
     private var hasOpenableArticleURL: Bool {
         card.linkURL != nil || URL(string: card.linkURLString) != nil
+    }
+}
+
+struct RSSFeedItemListRowView: View {
+    let card: RSSFeedItemRecord
+    let preferredMode: AppearanceMode
+    let isReadAloudLoading: Bool
+    let onOpenArticle: () -> Void
+    let onReadAloud: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            placeholderImage
+                .frame(width: 110, height: 110)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(card.title)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(2)
+
+                Text(card.summary.isEmpty ? "No description provided." : card.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+
+                HStack(spacing: 8) {
+                    Text(card.feedTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(ReaderStyle.accentColor(named: "emerald"))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    if let publishedAt = card.publishedAt {
+                        Text(RSSFeedDateDisplayFormatter.string(from: publishedAt))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        onOpenArticle()
+                    } label: {
+                        Label("Open Article", systemImage: "safari")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!hasOpenableArticleURL || isReadAloudLoading)
+
+                    Button {
+                        onReadAloud()
+                    } label: {
+                        if isReadAloudLoading {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Reading...")
+                            }
+                            .font(.subheadline.weight(.semibold))
+                        } else {
+                            Label("Read Aloud", systemImage: "speaker.wave.2.fill")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(ReaderStyle.accentColor(named: "emerald"))
+                    .disabled(!hasOpenableArticleURL || isReadAloudLoading)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var placeholderImage: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(ReaderStyle.accentColor(named: "emerald").opacity(preferredMode == .light ? 0.10 : 0.16))
+
+            Image(systemName: "newspaper.fill")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(ReaderStyle.accentColor(named: "emerald"))
+        }
+    }
+
+    private var hasOpenableArticleURL: Bool {
+        card.linkURL != nil || URL(string: card.linkURLString) != nil
+    }
+}
+
+private enum RSSFeedDisplayStyle: String, CaseIterable, Identifiable {
+    case list
+    case card
+
+    var id: String { rawValue }
+}
+
+private enum RSSFeedDateDisplayFormatter {
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:mma, MMM d"
+        return formatter
+    }()
+
+    static func string(from date: Date) -> String {
+        formatter.string(from: date)
     }
 }
 

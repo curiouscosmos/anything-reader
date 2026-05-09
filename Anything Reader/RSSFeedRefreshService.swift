@@ -44,6 +44,18 @@ enum RSSFeedRefreshError: LocalizedError {
 final class RSSFeedRefreshService: ObservableObject {
     static let shared = RSSFeedRefreshService()
 
+    private static let seededDefaultsKey = "rssFeedDefaultSubscriptionsSeeded"
+    private static let defaultSubscriptionURLs = [
+        "https://techcrunch.com/rss",
+        "https://openai.com/blog/rss.xml",
+        "https://huggingface.co/blog/feed.xml",
+        "https://deepmind.google/blog/rss.xml",
+        "https://www.theverge.com/rss/index.xml",
+        "https://feeds.npr.org/1001/rss.xml",
+        "https://feeds.npr.org/1001/rss.xml",
+        "https://feeds.bbci.co.uk/news/rss.xml"
+    ]
+
     @Published private(set) var subscriptions: [RSSFeedSubscription] = []
     @Published private(set) var feedItems: [RSSFeedItemRecord] = []
     @Published private(set) var lastRefreshAt: Date?
@@ -85,6 +97,7 @@ final class RSSFeedRefreshService: ObservableObject {
     }
 
     private func refreshLoop() async {
+        seedDefaultSubscriptionsIfNeeded()
         reloadCachedData()
         await refreshFeeds()
 
@@ -100,6 +113,26 @@ final class RSSFeedRefreshService: ObservableObject {
             }
 
             await refreshFeeds()
+        }
+    }
+
+    private func seedDefaultSubscriptionsIfNeeded() {
+        let userDefaults = UserDefaults.standard
+        guard !userDefaults.bool(forKey: Self.seededDefaultsKey) else { return }
+
+        let uniqueURLs = Self.defaultSubscriptionURLs.reduce(into: [String]()) { result, urlString in
+            if !result.contains(urlString) {
+                result.append(urlString)
+            }
+        }
+
+        do {
+            for urlString in uniqueURLs {
+                _ = try RSSFeedSQLiteStore.shared.saveSubscription(from: urlString)
+            }
+            userDefaults.set(true, forKey: Self.seededDefaultsKey)
+        } catch {
+            NSLog("RSS default feed seed failed: %@", error.localizedDescription)
         }
     }
 
