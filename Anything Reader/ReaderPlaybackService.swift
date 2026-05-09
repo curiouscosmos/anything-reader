@@ -95,6 +95,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         isBufferingFirstChunk = false
         activePlaybackIdentity = nil
         activeChunkIndex = 0
+
+        ReaderPlaybackEventCenter.post(
+            ReaderPlaybackEvent(kind: .didStop, source: .reader)
+        )
     }
 
     func setVolume(_ newValue: Double) {
@@ -116,6 +120,9 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     ) {
         // Starting a new narration session resets any previously scheduled
         // chunk queue so the player can resume from the selected reading target.
+        ReaderPlaybackEventCenter.post(
+            ReaderPlaybackEvent(kind: .willTransition, source: .reader)
+        )
         stop()
         stopRequested = false
         playbackSessionID = UUID()
@@ -196,6 +203,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 onProgress: onProgress,
                 onFinished: onFinished,
                 onFailure: onFailure
+            )
+
+            ReaderPlaybackEventCenter.post(
+                ReaderPlaybackEvent(kind: .didStart, source: .reader)
             )
 
             var scheduledChunkCount = 0
@@ -341,6 +352,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         playerNode.pause()
         isPlaying = false
         isPaused = true
+
+        ReaderPlaybackEventCenter.post(
+            ReaderPlaybackEvent(kind: .didPause, source: .reader)
+        )
     }
 
     func resume() {
@@ -349,6 +364,10 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         playerNode.play()
         isPlaying = true
         isPaused = false
+
+        ReaderPlaybackEventCenter.post(
+            ReaderPlaybackEvent(kind: .didStart, source: .reader)
+        )
     }
 
     func isActivePlayback(for entry: LibraryEntry, textFileURL: URL? = nil) -> Bool {
@@ -415,6 +434,9 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             engine.stop()
         }
 
+        ReaderPlaybackEventCenter.post(
+            ReaderPlaybackEvent(kind: .didFinish, source: .reader)
+        )
         onFinished()
     }
 

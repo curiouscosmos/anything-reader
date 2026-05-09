@@ -83,6 +83,9 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
     ) {
         // Reuse an already loaded file when possible so resume, speed, and
         // volume state stay intact across play/pause toggles.
+        ReaderPlaybackEventCenter.post(
+            ReaderPlaybackEvent(kind: .willTransition, source: .generatedAudio)
+        )
         if hasLoadedAudio(for: fileURL), let player {
             self.onProgress = onProgress
             self.onFinished = onFinished
@@ -105,6 +108,9 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
             player.play()
             isPlaying = true
             startProgressTimer()
+            ReaderPlaybackEventCenter.post(
+                ReaderPlaybackEvent(kind: .didStart, source: .generatedAudio)
+            )
             onProgress(currentElapsedSeconds, currentDurationSeconds)
             return
         }
@@ -136,6 +142,9 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
             self.isPlaying = true
             player.play()
             startProgressTimer()
+            ReaderPlaybackEventCenter.post(
+                ReaderPlaybackEvent(kind: .didStart, source: .generatedAudio)
+            )
             onProgress(currentElapsedSeconds, currentDurationSeconds)
         } catch {
             stop()
@@ -153,12 +162,18 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
             player.pause()
             isPlaying = false
             stopProgressTimer()
+            ReaderPlaybackEventCenter.post(
+                ReaderPlaybackEvent(kind: .didPause, source: .generatedAudio)
+            )
         } else {
             player.enableRate = true
             player.rate = Float(playbackSpeed)
             player.play()
             isPlaying = true
             startProgressTimer()
+            ReaderPlaybackEventCenter.post(
+                ReaderPlaybackEvent(kind: .didStart, source: .generatedAudio)
+            )
         }
     }
 
@@ -190,6 +205,10 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         onProgress = nil
         onFinished = nil
         onFailure = nil
+
+        ReaderPlaybackEventCenter.post(
+            ReaderPlaybackEvent(kind: .didStop, source: .generatedAudio)
+        )
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -209,8 +228,14 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         onFailure = nil
 
         if flag {
+            ReaderPlaybackEventCenter.post(
+                ReaderPlaybackEvent(kind: .didFinish, source: .generatedAudio)
+            )
             finishedHandler?()
         } else {
+            ReaderPlaybackEventCenter.post(
+                ReaderPlaybackEvent(kind: .didStop, source: .generatedAudio)
+            )
             failureHandler?("Playback ended unexpectedly.")
         }
     }
@@ -234,6 +259,10 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         } else {
             failureHandler?("The generated audio file could not be played.")
         }
+
+        ReaderPlaybackEventCenter.post(
+            ReaderPlaybackEvent(kind: .didStop, source: .generatedAudio)
+        )
     }
 
     private func startProgressTimer() {

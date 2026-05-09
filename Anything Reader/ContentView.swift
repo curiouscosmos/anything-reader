@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var recentSearchText = ""
     @State private var freeBooksSearchText = ""
     @State private var audioMixerSearchText = ""
+    @State private var rssFeedSearchText = ""
     @State private var categorySearchTexts: [String: String] = [:]
     @State private var visibleHomeEntryCount = 10
     @State private var visibleRecentEntryCount = 10
@@ -114,6 +115,7 @@ struct ContentView: View {
     @StateObject private var generatedAudioPlaybackService = GeneratedAudioPlaybackService.shared
     @StateObject private var audioMixerPlaybackService = AudioMixerPlaybackService.shared
     @StateObject private var audioMixerLibraryService = AudioMixerLibraryService.shared
+    @StateObject private var rssFeedRefreshService = RSSFeedRefreshService.shared
     @StateObject private var appUpdateChecker = AppUpdateChecker.shared
     @State private var translationCoordinator = DocumentTranslationCoordinator()
 
@@ -175,6 +177,7 @@ struct ContentView: View {
         let fileName: String
         let fileExtension: String
         let sourceKind: ReaderSourceKind
+        let shouldAutoPlay: Bool
         var createdFileURLs: [URL]
     }
 
@@ -386,10 +389,11 @@ struct ContentView: View {
             cleanupGeneratedDemoContentIfNeeded()
             backfillMissingCoverArtIfNeeded()
             await backfillGeneratedAudioMetadataIfNeeded()
+            audioMixerLibraryService.loadIfNeeded(using: modelContext)
+            audioMixerLibraryService.repairLibraryIfNeeded(using: modelContext)
             validateSelectedTTSConfiguration()
             ttsCoordinator.refreshInstallationStatus()
             promptForTTSDownloadIfNeeded()
-            syncAudioMixerPlaybackState()
         }
         .task {
             do {
@@ -402,6 +406,9 @@ struct ContentView: View {
         .task {
             appUpdateChecker.startMonitoring()
         }
+        .task {
+            rssFeedRefreshService.startIfNeeded()
+        }
         .onChange(of: selection) { _, newValue in
             isHomeDropTargeted = false
             switch newValue {
@@ -409,7 +416,7 @@ struct ContentView: View {
                 visibleHomeEntryCount = 10
             case .recent:
                 visibleRecentEntryCount = 10
-            case .freeBooks, .audioMixer, .category(_):
+            case .freeBooks, .audioMixer, .rssFeeds, .category(_):
                 break
             }
         }
@@ -454,16 +461,12 @@ struct ContentView: View {
             restartPlaybackForSelectedVoiceIfNeeded()
         }
         .onChange(of: readerPlaybackService.isPlaying) { _, _ in
-            syncAudioMixerPlaybackState()
         }
         .onChange(of: readerPlaybackService.isPaused) { _, _ in
-            syncAudioMixerPlaybackState()
         }
         .onChange(of: generatedAudioPlaybackService.isPlaying) { _, _ in
-            syncAudioMixerPlaybackState()
         }
         .onChange(of: audioMixerPlaybackService.followsReaderPlayback) { _, _ in
-            syncAudioMixerPlaybackState()
         }
         .onChange(of: successToastMessage) { _, newMessage in
             toastDismissTask?.cancel()
@@ -587,19 +590,6 @@ struct ContentView: View {
         }
     }
 
-    private func syncAudioMixerPlaybackState() {
-        let playbackState: AudioMixerReaderPlaybackState
-        if readerPlaybackService.isPlaying || generatedAudioPlaybackService.isPlaying {
-            playbackState = .playing
-        } else if readerPlaybackService.isPaused {
-            playbackState = .paused
-        } else {
-            playbackState = .stopped
-        }
-
-        audioMixerPlaybackService.syncReaderPlaybackState(playbackState)
-    }
-
     private func openKokoroDownloadModal() {
         isShowingKokoroDownloadModal = true
     }
@@ -692,6 +682,20 @@ struct ContentView: View {
                             playbackService: audioMixerPlaybackService,
                             searchText: $audioMixerSearchText,
                             preferredMode: preferredMode
+                        )
+
+                    case .rssFeeds:
+                        RSSFeedsView(
+                            refreshService: rssFeedRefreshService,
+                            searchText: $rssFeedSearchText,
+                            preferredMode: preferredMode,
+                            onFeedSaved: {
+                                successToastMessage = "RSS feed saved, fetching feed..."
+                                playSuccessTone()
+                            },
+                            onReadAloud: { item in
+                                try await prepareRSSArticleReadAloudImport(from: item)
+                            }
                         )
 
                     case .category(let categoryName):
@@ -840,6 +844,8 @@ struct ContentView: View {
                 matchesSelection = true
             case .audioMixer:
                 matchesSelection = false
+            case .rssFeeds:
+                matchesSelection = false
             case .category(let categoryName):
                 matchesSelection = entry.categoryName == categoryName
             }
@@ -880,6 +886,8 @@ struct ContentView: View {
             return $freeBooksSearchText
         case .audioMixer:
             return $audioMixerSearchText
+        case .rssFeeds:
+            return $rssFeedSearchText
         case .category(let categoryName):
             return Binding(
                 get: { categorySearchTexts[categoryName] ?? "" },
@@ -898,6 +906,8 @@ struct ContentView: View {
             return freeBooksSearchText
         case .audioMixer:
             return audioMixerSearchText
+        case .rssFeeds:
+            return rssFeedSearchText
         case .category(let categoryName):
             return categorySearchTexts[categoryName] ?? ""
         }
@@ -911,6 +921,8 @@ struct ContentView: View {
             return "Search free books, authors, categories"
         case .audioMixer:
             return "Search audio tracks"
+        case .rssFeeds:
+            return "Search RSS feeds"
         }
     }
 
@@ -1367,7 +1379,8 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func preparePendingImport(from sourceURL: URL) async {
+    private func preparePendingImport(from sourceURL: URL, shouldAutoPlay: Bool = false) async {
+        audioMixerPlaybackService.beginReaderPlaybackTransition()
         do {
             let stagedResult = try stageImportedFile(from: sourceURL)
             let stagedURL = stagedResult.stagedURL
@@ -1386,6 +1399,7 @@ struct ContentView: View {
                 fileName: sourceURL.lastPathComponent,
                 fileExtension: fileExtension,
                 sourceKind: readerSourceKind(for: fileExtension),
+                shouldAutoPlay: shouldAutoPlay,
                 createdFileURLs: [stagedURL]
             )
             isTranslateDocument = false
@@ -1396,8 +1410,45 @@ struct ContentView: View {
             isShowingImportLanguageSheet = true
         } catch {
             uploadAlertMessage = error.localizedDescription
+            audioMixerPlaybackService.endReaderPlaybackTransition()
             cleanupPendingImportArtifacts()
         }
+    }
+
+    @MainActor
+    private func prepareRSSArticleReadAloudImport(from item: RSSFeedItemRecord) async throws {
+        audioMixerPlaybackService.beginReaderPlaybackTransition()
+        guard let articleURL = item.linkURL ?? URL(string: item.linkURLString) else {
+            audioMixerPlaybackService.endReaderPlaybackTransition()
+            throw RSSArticleScraperError.invalidArticleURL
+        }
+
+        do {
+            let draft = try await RSSArticleScraperService.shared.scrapeArticle(from: articleURL)
+            let tempURL = try createTemporaryRSSArticleFile(from: draft)
+            defer {
+                try? FileManager.default.removeItem(at: tempURL)
+            }
+
+            await preparePendingImport(from: tempURL, shouldAutoPlay: true)
+        } catch {
+            audioMixerPlaybackService.endReaderPlaybackTransition()
+            throw error
+        }
+    }
+
+    private func createTemporaryRSSArticleFile(from draft: RSSArticleDraft) throws -> URL {
+        let fileManager = FileManager.default
+        let directoryURL = fileManager.temporaryDirectory.appendingPathComponent("RSS Article Imports", isDirectory: true)
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let fileName = sanitizedStorageFileName(for: draft.title.isEmpty ? "RSS Article" : draft.title)
+        let fileURL = directoryURL.appendingPathComponent(fileName).appendingPathExtension("txt")
+        let body = [draft.title, "", draft.body]
+            .joined(separator: "\n")
+
+        try body.write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
     }
 
     private func handleDroppedFiles(_ providers: [NSItemProvider]) -> Bool {
@@ -1667,9 +1718,16 @@ struct ContentView: View {
             placeholderEntry.importState = .ready
             try modelContext.save()
 
+            let shouldAutoPlay = context.shouldAutoPlay
+
             await MainActor.run {
                 clearPendingImportState(showing: "\(placeholderEntry.title) is ready to play.")
                 queueCoverArtGenerationIfNeeded(for: placeholderEntry)
+                if shouldAutoPlay {
+                    startPlayback(for: placeholderEntry)
+                } else {
+                    audioMixerPlaybackService.endReaderPlaybackTransition()
+                }
             }
         } catch {
             if error is CancellationError {
@@ -1680,6 +1738,7 @@ struct ContentView: View {
                     }
                     isProcessingImport = false
                     pendingImportEntry = nil
+                    audioMixerPlaybackService.endReaderPlaybackTransition()
                 }
                 return
             }
@@ -1691,6 +1750,7 @@ struct ContentView: View {
                     try? modelContext.save()
                 }
                 importFailureMessage = error.localizedDescription
+                audioMixerPlaybackService.endReaderPlaybackTransition()
             }
         }
     }
@@ -1709,6 +1769,7 @@ struct ContentView: View {
     @MainActor
     private func discardPendingImport() {
         cleanupPendingImportArtifacts()
+        audioMixerPlaybackService.endReaderPlaybackTransition()
         clearPendingImportState(showing: nil)
     }
 
@@ -2536,7 +2597,6 @@ struct ContentView: View {
                     try? self.modelContext.save()
                 }
                 self.persistPlayerProgress(force: true)
-                self.syncAudioMixerPlaybackState()
             },
             onFailure: { message in
                 guard self.playbackSessionToken == sessionToken else { return }
@@ -2589,7 +2649,6 @@ struct ContentView: View {
             onFinished: {
                 self.persistGeneratedAudioPlaybackProgress(for: entry, elapsedSeconds: 0)
                 self.audioMixerPlaybackService.endReaderPlaybackTransition()
-                self.syncAudioMixerPlaybackState()
                 self.stopGeneratedAudioPlayback()
             },
             onFailure: { message in

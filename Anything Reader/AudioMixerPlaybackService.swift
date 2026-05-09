@@ -11,12 +11,6 @@ import AVFoundation
 import Foundation
 import Combine
 
-enum AudioMixerReaderPlaybackState: Equatable {
-    case playing
-    case paused
-    case stopped
-}
-
 @MainActor
 final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = AudioMixerPlaybackService()
@@ -33,6 +27,7 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
     private var player: AVAudioPlayer?
     private var pendingReaderStopTask: Task<Void, Never>?
     private var isReaderTransitioning = false
+    private var playbackEventObserver: NSObjectProtocol?
 
     private static let volumeStorageKey = "audioMixerVolume"
     private static let loopingStorageKey = "audioMixerLooping"
@@ -50,6 +45,16 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
         followsReaderPlayback = storedFollowsReaderPlayback ?? false
         selectedTrackID = storedTrackID
         super.init()
+        playbackEventObserver = NotificationCenter.default.addObserver(
+            forName: .readerPlaybackEvent,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self, let event = ReaderPlaybackEventCenter.decode(notification) else { return }
+            Task { @MainActor [weak self] in
+                self?.handlePlaybackEvent(event)
+            }
+        }
     }
 
     var hasSelection: Bool {
@@ -186,34 +191,40 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
         stopPlayback(resetSelection: true)
     }
 
-    func syncReaderPlaybackState(_ state: AudioMixerReaderPlaybackState) {
+    private func handlePlaybackEvent(_ event: ReaderPlaybackEvent) {
+        guard followsReaderPlayback else { return }
+
+        switch event.kind {
+        case .willTransition:
+            beginReaderPlaybackTransition()
+        case .didStart:
+            endReaderPlaybackTransition()
+            ensureReaderFollowPlaybackIfNeeded()
+        case .didPause:
+            endReaderPlaybackTransition()
+            if isPlaying {
+                pause()
+            }
+        case .didStop, .didFinish:
+            guard !isReaderTransitioning else { return }
+            if isPlaying || isPaused {
+                scheduleReaderStop()
+            }
+        }
+    }
+
+    func ensureReaderFollowPlaybackIfNeeded() {
         guard followsReaderPlayback else { return }
         guard let selectedTrackID,
               let track = AudioMixerLibraryService.shared.track(for: selectedTrackID) else {
             return
         }
 
-        switch state {
-        case .playing:
-            endReaderPlaybackTransition()
-            cancelPendingReaderStop()
-            if isPaused {
-                resume()
-            } else if !isPlaying {
-                play(track: track)
-            }
-        case .paused:
-            endReaderPlaybackTransition()
-            cancelPendingReaderStop()
-            if isPlaying {
-                pause()
-            }
-        case .stopped:
-            guard !isReaderTransitioning else { return }
-            guard isPlaying || isPaused else {
-                return
-            }
-            scheduleReaderStop()
+        cancelPendingReaderStop()
+        if isPaused {
+            resume()
+        } else if !isPlaying {
+            play(track: track)
         }
     }
 

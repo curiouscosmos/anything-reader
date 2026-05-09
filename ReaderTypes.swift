@@ -13,6 +13,7 @@ enum SidebarSelection: Hashable {
     case recent
     case freeBooks
     case audioMixer
+    case rssFeeds
     case category(String)
 }
 

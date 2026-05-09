@@ -31,6 +31,9 @@ struct ReaderSidebarView: View {
 
                 Label("Audio Mixer", systemImage: "music.note.list")
                     .tag(SidebarSelection.audioMixer)
+
+                Label("RSS Feed", systemImage: "dot.radiowaves.left.and.right")
+                    .tag(SidebarSelection.rssFeeds)
             }
 
             // User-generated categories.

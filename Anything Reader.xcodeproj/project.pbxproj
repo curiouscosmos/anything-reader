@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		D12D9C462FA1802E001EC25F /* hero_image.png in Resources */ = {isa = PBXBuildFile; fileRef = D12D9C452FA1802E001EC25F /* hero_image.png */; };
+		D15A58362FAEAB21005A9DEA /* FeedKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1F6B1A11AA1000000000006 /* FeedKit */; };
 		D18510322F9C27E9008E9FF8 /* ReaderTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18510312F9C27E9008E9FF8 /* ReaderTypes.swift */; };
 		D18510342F9C280B008E9FF8 /* ReaderComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18510332F9C280B008E9FF8 /* ReaderComponents.swift */; };
 		D18510362F9C2812008E9FF8 /* ReaderSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18510352F9C2812008E9FF8 /* ReaderSheets.swift */; };
@@ -89,6 +90,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D15A58362FAEAB21005A9DEA /* FeedKit in Frameworks */,
 				D18512322F9F3453008E9FF8 /* ZIPFoundation in Frameworks */,
 				D18512312F9F3453008E9FF8 /* MLX in Frameworks */,
 				D18512342F9F3453008E9FF8 /* MoonshineVoice in Frameworks */,
@@ -184,6 +186,7 @@
 				D185116A2F9F2B01008E9FF8 /* MoonshineVoice */,
 				D18511692F9F2B01008E9FF8 /* STTextView */,
 				D18511672F9F2B01008E9FF8 /* ZIPFoundation */,
+				A1F6B1A11AA1000000000006 /* FeedKit */,
 			);
 			productName = "Anything Reader";
 			productReference = D1850FC62F9C1990008E9FF8 /* Anything Reader.app */;
@@ -273,6 +276,7 @@
 				D185116B2F9F2B01008E9FF8 /* XCRemoteSwiftPackageReference "moonshine-swift" */,
 				D18511682F9F2B01008E9FF8 /* XCRemoteSwiftPackageReference "STTextView" */,
 				D18511592F9EC5D1008E9FF8 /* XCRemoteSwiftPackageReference "mlx-swift" */,
+				A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D1850FC72F9C1990008E9FF8 /* Products */;
@@ -662,6 +666,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nmdias/FeedKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.1.1;
+			};
+		};
 		D18510522F9F1000008E9FF8 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
@@ -705,6 +717,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A1F6B1A11AA1000000000006 /* FeedKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */;
+			productName = FeedKit;
+		};
 		D18511652F9F2B01008E9FF8 /* KokoroSwift */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D18510622F9F2000008E9FF8 /* XCRemoteSwiftPackageReference "kokoro-ios" */;
