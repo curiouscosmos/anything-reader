@@ -601,12 +601,15 @@ final class LibraryEntry {
 
 @Model
 final class ReaderCategory {
+    private static let fallbackIconName = "folder.fill"
+
     var name: String
     var accentName: String
-    var iconName: String
+    // Keep a persisted default so older stores can migrate without a missing-value failure.
+    var iconName: String = ReaderCategory.fallbackIconName
     var createdAt: Date
 
-    init(name: String, accentName: String, iconName: String, createdAt: Date = .now) {
+    init(name: String, accentName: String, iconName: String = ReaderCategory.fallbackIconName, createdAt: Date = .now) {
         self.name = name
         self.accentName = accentName
         self.iconName = iconName
