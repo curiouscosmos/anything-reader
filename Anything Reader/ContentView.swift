@@ -233,6 +233,12 @@ struct ContentView: View {
         .task {
             await handlePendingSidebarSelection()
         }
+        .task {
+            // Prime the mixer library at launch so reader playback can follow the
+            // selected track before the Audio Mixer screen has been visited.
+            audioMixerLibraryService.loadIfNeeded(using: modelContext)
+            audioMixerLibraryService.repairLibraryIfNeeded(using: modelContext)
+        }
         .safeAreaInset(edge: .bottom) {
             if shouldShowGeneratedAudioPlayerBar, let entry = activeGeneratedAudioEntry {
                 GeneratedAudioPlayerBarView(
