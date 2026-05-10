@@ -9,6 +9,37 @@ import AppKit
 import SwiftData
 import SwiftUI
 
+// MARK: - Pointer Cursor
+// Keeps the macOS pointer consistent across custom SwiftUI controls.
+private struct ReaderPointerCursorModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.onHover { isHovering in
+            if isHovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+    }
+}
+
+struct ReaderPointerCursorButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.readerPointerCursor()
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func readerPointerCursor() -> some View {
+        #if os(macOS)
+        modifier(ReaderPointerCursorModifier())
+        #else
+        self
+        #endif
+    }
+}
+
 // MARK: - Sidebar
 // Primary navigation for the app shell, including user-created categories.
 struct ReaderSidebarView: View {
@@ -22,23 +53,29 @@ struct ReaderSidebarView: View {
             // Core navigation shortcuts.
             Section {
                 Label("Home", systemImage: "house.fill")
+                    .readerPointerCursor()
                     .tag(SidebarSelection.home)
 
                 Label("Recently Played", systemImage: "clock.arrow.circlepath")
+                    .readerPointerCursor()
                     .tag(SidebarSelection.recent)
 
                 Label("Free Books", systemImage: "books.vertical.fill")
+                    .readerPointerCursor()
                     .tag(SidebarSelection.freeBooks)
 
                 Label("Audio Mixer", systemImage: "music.note.list")
+                    .readerPointerCursor()
                     .tag(SidebarSelection.audioMixer)
 
                 if rssUnreadCount > 0 {
                     Label("RSS Feed", systemImage: "dot.radiowaves.left.and.right")
                         .badge(rssUnreadCount)
+                        .readerPointerCursor()
                         .tag(SidebarSelection.rssFeeds)
                 } else {
                     Label("RSS Feed", systemImage: "dot.radiowaves.left.and.right")
+                        .readerPointerCursor()
                         .tag(SidebarSelection.rssFeeds)
                 }
             }
@@ -48,6 +85,7 @@ struct ReaderSidebarView: View {
                 Section("Categories") {
                     ForEach(categories) { category in
                         Label(category.name, systemImage: category.iconName.isEmpty ? "folder.fill" : category.iconName)
+                            .readerPointerCursor()
                             .tag(SidebarSelection.category(category.name))
                     }
                 }
@@ -91,7 +129,7 @@ struct ReaderTopBarView: View {
                     .foregroundStyle(primaryTextColor)
                     .background(elevatedBackground, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ReaderPointerCursorButtonStyle())
             .accessibilityIdentifier("topbar-home-button")
 
             searchField
@@ -104,7 +142,7 @@ struct ReaderTopBarView: View {
                     .foregroundStyle(primaryTextColor)
                     .background(tint.opacity(preferredMode == .light ? 0.14 : 0.20), in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ReaderPointerCursorButtonStyle())
             .accessibilityIdentifier("topbar-paste-text-button")
 
             Button(action: onUploadFile) {
@@ -115,7 +153,7 @@ struct ReaderTopBarView: View {
                     .foregroundStyle(primaryTextColor)
                     .background(tint.opacity(preferredMode == .light ? 0.14 : 0.20), in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ReaderPointerCursorButtonStyle())
             .disabled(isUploadDisabled)
             .opacity(isUploadDisabled ? 0.45 : 1)
             .accessibilityIdentifier("topbar-upload-button")
@@ -127,7 +165,7 @@ struct ReaderTopBarView: View {
                     .foregroundStyle(primaryTextColor)
                     .background(elevatedBackground, in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ReaderPointerCursorButtonStyle())
             .accessibilityLabel("Settings")
             .accessibilityIdentifier("topbar-settings-button")
         }
@@ -202,7 +240,7 @@ struct ReaderHeroView: View {
                             .foregroundStyle(heroPrimaryTextColor)
                             .background(heroButtonBackground, in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReaderPointerCursorButtonStyle())
                     .accessibilityIdentifier("hero-paste-text-button")
 
                     Button(action: onUploadFile) {
@@ -213,7 +251,7 @@ struct ReaderHeroView: View {
                             .foregroundStyle(heroPrimaryTextColor)
                             .background(heroButtonBackground, in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReaderPointerCursorButtonStyle())
                     .disabled(isUploadDisabled)
                     .opacity(isUploadDisabled ? 0.45 : 1)
                     .accessibilityIdentifier("hero-upload-button")
@@ -226,7 +264,7 @@ struct ReaderHeroView: View {
                             .foregroundStyle(heroPrimaryTextColor)
                             .background(kokoroButtonBackground, in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReaderPointerCursorButtonStyle())
                     .disabled(kokoroButtonDisabled)
                     .accessibilityIdentifier("hero-download-tts-button")
                 }
@@ -448,7 +486,7 @@ struct ReaderTTSHeroView: View {
                             .foregroundStyle(heroPrimaryTextColor)
                             .background(heroButtonBackground, in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReaderPointerCursorButtonStyle())
                     .accessibilityIdentifier("hero-paste-text-button")
 
                     Button(action: onUploadFile) {
@@ -459,7 +497,7 @@ struct ReaderTTSHeroView: View {
                             .foregroundStyle(heroPrimaryTextColor)
                             .background(heroButtonBackground, in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReaderPointerCursorButtonStyle())
                     .disabled(isUploadDisabled)
                     .opacity(isUploadDisabled ? 0.45 : 1)
                     .accessibilityIdentifier("hero-upload-button")
@@ -472,7 +510,7 @@ struct ReaderTTSHeroView: View {
                             .foregroundStyle(heroPrimaryTextColor)
                             .background(ttsButtonBackground, in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReaderPointerCursorButtonStyle())
                     .disabled(ttsButtonDisabled)
                     .accessibilityIdentifier("hero-download-tts-button")
                 }
@@ -916,7 +954,7 @@ struct ReaderLibraryCardView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(sheetRowBackground(isSelected: selectedMoveCategoryName == category.name), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(ReaderPointerCursorButtonStyle())
                         }
                     }
                 }
@@ -963,7 +1001,7 @@ struct ReaderLibraryCardView: View {
                     .padding(.vertical, 7)
                     .background(Color.yellow, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ReaderPointerCursorButtonStyle())
             .disabled(isSummaryPlaying)
             .opacity(isSummaryPlaying ? 0.8 : 1)
             Spacer()
@@ -1065,7 +1103,7 @@ struct ReaderLibraryCardView: View {
                             .frame(width: 44, height: 44)
                             .background(hasGeneratedAudio ? Color.yellow : .white, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReaderPointerCursorButtonStyle())
                     .disabled(isImporting)
                     .opacity(isImporting ? 0.45 : 1)
 
@@ -1076,7 +1114,7 @@ struct ReaderLibraryCardView: View {
                             .frame(width: 44, height: 44)
                             .background(Color.white.opacity(0.16), in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ReaderPointerCursorButtonStyle())
                     .disabled(isImporting)
                     .opacity(isImporting ? 0.45 : 1)
 
@@ -1669,6 +1707,7 @@ struct ReaderPlayerBarView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .readerPointerCursor()
     }
 
     private var currentJumpTargetIndex: Int? {
@@ -1754,6 +1793,8 @@ struct ReaderPlayerBarView: View {
                     .fill(ReaderStyle.accentColor(named: playbackState.accentName))
                     .frame(width: max(10, geometry.size.width * playbackState.displayedProgress))
             }
+            .contentShape(Rectangle())
+            .readerPointerCursor()
         }
         .frame(height: 8)
     }
@@ -1788,7 +1829,7 @@ struct ReaderPlayerBarView: View {
                         .strokeBorder(isActive ? ReaderStyle.accentColor(named: playbackState.accentName) : Color.clear, lineWidth: 1.5)
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReaderPointerCursorButtonStyle())
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.45 : 1)
     }
@@ -1970,7 +2011,7 @@ struct GeneratedAudioPlayerBarView: View {
                         )
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReaderPointerCursorButtonStyle())
     }
 
     private var panelBackground: Color {
@@ -2337,7 +2378,7 @@ struct RSSHomeTickerView: View {
                     Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReaderPointerCursorButtonStyle())
         .accessibilityLabel(Text(accessibilityLabel))
     }
 
@@ -2435,6 +2476,7 @@ private struct RSSHomeTickerRowView: View {
                             .font(.subheadline.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
+                    .readerPointerCursor()
                     .disabled(isReadAloudLoading)
 
                     Button {
@@ -2453,6 +2495,7 @@ private struct RSSHomeTickerRowView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .readerPointerCursor()
                     .tint(ReaderStyle.accentColor(named: "emerald"))
                     .disabled(isReadAloudLoading)
                 }

@@ -145,12 +145,14 @@ struct AudioMixerView: View {
                         set: { playbackService.setFollowsReaderPlayback($0) }
                     ))
                     .toggleStyle(.switch)
+                    .readerPointerCursor()
 
                     Toggle("Loop Track", isOn: Binding(
                         get: { playbackService.isLooping },
                         set: { playbackService.setLooping($0) }
                     ))
                     .toggleStyle(.switch)
+                    .readerPointerCursor()
                 }
             }
             .frame(maxWidth: 500)
@@ -175,7 +177,7 @@ struct AudioMixerView: View {
                     RoundedRectangle(cornerRadius: 16)
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReaderPointerCursorButtonStyle())
     }
 
     @ViewBuilder
@@ -370,7 +372,7 @@ struct AudioMixerTrackCardView: View {
                         .padding(.vertical, 9)
                         .background(Color.white, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ReaderPointerCursorButtonStyle())
 
                 Spacer()
             }
@@ -391,7 +393,7 @@ struct AudioMixerTrackCardView: View {
                     .frame(width: 34, height: 34)
                     .background(Color.white.opacity(canDelete ? 0.14 : 0.08), in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ReaderPointerCursorButtonStyle())
             .disabled(!canDelete)
             .opacity(canDelete ? 1 : 0)
         }

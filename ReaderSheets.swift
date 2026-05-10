@@ -17,58 +17,58 @@ struct ReaderSettingsSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Light mode not fully ready yet
-//                    settingSection(title: "Appearance") {
-//                        Picker("Theme", selection: $appearanceModeRawValue) {
-//                            ForEach(AppearanceMode.allCases) { mode in
-//                                Text(mode.title).tag(mode.rawValue)
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Light mode not fully ready yet
+//                        settingSection(title: "Appearance") {
+//                            Picker("Theme", selection: $appearanceModeRawValue) {
+//                                ForEach(AppearanceMode.allCases) { mode in
+//                                    Text(mode.title).tag(mode.rawValue)
+//                                }
 //                            }
 //                        }
-//                    }
 
-                    settingSection(title: "Kokoro Voice") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(alignment: .center, spacing: 12) {
-                                Picker("Default Voice", selection: $selectedVoiceName) {
-                                    ForEach(voiceOptions, id: \KokoroVoiceOption.voiceName) { voice in
-                                        Text("\(voice.genderSymbol) \(voice.dropdownLabel)")
-                                        .tag(voice.voiceName)
+                        settingSection(title: "Kokoro Voice") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(alignment: .center, spacing: 12) {
+                                    Picker("Default Voice", selection: $selectedVoiceName) {
+                                        ForEach(voiceOptions, id: \KokoroVoiceOption.voiceName) { voice in
+                                            Text("\(voice.genderSymbol) \(voice.dropdownLabel)")
+                                                .tag(voice.voiceName)
+                                        }
                                     }
-                                }
-                                .pickerStyle(.menu)
+                                    .pickerStyle(.menu)
+                                    .readerPointerCursor()
 
-                                Button {
-                                    onPlaySample(currentVoice)
-                                } label: {
-                                    Label(isPlaying ? "Playing..." : "Play", systemImage: "play.circle.fill")
+                                    Button {
+                                        onPlaySample(currentVoice)
+                                    } label: {
+                                        Label(isPlaying ? "Playing..." : "Play", systemImage: "play.circle.fill")
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .readerPointerCursor()
+                                    .disabled(isPlaying)
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(isPlaying)
+
+                                Text("Kokoro voice selection is local and will use the offline runtime when the model directory is available.")
+                                    .foregroundStyle(.secondary)
+
+                                Text(currentVoice.sampleText)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
                             }
-
-                            Text("Kokoro voice selection is local and will use the offline runtime when the model directory is available.")
-                                .foregroundStyle(.secondary)
-
-                            Text(currentVoice.sampleText)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
                         }
-                    }
 
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                footerButtons
             }
             .accessibilityIdentifier("settings-sheet")
             .navigationTitle("Settings")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .accessibilityIdentifier("settings-sheet-done-button")
-                }
-            }
         }
     }
 
@@ -76,6 +76,18 @@ struct ReaderSettingsSheet: View {
 
     private var currentVoice: KokoroVoiceOption {
         voiceOptions.first(where: { $0.voiceName == selectedVoiceName }) ?? voiceOptions[0]
+    }
+
+    private var footerButtons: some View {
+        HStack {
+            Spacer()
+            Button("Done") { dismiss() }
+                .accessibilityIdentifier("settings-sheet-done-button")
+                .readerPointerCursor()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(.thinMaterial)
     }
 
     @ViewBuilder
@@ -111,70 +123,60 @@ struct ReaderImportLanguageSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    headerSection
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        headerSection
 
-                    formSection(title: "Document Language") {
-                        Picker("Document Language", selection: $documentLanguage) {
-                            ForEach(languageOptions) { language in
-                                Text(language.displayName)
-                                    .tag(language)
-                            }
-                        }
-                        .pickerStyle(.menu)
-
-                        if let detectedLanguage {
-                            Text("Auto-detected as \(detectedLanguage.displayName). You can change this before import for better OCR text extraction.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("Anything Reader will use this language for normalization and OCR.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    formSection(title: "Translation") {
-                        Toggle("Translate document", isOn: $isTranslateDocument)
-
-                        if isTranslateDocument {
-                            Picker("Translate to Language", selection: $translateToLanguage) {
+                        formSection(title: "Document Language") {
+                            Picker("Document Language", selection: $documentLanguage) {
                                 ForEach(languageOptions) { language in
                                     Text(language.displayName)
                                         .tag(language)
                                 }
                             }
                             .pickerStyle(.menu)
-                        } else {
-                            Text("Document will be translated to your selected language.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
+                            .readerPointerCursor()
+
+                            if let detectedLanguage {
+                                Text("Auto-detected as \(detectedLanguage.displayName). You can change this before import for better OCR text extraction.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Anything Reader will use this language for normalization and OCR.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        formSection(title: "Translation") {
+                            Toggle("Translate document", isOn: $isTranslateDocument)
+                                .readerPointerCursor()
+
+                            if isTranslateDocument {
+                                Picker("Translate to Language", selection: $translateToLanguage) {
+                                    ForEach(languageOptions) { language in
+                                        Text(language.displayName)
+                                            .tag(language)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .readerPointerCursor()
+                            } else {
+                                Text("Document will be translated to your selected language.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                footerButtons
             }
             .accessibilityIdentifier("import-language-sheet")
             .navigationTitle("Import Options")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        onCancel()
-                        dismiss()
-                    }
-                    .accessibilityIdentifier("import-language-sheet-cancel-button")
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Import") {
-                        onImport()
-                        dismiss()
-                    }
-                    .accessibilityIdentifier("import-language-sheet-import-button")
-                }
-            }
         }
         .interactiveDismissDisabled(true)
     }
@@ -214,6 +216,29 @@ struct ReaderImportLanguageSheet: View {
             .background(.thinMaterial, in: Rectangle())
         }
     }
+
+    private var footerButtons: some View {
+        HStack {
+            Button("Cancel") {
+                onCancel()
+                dismiss()
+            }
+            .accessibilityIdentifier("import-language-sheet-cancel-button")
+            .readerPointerCursor()
+
+            Spacer()
+
+            Button("Import") {
+                onImport()
+                dismiss()
+            }
+            .accessibilityIdentifier("import-language-sheet-import-button")
+            .readerPointerCursor()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(.thinMaterial)
+    }
 }
 
 // Audio export sheet shown before the full normalized file is rendered to a local audio file.
@@ -228,46 +253,34 @@ struct ReaderGenerateAudioSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    headerSection
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        headerSection
 
-                    formSection(title: "Voice") {
-                        Picker("Default Voice", selection: $voiceName) {
-                            ForEach(voiceOptions, id: \.voiceName) { voice in
-                                Text("\(voice.genderSymbol) \(voice.dropdownLabel)")
-                                    .tag(voice.voiceName)
+                        formSection(title: "Voice") {
+                            Picker("Default Voice", selection: $voiceName) {
+                                ForEach(voiceOptions, id: \.voiceName) { voice in
+                                    Text("\(voice.genderSymbol) \(voice.dropdownLabel)")
+                                        .tag(voice.voiceName)
+                                }
                             }
-                        }
-                        .pickerStyle(.menu)
+                            .pickerStyle(.menu)
+                            .readerPointerCursor()
 
-                        Text("The selected voice will be used to synthesize the complete normalized document into a local audio export.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                            Text("The selected voice will be used to synthesize the complete normalized document into a local audio export.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                footerButtons
             }
             .accessibilityIdentifier("generate-audio-sheet")
             .navigationTitle("Generate Audio file")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        onCancel()
-                        dismiss()
-                    }
-                    .accessibilityIdentifier("generate-audio-sheet-cancel-button")
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Generate Audio file") {
-                        onGenerate()
-                        dismiss()
-                    }
-                    .accessibilityIdentifier("generate-audio-sheet-generate-button")
-                }
-            }
         }
         .interactiveDismissDisabled(true)
     }
@@ -307,6 +320,29 @@ struct ReaderGenerateAudioSheet: View {
             .background(.thinMaterial, in: Rectangle())
         }
     }
+
+    private var footerButtons: some View {
+        HStack {
+            Button("Cancel") {
+                onCancel()
+                dismiss()
+            }
+            .accessibilityIdentifier("generate-audio-sheet-cancel-button")
+            .readerPointerCursor()
+
+            Spacer()
+
+            Button("Generate Audio file") {
+                onGenerate()
+                dismiss()
+            }
+            .accessibilityIdentifier("generate-audio-sheet-generate-button")
+            .readerPointerCursor()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(.thinMaterial)
+    }
 }
 
 // Small success modal shown after a file summary is generated and saved locally.
@@ -333,9 +369,11 @@ struct ReaderSummarySuccessSheet: View {
             HStack(spacing: 12) {
                 Button("Done", action: onDone)
                     .buttonStyle(.bordered)
+                    .readerPointerCursor()
 
                 Button("Play Summary", action: onPlay)
                     .buttonStyle(.borderedProminent)
+                    .readerPointerCursor()
             }
         }
         .frame(minWidth: 320)
@@ -471,6 +509,7 @@ struct ReaderKokoroDownloadSheet: View {
                         }
                         .labelsHidden()
                         .toggleStyle(.switch)
+                    .readerPointerCursor()
                         .disabled(!isSelectable)
                         .help("Only one downloaded model can be active at a time.")
 
@@ -588,6 +627,7 @@ struct ReaderTTSSettingsSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
+                        .readerPointerCursor()
                         .disabled(installedProviderIDs.isEmpty)
 
                         Text(providerNote)
@@ -603,6 +643,7 @@ struct ReaderTTSSettingsSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
+                        .readerPointerCursor()
 
                         Button {
                             onPlaySample(currentVoice)
@@ -610,6 +651,7 @@ struct ReaderTTSSettingsSheet: View {
                             Label(isPlaying ? "Playing..." : "Play Sample", systemImage: "play.circle.fill")
                         }
                         .buttonStyle(.borderedProminent)
+                        .readerPointerCursor()
                         .disabled(isPlaying)
 
                         Text(currentVoice.sampleText)
@@ -723,48 +765,42 @@ struct ReaderTTSDownloadSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    headerSection
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        headerSection
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        providerRow(
-                            providerID: .kokoro,
-                            subtitle: KokoroDownloadCatalog.defaultOption.subtitle,
-                            isInstalled: kokoroModelStore.isInstalled,
-                            isActive: ttsCoordinator.activeProviderID == .kokoro,
-                            isDownloading: isKokoroDownloading,
-                            onDownload: { kokoroModelStore.downloadModel(option: KokoroDownloadCatalog.defaultOption) },
-                            onActivate: { ttsCoordinator.setActiveProvider(.kokoro) },
-                            onDelete: { pendingDeleteProviderID = .kokoro }
-                        )
+                        VStack(alignment: .leading, spacing: 12) {
+                            providerRow(
+                                providerID: .kokoro,
+                                subtitle: KokoroDownloadCatalog.defaultOption.subtitle,
+                                isInstalled: kokoroModelStore.isInstalled,
+                                isActive: ttsCoordinator.activeProviderID == .kokoro,
+                                isDownloading: isKokoroDownloading,
+                                onDownload: { kokoroModelStore.downloadModel(option: KokoroDownloadCatalog.defaultOption) },
+                                onActivate: { ttsCoordinator.setActiveProvider(.kokoro) },
+                                onDelete: { pendingDeleteProviderID = .kokoro }
+                            )
 
-                        providerRow(
-                            providerID: .moonshine,
-                            subtitle: MoonshineDownloadCatalog.defaultOption.subtitle,
-                            isInstalled: moonshineModelStore.isInstalled,
-                            isActive: ttsCoordinator.activeProviderID == .moonshine,
-                            isDownloading: isMoonshineDownloading,
-                            onDownload: { moonshineModelStore.downloadModel(option: MoonshineDownloadCatalog.defaultOption) },
-                            onActivate: { ttsCoordinator.setActiveProvider(.moonshine) },
-                            onDelete: { pendingDeleteProviderID = .moonshine }
-                        )
-                    }
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .navigationTitle("Download TTS Model")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isInstalledAny ? "Done" : "TTS Model Required") {
-                        if isInstalledAny {
-                            dismiss()
+                            providerRow(
+                                providerID: .moonshine,
+                                subtitle: MoonshineDownloadCatalog.defaultOption.subtitle,
+                                isInstalled: moonshineModelStore.isInstalled,
+                                isActive: ttsCoordinator.activeProviderID == .moonshine,
+                                isDownloading: isMoonshineDownloading,
+                                onDownload: { moonshineModelStore.downloadModel(option: MoonshineDownloadCatalog.defaultOption) },
+                                onActivate: { ttsCoordinator.setActiveProvider(.moonshine) },
+                                onDelete: { pendingDeleteProviderID = .moonshine }
+                            )
                         }
                     }
-                    .disabled(!isInstalledAny)
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                footerButtons
             }
+            .navigationTitle("Download TTS Model")
             .confirmationDialog(
                 "Delete downloaded model?",
                 isPresented: Binding(
@@ -875,6 +911,7 @@ struct ReaderTTSDownloadSheet: View {
                             onActivate()
                         }
                         .buttonStyle(.borderedProminent)
+                        .readerPointerCursor()
                         .disabled(isActive)
 
                         Button(role: .destructive) {
@@ -884,6 +921,7 @@ struct ReaderTTSDownloadSheet: View {
                                 .font(.headline)
                         }
                         .buttonStyle(.bordered)
+                        .readerPointerCursor()
                     }
                 } else {
                     Button {
@@ -896,6 +934,7 @@ struct ReaderTTSDownloadSheet: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .readerPointerCursor()
                     .disabled(isDownloading)
                 }
             }
@@ -924,6 +963,22 @@ struct ReaderTTSDownloadSheet: View {
                 .controlSize(.small)
             Text("Downloading...")
         }
+    }
+
+    private var footerButtons: some View {
+        HStack {
+            Spacer()
+            Button(isInstalledAny ? "Done" : "TTS Model Required") {
+                if isInstalledAny {
+                    dismiss()
+                }
+            }
+            .disabled(!isInstalledAny)
+            .readerPointerCursor()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(.thinMaterial)
     }
 
     private var headerBackground: Color {

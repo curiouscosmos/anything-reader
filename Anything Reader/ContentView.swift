@@ -223,6 +223,7 @@ struct ContentView: View {
             }
             .navigationSplitViewStyle(.balanced)
         }
+        .buttonStyle(ReaderPointerCursorButtonStyle())
         .task {
             await promptForRSSPushNotificationsIfNeededOnLaunch()
         }

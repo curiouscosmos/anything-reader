@@ -126,6 +126,7 @@ struct FreeBookCardView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(BookCardSecondaryButtonStyle())
+            .readerPointerCursor()
             .disabled(book.htmlURL == nil)
 
             Button {
@@ -135,6 +136,7 @@ struct FreeBookCardView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(BookCardPrimaryButtonStyle())
+            .readerPointerCursor()
             .disabled(isDownloadDisabled)
             .opacity(isDownloadDisabled ? 0.55 : 1)
         }
@@ -195,6 +197,7 @@ private struct BookCardPrimaryButtonStyle: ButtonStyle {
             .font(.callout.weight(.bold))
             .foregroundStyle(.white)
             .padding(.vertical, 11)
+            .readerPointerCursor()
             .background(
                 LinearGradient(
                     colors: [
@@ -217,6 +220,7 @@ private struct BookCardSecondaryButtonStyle: ButtonStyle {
             .font(.callout.weight(.bold))
             .foregroundStyle(.primary)
             .padding(.vertical, 11)
+            .readerPointerCursor()
             .background(
                 Color.primary.opacity(0.07),
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)

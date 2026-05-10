@@ -94,6 +94,7 @@ struct RSSFeedsView: View {
                     isShowingAddFeedSheet = true
                 }
                 .buttonStyle(.borderedProminent)
+                .readerPointerCursor()
                 .tint(ReaderStyle.accentColor(named: "emerald"))
             }
 
@@ -135,6 +136,7 @@ struct RSSFeedsView: View {
                         .tag(RSSFeedDisplayStyle.card)
                 }
                 .pickerStyle(.segmented)
+                .readerPointerCursor()
                 .frame(width: 220)
             }
 
@@ -356,7 +358,7 @@ struct RSSFeedsView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReaderPointerCursorButtonStyle())
         .foregroundStyle(isSelected ? Color.white : .primary)
         .background(
             RoundedRectangle(cornerRadius: 999, style: .continuous)
@@ -503,6 +505,7 @@ struct RSSFeedItemCardView: View {
                             .font(.subheadline.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
+                    .readerPointerCursor()
                     .disabled(!hasOpenableArticleURL || isReadAloudLoading)
 
                     Button {
@@ -521,6 +524,7 @@ struct RSSFeedItemCardView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .readerPointerCursor()
                     .tint(ReaderStyle.accentColor(named: "emerald"))
                     .disabled(!hasOpenableArticleURL || isReadAloudLoading)
                 }
@@ -761,124 +765,98 @@ struct RSSAddFeedSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Add Feed Link")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("Add Feed Link")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
 
-                Text("Paste an RSS feed URL below. The app will save it in the database and begin fetching items while the app is open.")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
+                        Text("Paste an RSS feed URL below. The app will save it in the database and begin fetching items while the app is open.")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("https://example.com/feed.xml", text: $feedURLString)
-                        .textFieldStyle(.roundedBorder)
-                        .disableAutocorrection(true)
-                        .onSubmit(onSave)
+                        VStack(alignment: .leading, spacing: 12) {
+                            TextField("https://example.com/feed.xml", text: $feedURLString)
+                                .textFieldStyle(.roundedBorder)
+                                .disableAutocorrection(true)
+                                .onSubmit(onSave)
 
-                    Toggle(isOn: $pushNotificationsEnabled) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Push Notifications")
-                                .font(.subheadline.weight(.semibold))
-                            Text("Notify me when this feed publishes new items.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .toggleStyle(.switch)
-                    .onChange(of: pushNotificationsEnabled) { _, newValue in
-                        guard newValue else { return }
-
-                        Task {
-                            let allowed = await RSSPushNotificationService.shared.requestNotificationAuthorizationIfNeeded()
-                            guard allowed else {
-                                await MainActor.run {
-                                    pushNotificationsEnabled = false
-                                    requestPushNotificationsPermissionAfterDismissal()
+                            Toggle(isOn: $pushNotificationsEnabled) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Push Notifications")
+                                        .font(.subheadline.weight(.semibold))
+                                    Text("Notify me when this feed publishes new items.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-                                return
                             }
-                        }
-                    }
+                            .toggleStyle(.switch)
+                            .readerPointerCursor()
+                            .onChange(of: pushNotificationsEnabled) { _, newValue in
+                                guard newValue else { return }
 
-                    if isSavingFeed {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Saving feed...")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Button(action: onSave) {
-                        if isSavingFeed {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Saving...")
-                            }
-                        } else {
-                            Text("Save Feed")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(ReaderStyle.accentColor(named: "emerald"))
-                    .disabled(feedURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSavingFeed)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Saved Feeds")
-                        .font(.headline.weight(.semibold))
-
-                    if refreshService.subscriptions.isEmpty {
-                        ContentUnavailableView(
-                            "No saved feeds",
-                            systemImage: "dot.radiowaves.left.and.right",
-                            description: Text("Save an RSS feed URL to see it listed here.")
-                        )
-                    } else {
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 10) {
-                                ForEach(refreshService.subscriptions) { subscription in
-                                    RSSSavedFeedRowView(
-                                        subscription: subscription,
-                                        preferredMode: preferredMode,
-                                        onDelete: {
-                                            feedPendingDeletion = subscription
-                                        },
-                                        onRequestPushNotificationsPermission: {
+                                Task {
+                                    let allowed = await RSSPushNotificationService.shared.requestNotificationAuthorizationIfNeeded()
+                                    guard allowed else {
+                                        await MainActor.run {
+                                            pushNotificationsEnabled = false
                                             requestPushNotificationsPermissionAfterDismissal()
-                                        },
-                                        onTogglePushNotificationsEnabled: { newValue in
-                                            try refreshService.updatePushNotificationsEnabled(
-                                                for: subscription,
-                                                enabled: newValue
-                                            )
                                         }
-                                    )
-                                    .id(subscription.id)
+                                        return
+                                    }
                                 }
                             }
                         }
-                        .frame(maxHeight: .infinity)
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Saved Feeds")
+                                .font(.headline.weight(.semibold))
+
+                            if refreshService.subscriptions.isEmpty {
+                                ContentUnavailableView(
+                                    "No saved feeds",
+                                    systemImage: "dot.radiowaves.left.and.right",
+                                    description: Text("Save an RSS feed URL to see it listed here.")
+                                )
+                            } else {
+                                ScrollView {
+                                    LazyVStack(alignment: .leading, spacing: 10) {
+                                        ForEach(refreshService.subscriptions) { subscription in
+                                            RSSSavedFeedRowView(
+                                                subscription: subscription,
+                                                preferredMode: preferredMode,
+                                                onDelete: {
+                                                    feedPendingDeletion = subscription
+                                                },
+                                                onRequestPushNotificationsPermission: {
+                                                    requestPushNotificationsPermissionAfterDismissal()
+                                                },
+                                                onTogglePushNotificationsEnabled: { newValue in
+                                                    try refreshService.updatePushNotificationsEnabled(
+                                                        for: subscription,
+                                                        enabled: newValue
+                                                    )
+                                                }
+                                            )
+                                            .id(subscription.id)
+                                        }
+                                    }
+                                }
+                                .frame(maxHeight: .infinity)
+                            }
+                        }
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 4)
                 }
+
+                footerButtons
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 4)
             .frame(minWidth: 560, minHeight: 300)
             .background(
                 ReaderStyle.accentColor(named: "emerald").opacity(preferredMode == .light ? 0.08 : 0.12)
             )
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Close") {
-                        onClose()
-                        dismiss()
-                    }
-                }
-            }
             .confirmationDialog(
                 "Delete Saved Feed",
                 isPresented: Binding(
@@ -902,6 +880,29 @@ struct RSSAddFeedSheet: View {
                 Text("Delete \(subscription.url?.host ?? subscription.urlString)? This removes the saved feed link from the database.")
             }
         }
+    }
+
+    private var footerButtons: some View {
+        HStack {
+            Button("Cancel") {
+                onClose()
+                dismiss()
+            }
+            .readerPointerCursor()
+
+            Spacer()
+
+            Button("Save Feed") {
+                onSave()
+            }
+            .buttonStyle(.borderedProminent)
+            .readerPointerCursor()
+            .tint(ReaderStyle.accentColor(named: "emerald"))
+            .disabled(feedURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSavingFeed)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .background(.thinMaterial)
     }
 
     @MainActor
@@ -961,6 +962,7 @@ private struct RSSSavedFeedRowView: View {
                     Label("Delete", systemImage: "trash")
                 }
                 .buttonStyle(.borderless)
+                .readerPointerCursor()
             }
 
             Toggle(isOn: $isPushNotificationsEnabled) {
@@ -973,6 +975,7 @@ private struct RSSSavedFeedRowView: View {
                 }
             }
             .toggleStyle(.switch)
+            .readerPointerCursor()
             .disabled(isUpdatingPushNotifications)
             .onChange(of: isPushNotificationsEnabled) { _, newValue in
                 handleToggleChange(newValue)
@@ -1048,6 +1051,7 @@ struct RSSPushNotificationsPermissionSheet: View {
                     Label("Open Notification Settings", systemImage: "gearshape")
                         .font(.subheadline.weight(.semibold))
                 }
+                .readerPointerCursor()
             }
             .padding(.horizontal, 24)
             .padding(.top, 24)

@@ -21,6 +21,7 @@ struct ReaderVolumeControlView: View {
 
             Slider(value: $volume, in: 0...1)
                 .tint(ReaderStyle.accentColor(named: "emerald"))
+                .readerPointerCursor()
 
             Text("\(Int((volume * 100).rounded()))%")
                 .font(.caption.monospacedDigit())
@@ -67,6 +68,7 @@ struct ReaderPlaybackSpeedControlView: View {
 
             Slider(value: $playbackSpeed, in: 0.5...2.0, step: 0.1)
                 .tint(ReaderStyle.accentColor(named: "amber"))
+                .readerPointerCursor()
 
             Text("\(playbackSpeed, specifier: "%.1fx")")
                 .font(.caption.monospacedDigit())

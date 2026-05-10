@@ -110,11 +110,11 @@ struct FreeBooksView: View {
                 menuIdentifier: "free-books-language-filter-menu"
             ) {
                 ForEach(FreeBookLanguageFilter.allCases) { filter in
-                    Button {
-                        Task {
-                            await store.setLanguageFilter(filter)
-                        }
-                    } label: {
+                Button {
+                    Task {
+                        await store.setLanguageFilter(filter)
+                    }
+                } label: {
                         if store.selectedLanguageFilter == filter {
                             Label(filter.displayName, systemImage: "checkmark")
                         } else {
@@ -122,6 +122,7 @@ struct FreeBooksView: View {
                         }
                     }
                 }
+                .readerPointerCursor()
             }
 
             filterMenu(
@@ -140,6 +141,7 @@ struct FreeBooksView: View {
                         Text(FreeBookCategoryFilter.all.displayName)
                     }
                 }
+                .readerPointerCursor()
 
                 ForEach(FreeBookCategoryFilter.menuSections, id: \.self) { section in
                     Section(section) {
@@ -147,8 +149,8 @@ struct FreeBooksView: View {
                             Button {
                                 Task {
                                     await store.setCategoryFilter(filter)
-                                }
-                            } label: {
+                            }
+                        } label: {
                                 if store.selectedCategoryFilter == filter {
                                     Label(filter.displayName, systemImage: "checkmark")
                                 } else {
@@ -156,6 +158,7 @@ struct FreeBooksView: View {
                                 }
                             }
                         }
+                        .readerPointerCursor()
                     }
                 }
             }
@@ -174,6 +177,7 @@ struct FreeBooksView: View {
                         .padding(.vertical, 8)
                 }
                 .buttonStyle(.bordered)
+                .readerPointerCursor()
                 .disabled(store.isDownloadingDatabase || store.isLoadingBooks || store.isLoadingMoreBooks)
                 .accessibilityIdentifier("free-books-resync-database-button")
             }
@@ -198,6 +202,7 @@ struct FreeBooksView: View {
                     .padding(.vertical, 8)
             }
             .accessibilityIdentifier(menuIdentifier)
+            .readerPointerCursor()
         }
     }
 
@@ -243,6 +248,7 @@ struct FreeBooksView: View {
                             .padding(.vertical, 10)
                     }
                     .buttonStyle(.borderedProminent)
+                    .readerPointerCursor()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
                     .accessibilityIdentifier("free-books-load-more-button")
