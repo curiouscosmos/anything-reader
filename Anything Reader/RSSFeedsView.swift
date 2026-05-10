@@ -98,11 +98,6 @@ struct RSSFeedsView: View {
                 .tint(ReaderStyle.accentColor(named: "emerald"))
             }
 
-            Text("Save RSS feed URLs, refresh them while the app is open, and browse the latest items as cards.")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 860, alignment: .leading)
-
             if let lastRefreshAt = refreshService.lastRefreshAt {
                 Text("Last refreshed \(lastRefreshAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.subheadline.weight(.semibold))
@@ -142,13 +137,14 @@ struct RSSFeedsView: View {
 
             feedSourceFilterSection
 
+            Spacer()
             if cards.isEmpty {
                 emptyStateView
             } else {
                 if rssFeedDisplayStyle == .card {
                     LazyVGrid(
                         columns: [
-                            GridItem(.adaptive(minimum: 290), spacing: 16, alignment: .top)
+                            GridItem(.adaptive(minimum: 500), spacing: 16, alignment: .top)
                         ],
                         alignment: .leading,
                         spacing: 16
@@ -213,7 +209,7 @@ struct RSSFeedsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(refreshService.subscriptions.isEmpty ? "No feeds saved yet." : "No feed items yet.")
                 .font(.headline)
-            Text(refreshService.subscriptions.isEmpty ? "Add an RSS feed URL above to begin syncing items." : "The app will refresh the saved feeds while it is open.")
+            Text(refreshService.subscriptions.isEmpty ? "Add an RSS feed URL above to begin syncing items." : "The app will refresh the saved feeds every once in a while.")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -301,9 +297,6 @@ struct RSSFeedsView: View {
 
     private var feedSourceFilterSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Feed Filters")
-                .font(.headline.weight(.semibold))
-
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     filterButton(
@@ -467,7 +460,7 @@ struct RSSFeedItemCardView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(card.title)
                         .font(.title)
-                        .lineLimit(3)
+                        .lineLimit(2)
 
                     if !hasSeen {
                         Image(systemName: "circle.fill")
@@ -484,7 +477,7 @@ struct RSSFeedItemCardView: View {
 
                 HStack(spacing: 8) {
                     Text(card.feedTitle)
-                        .font(.caption.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(ReaderStyle.accentColor(named: "emerald"))
                         .lineLimit(1)
 
@@ -492,7 +485,7 @@ struct RSSFeedItemCardView: View {
 
                     if let publishedAt = card.publishedAt {
                         Text(RSSFeedDateDisplayFormatter.string(from: publishedAt))
-                            .font(.caption)
+                            .font(.body)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -528,6 +521,7 @@ struct RSSFeedItemCardView: View {
                     .tint(ReaderStyle.accentColor(named: "emerald"))
                     .disabled(!hasOpenableArticleURL || isReadAloudLoading)
                 }
+                .padding(.top, 12)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -558,7 +552,7 @@ struct RSSFeedItemCardView: View {
 
     private var cardBackground: AnyShapeStyle {
         if hasSeen {
-            return AnyShapeStyle(.thinMaterial)
+            return AnyShapeStyle(Color.black.opacity(0.5))
         }
 
         return preferredMode == .light
@@ -577,13 +571,10 @@ struct RSSFeedItemListRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            placeholderImage
-                .frame(width: 110, height: 110)
-
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(card.title)
-                        .font(.title3.weight(.semibold))
+                        .font(.title.weight(.semibold))
                         .lineLimit(2)
 
                     if !hasSeen {
@@ -595,13 +586,13 @@ struct RSSFeedItemListRowView: View {
                 }
 
                 Text(card.summary.isEmpty ? "No description provided." : card.summary)
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
 
                 HStack(spacing: 8) {
                     Text(card.feedTitle)
-                        .font(.caption.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(ReaderStyle.accentColor(named: "emerald"))
                         .lineLimit(1)
 
@@ -609,7 +600,7 @@ struct RSSFeedItemListRowView: View {
 
                     if let publishedAt = card.publishedAt {
                         Text(RSSFeedDateDisplayFormatter.string(from: publishedAt))
-                            .font(.caption)
+                            .font(.body)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -643,11 +634,12 @@ struct RSSFeedItemListRowView: View {
                     .tint(ReaderStyle.accentColor(named: "emerald"))
                     .disabled(!hasOpenableArticleURL || isReadAloudLoading)
                 }
+                .padding(.top, 8)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(rowBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
@@ -673,7 +665,7 @@ struct RSSFeedItemListRowView: View {
 
     private var rowBackground: AnyShapeStyle {
         if hasSeen {
-            return AnyShapeStyle(.thinMaterial)
+            return AnyShapeStyle(Color.black.opacity(0.5))
         }
 
         return preferredMode == .light
@@ -771,21 +763,29 @@ struct RSSAddFeedSheet: View {
                         Text("Add Feed Link")
                             .font(.system(size: 30, weight: .bold, design: .rounded))
 
-                        Text("Paste an RSS feed URL below. The app will save it in the database and begin fetching items while the app is open.")
-                            .font(.headline)
+                        Text("Paste an RSS feed URL below. The app will keep the feed up to date.")
+                            .font(.body)
                             .foregroundStyle(.secondary)
 
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 16) {
                             TextField("https://example.com/feed.xml", text: $feedURLString)
-                                .textFieldStyle(.roundedBorder)
-                                .disableAutocorrection(true)
-                                .onSubmit(onSave)
+                                //.textFieldStyle(.roundedBorder)
+                                .textFieldStyle(.plain)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .frame(height: 40)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                                    )
+                                    .disableAutocorrection(true)
+                                    .onSubmit(onSave)
 
                             Toggle(isOn: $pushNotificationsEnabled) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("Push Notifications")
                                         .font(.subheadline.weight(.semibold))
-                                    Text("Notify me when this feed publishes new items.")
+                                    Text("Notify me when this feed publishes new items")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -810,7 +810,7 @@ struct RSSAddFeedSheet: View {
 
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Saved Feeds")
-                                .font(.headline.weight(.semibold))
+                                .font(.title.weight(.semibold))
 
                             if refreshService.subscriptions.isEmpty {
                                 ContentUnavailableView(
@@ -845,6 +845,7 @@ struct RSSAddFeedSheet: View {
                                 .frame(maxHeight: .infinity)
                             }
                         }
+                        .padding(.top, 12)
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 24)
@@ -969,9 +970,6 @@ private struct RSSSavedFeedRowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Push Notifications")
                         .font(.subheadline.weight(.semibold))
-                    Text("Notify me when this feed publishes new items.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
             .toggleStyle(.switch)

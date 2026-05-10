@@ -89,6 +89,7 @@ struct ReaderSidebarView: View {
                             .tag(SidebarSelection.category(category.name))
                     }
                 }
+                .padding(.vertical, 8)
                 .font(.system(size: 16))
             }
         }
@@ -1350,7 +1351,6 @@ struct ReaderCardMenuPopoverView: View {
                 menuButton(title: "Cancel summarization", systemImage: "xmark.circle.fill", role: .destructive, action: onCancelSummarization)
                 Divider()
             } else if !isLoading {
-                menuButton(title: "Play now", systemImage: "play.fill", action: onPlay)
                 if hasSummarizedText {
                     menuButton(title: "Play summarized file", systemImage: "quote.bubble.fill", action: onPlaySummary)
                 } else {
@@ -2198,36 +2198,20 @@ struct RSSHomeTickerView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Latest RSS")
-                        .font(.title2.weight(.bold))
+        
+        if !visibleItems.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Latest RSS")
+                            .font(.title2.weight(.bold))
+                    }
 
-                    Text("Top 50 items cycle every 10 seconds. Hover to pause.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    
+                    // @todo Add a pause button here to stop the feed play
                 }
 
-                Spacer(minLength: 0)
-
-                Text("\(visibleItems.count) item\(visibleItems.count == 1 ? "" : "s")")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.thinMaterial, in: Capsule())
-            }
-
-            if visibleItems.isEmpty {
-                ContentUnavailableView(
-                    "No RSS feeds yet",
-                    systemImage: "dot.radiowaves.left.and.right",
-                    description: Text("Add RSS feeds to preview the latest items here.")
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(18)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            } else {
                 VStack(alignment: .leading, spacing: 14) {
                     progressLine
 
@@ -2264,10 +2248,11 @@ struct RSSHomeTickerView: View {
                         .opacity(isVisible ? 1 : 0)
                     }
                 }
-                .padding(18)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                 )
                 .onHover { hovering in
@@ -2289,8 +2274,8 @@ struct RSSHomeTickerView: View {
                     await runTickerLoop()
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var progressLine: some View {
@@ -2306,7 +2291,7 @@ struct RSSHomeTickerView: View {
                 }
             }
         }
-        .frame(height: 4)
+        .frame(height: 2)
         .accessibilityHidden(true)
     }
 
@@ -2448,23 +2433,23 @@ private struct RSSHomeTickerRowView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(item.feedTitle)
-                        .font(.caption.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(ReaderStyle.accentColor(named: "emerald"))
                         .lineLimit(1)
 
                     Spacer(minLength: 0)
 
                     Text(RSSRelativeTimeFormatter.string(from: item.publishedAt ?? item.fetchedAt))
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 }
 
                 Text(item.title)
-                    .font(.title3.weight(.semibold))
+                    .font(.title2.weight(.semibold))
                     .lineLimit(2)
 
                 Text(item.summary.isEmpty ? "No description provided." : item.summary)
-                    .font(.body)
+                    .font(.title3)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
 
@@ -2473,8 +2458,9 @@ private struct RSSHomeTickerRowView: View {
                         onOpenArticle()
                     } label: {
                         Label("Read Article", systemImage: "safari")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.body.weight(.semibold))
                     }
+                    .controlSize(.large)
                     .buttonStyle(.bordered)
                     .readerPointerCursor()
                     .disabled(isReadAloudLoading)
@@ -2491,14 +2477,16 @@ private struct RSSHomeTickerRowView: View {
                             .font(.subheadline.weight(.semibold))
                         } else {
                             Label("Read Aloud", systemImage: "speaker.wave.2.fill")
-                                .font(.subheadline.weight(.semibold))
+                                .font(.body.weight(.semibold))
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .readerPointerCursor()
                     .tint(ReaderStyle.accentColor(named: "emerald"))
                     .disabled(isReadAloudLoading)
                 }
+                .padding(.top, 16)
             }
 
             Spacer(minLength: 0)

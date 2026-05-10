@@ -46,7 +46,6 @@ final class Anything_ReaderUITests: XCTestCase {
         app.buttons["topbar-paste-text-button"].tap()
 
         XCTAssertTrue(app.buttons["paste-text-sheet-play-button"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Paste text to listen"].exists)
         XCTAssertTrue(app.buttons["paste-text-sheet-cancel-button"].exists)
 
         app.buttons["paste-text-sheet-cancel-button"].tap()

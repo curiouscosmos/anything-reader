@@ -189,9 +189,6 @@ struct AudioMixerView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Library")
                         .font(.title2.weight(.bold))
-                    Text(visibleTracks.isEmpty ? emptyStateText : "Tap a card to play or pause that track.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 uploadSection

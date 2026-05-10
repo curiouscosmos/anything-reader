@@ -707,7 +707,7 @@ struct ReaderTTSSettingsSheet: View {
 
         switch currentProviderID {
         case .kokoro:
-            return "Kokoro offers wide variety of voices and can be used for both reading and dictation."
+            return "Kokoro offers wide variety of voices and is usually more accurate."
         case .moonshine:
             return "Moonshine uses its own local TTS runtime and is more performant."
         }
@@ -1046,9 +1046,6 @@ struct ReaderPasteTextSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Paste text to listen")
-                    .font(.title2.weight(.bold))
-
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Title")
                         .font(.body.weight(.semibold))

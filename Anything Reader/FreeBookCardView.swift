@@ -31,13 +31,13 @@ struct FreeBookCardView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-
-                bookMetaOverlay
-                    .padding(16)
             }
-            .frame(height: 350)
+            .frame(height: 300)
             // .clipped()
-
+            
+            bookMetaOverlay
+                .padding(16)
+            
             actionButtons
                 .padding(14)
                 .background(cardFooterBackground)

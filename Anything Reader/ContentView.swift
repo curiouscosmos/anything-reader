@@ -123,11 +123,6 @@ struct ContentView: View {
     @StateObject private var appUpdateChecker = AppUpdateChecker.shared
     @State private var translationCoordinator = DocumentTranslationCoordinator()
 
-    private enum ReadingNavigationDirection {
-        case backward
-        case forward
-    }
-
     private enum IdleSleepAssertionKind {
         case importing
         case audio
@@ -209,7 +204,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            backgroundLayer
+            ReaderBackgroundView(preferredMode: preferredMode)
 
             NavigationSplitView {
                 ReaderSidebarView(
@@ -276,8 +271,8 @@ struct ContentView: View {
                     isLoadingFirstChunk: readerPlaybackService.isBufferingFirstChunk,
                     readingStructureKind: summaryPlaybackActive ? nil : activeEntry?.readingStructureKind,
                     jumpTargets: summaryPlaybackActive ? [] : (activeEntry?.readingJumpTargets ?? []),
-                    canRewind: summaryPlaybackActive ? false : canNavigateReadingTarget(.backward, in: activeEntry),
-                    canFastForward: summaryPlaybackActive ? false : canNavigateReadingTarget(.forward, in: activeEntry),
+                    canRewind: summaryPlaybackActive ? false : ReaderPlaybackSupport.canNavigateReadingTarget(.backward, in: activeEntry, currentProgress: playbackState.progress),
+                    canFastForward: summaryPlaybackActive ? false : ReaderPlaybackSupport.canNavigateReadingTarget(.forward, in: activeEntry, currentProgress: playbackState.progress),
                     onRewind: rewindPlayback,
                     onTogglePlayPause: togglePlayback,
                     onFastForward: fastForwardPlayback,
@@ -567,32 +562,6 @@ struct ContentView: View {
         AppearanceMode(rawValue: appearanceModeRawValue) ?? .system
     }
 
-    private var backgroundLayer: some View {
-        Group {
-            switch preferredMode {
-            case .light:
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.97, green: 0.98, blue: 0.97),
-                        Color(red: 0.93, green: 0.95, blue: 0.94),
-                        Color(red: 0.88, green: 0.91, blue: 0.89)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            case .dark, .system:
-                LinearGradient(
-                    colors: [
-                        Color(red: 26/255, green: 35/255, blue: 30/255),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-        }
-        .ignoresSafeArea()
-    }
-
     private func validateSelectedTTSConfiguration() {
         let kokoroNames = Set(KokoroVoiceCatalog.allVoices.map(\.voiceName))
         if !kokoroNames.contains(kokoroVoiceName) {
@@ -676,9 +645,6 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailContent: some View {
-        let entries = filteredEntries
-        let sortedByDateAdded = entries.sorted { $0.createdAt > $1.createdAt }
-        let sortedByRecentlyPlayed = entries.sorted { $0.lastOpened > $1.lastOpened }
         let isPresentingViewer = Binding(
             get: { viewerEntry != nil },
             set: { newValue in
@@ -705,15 +671,17 @@ struct ContentView: View {
 
                     switch selection {
                     case .home:
+                        let sortedByDateAdded = sortedLibraryEntries(for: .home, keyPath: \.createdAt)
                         homeContent(
                             featured: sortedByDateAdded.first,
                             sortedByDateAdded: sortedByDateAdded
                         )
 
                     case .recent:
+                        let sortedByRecentlyPlayed = sortedLibraryEntries(for: .recent, keyPath: \.lastOpened)
                         ReaderLibrarySectionView(
                             title: "Recently Played",
-                            subtitle: "Your last opened books and pasted text",
+                            subtitle: "Your most recent played items",
                             entries: sortedByRecentlyPlayed,
                             visibleEntryCount: visibleRecentEntryCount,
                             isLoadingMore: isLoadingMoreRecentEntries,
@@ -778,12 +746,13 @@ struct ContentView: View {
                             onRequestPushNotificationsPermission: {
                                 isShowingRSSPushNotificationsPermissionSheet = true
                             }
-                        )
+                            )
 
                     case .category(let categoryName):
+                        let sortedByDateAdded = sortedLibraryEntries(for: selection, keyPath: \.createdAt)
                         ReaderLibrarySectionView(
                             title: categoryName,
-                            subtitle: "All books filed into this category",
+                            subtitle: "",
                             entries: sortedByDateAdded,
                             visibleEntryCount: sortedByDateAdded.count,
                             isLoadingMore: false,
@@ -834,6 +803,73 @@ struct ContentView: View {
         }
     }
 
+    private func sortedLibraryEntries(
+        for selection: SidebarSelection,
+        keyPath: KeyPath<LibraryEntry, Date>
+    ) -> [LibraryEntry] {
+        filteredEntries(for: selection).sorted {
+            $0[keyPath: keyPath] > $1[keyPath: keyPath]
+        }
+    }
+
+    private func filteredEntries(for selection: SidebarSelection) -> [LibraryEntry] {
+        guard selectionSupportsLibraryFiltering(selection) else { return [] }
+
+        let query = activeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return libraryEntries.filter { entry in
+            matchesSelection(entry, selection: selection) && matchesSearch(entry, query: query)
+        }
+    }
+
+    private func selectionSupportsLibraryFiltering(_ selection: SidebarSelection) -> Bool {
+        switch selection {
+        case .home, .recent, .category:
+            return true
+        case .freeBooks, .audioMixer, .rssFeeds:
+            return false
+        }
+    }
+
+    private func matchesSelection(_ entry: LibraryEntry, selection: SidebarSelection) -> Bool {
+        switch selection {
+        case .home, .recent:
+            return true
+        case .freeBooks:
+            return true
+        case .audioMixer, .rssFeeds:
+            return false
+        case .category(let categoryName):
+            return entry.categoryName == categoryName
+        }
+    }
+
+    private func matchesSearch(_ entry: LibraryEntry, query: String) -> Bool {
+        guard !query.isEmpty else { return true }
+
+        if entry.title.lowercased().contains(query) {
+            return true
+        }
+
+        if entry.subtitle.lowercased().contains(query) {
+            return true
+        }
+
+        if entry.fileExtension.lowercased().contains(query) {
+            return true
+        }
+
+        if let categoryName = entry.categoryName?.lowercased(),
+           categoryName.contains(query) {
+            return true
+        }
+
+        guard let snippet = normalizedTextSnippet(for: entry)?.lowercased() else {
+            return false
+        }
+
+        return snippet.contains(query)
+    }
+
     @ViewBuilder
     private func homeContent(
         featured: LibraryEntry?,
@@ -841,7 +877,10 @@ struct ContentView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 24) {
             if let notice = appUpdateChecker.notice {
-                updateBannerView(for: notice)
+                ReaderUpdateBannerView(
+                    notice: notice,
+                    onDownload: { appUpdateChecker.openAppStore() }
+                )
             }
 
             ReaderTTSHeroView(
@@ -915,7 +954,7 @@ struct ContentView: View {
         .padding(.bottom, 110)
         .overlay {
             if isHomeDropTargeted {
-                homeDropOverlay
+                ReaderHomeDropOverlayView()
                     .padding(.horizontal, 24)
                     .padding(.top, 20)
                     .padding(.bottom, 110)
@@ -923,39 +962,6 @@ struct ContentView: View {
             }
         }
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isHomeDropTargeted, perform: handleDroppedFiles)
-    }
-
-    private var filteredEntries: [LibraryEntry] {
-        let query = activeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-        return libraryEntries.filter { entry in
-            let matchesQuery: Bool
-            if query.isEmpty {
-                matchesQuery = true
-            } else {
-                matchesQuery = entry.title.lowercased().contains(query)
-                    || entry.subtitle.lowercased().contains(query)
-                    || (normalizedTextSnippet(for: entry)?.lowercased().contains(query) ?? false)
-                    || entry.fileExtension.lowercased().contains(query)
-                    || (entry.categoryName?.lowercased().contains(query) ?? false)
-            }
-
-            let matchesSelection: Bool
-            switch selection {
-            case .home, .recent:
-                matchesSelection = true
-            case .freeBooks:
-                matchesSelection = true
-            case .audioMixer:
-                matchesSelection = false
-            case .rssFeeds:
-                matchesSelection = false
-            case .category(let categoryName):
-                matchesSelection = entry.categoryName == categoryName
-            }
-
-            return matchesQuery && matchesSelection
-        }
     }
 
     @MainActor
@@ -1331,7 +1337,7 @@ struct ContentView: View {
             return summaryDirectory
         }
 
-        return try? uploadedFilesDirectory()
+        return try? ReaderImportSupport.uploadedFilesDirectory()
     }
 
     private func revealLibraryEntryLocation(_ entry: LibraryEntry) {
@@ -1401,7 +1407,7 @@ struct ContentView: View {
             title: resolvedTitle,
             subtitle: "Pasted text saved locally for later.",
             text: trimmedText,
-            fileName: sanitizedStorageFileName(for: resolvedTitle),
+            fileName: ReaderImportSupport.sanitizedStorageFileName(for: resolvedTitle),
             categoryName: "Pasted Text"
         ) else {
             uploadAlertMessage = "The pasted text could not be imported."
@@ -1436,11 +1442,11 @@ struct ContentView: View {
             return
         }
 
-        let resolvedTitle = browserTitle(for: message)
+        let resolvedTitle = ReaderImportSupport.browserTitle(for: message, existingEntries: libraryEntries)
 
         Task { @MainActor in
             do {
-                let tempURL = try createTemporaryBrowserTextFile(
+                let tempURL = try ReaderImportSupport.createTemporaryBrowserTextFile(
                     title: resolvedTitle,
                     text: trimmedText
                 )
@@ -1453,59 +1459,12 @@ struct ContentView: View {
                     shouldAutoPlay: true,
                     shouldSummarize: message.summarize == true,
                     showImportLanguageSheet: false,
-                    importCategoryName: browserCategoryName(for: message)
+                    importCategoryName: ReaderImportSupport.browserCategoryName(for: message)
                 )
             } catch {
                 browserImportAlertMessage = error.localizedDescription
             }
         }
-    }
-
-    private func createTemporaryBrowserTextFile(title: String, text: String) throws -> URL {
-        let fileManager = FileManager.default
-        let directoryURL = fileManager.temporaryDirectory.appendingPathComponent("Browser Text Imports", isDirectory: true)
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-
-        let fileName = sanitizedStorageFileName(for: title.isEmpty ? "Browser Page" : title)
-        let fileURL = directoryURL.appendingPathComponent(fileName).appendingPathExtension("txt")
-        try text.write(to: fileURL, atomically: true, encoding: .utf8)
-        return fileURL
-    }
-
-    private func browserTitle(for message: BrowserNativeMessage) -> String {
-        let trimmedTitle = message.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmedTitle.isEmpty {
-            return trimmedTitle
-        }
-
-        let now = Date()
-        let calendar = Calendar.current
-        let browserCount = libraryEntries.filter { entry in
-            entry.sourceKind == .pastedText && calendar.isDate(entry.createdAt, inSameDayAs: now)
-        }.count + 1
-
-        if let pageURL = message.pageURL,
-           let host = URL(string: pageURL)?.host,
-           !host.isEmpty {
-            return "Web Clip from \(host) #\(browserCount)"
-        }
-
-        return "Web Clip #\(browserCount)"
-    }
-
-    private func browserSubtitle(for message: BrowserNativeMessage) -> String {
-        if let pageURL = message.pageURL,
-           let host = URL(string: pageURL)?.host,
-           !host.isEmpty {
-            return "Saved from \(host)."
-        }
-
-        return "Saved from browser extension."
-    }
-
-    private func browserCategoryName(for message: BrowserNativeMessage) -> String {
-        let trimmedSite = message.site?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedSite.isEmpty ? "Web" : trimmedSite
     }
 
     @MainActor
@@ -1592,7 +1551,7 @@ struct ContentView: View {
                 stagedURL: stagedURL,
                 fileName: sourceURL.lastPathComponent,
                 fileExtension: fileExtension,
-                sourceKind: readerSourceKind(for: fileExtension),
+                sourceKind: ReaderImportSupport.readerSourceKind(for: fileExtension),
                 shouldAutoPlay: shouldAutoPlay,
                 shouldSummarize: shouldSummarize,
                 importCategoryName: importCategoryName,
@@ -1634,7 +1593,7 @@ struct ContentView: View {
 
         do {
             let draft = try await RSSArticleScraperService.shared.scrapeArticle(from: articleURL)
-            let tempURL = try createTemporaryRSSArticleFile(from: draft)
+            let tempURL = try ReaderImportSupport.createTemporaryRSSArticleFile(from: draft)
             defer {
                 try? FileManager.default.removeItem(at: tempURL)
             }
@@ -1644,20 +1603,6 @@ struct ContentView: View {
             audioMixerPlaybackService.endReaderPlaybackTransition()
             throw error
         }
-    }
-
-    private func createTemporaryRSSArticleFile(from draft: RSSArticleDraft) throws -> URL {
-        let fileManager = FileManager.default
-        let directoryURL = fileManager.temporaryDirectory.appendingPathComponent("RSS Article Imports", isDirectory: true)
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-
-        let fileName = sanitizedStorageFileName(for: draft.title.isEmpty ? "RSS Article" : draft.title)
-        let fileURL = directoryURL.appendingPathComponent(fileName).appendingPathExtension("txt")
-        let body = [draft.title, "", draft.body]
-            .joined(separator: "\n")
-
-        try body.write(to: fileURL, atomically: true, encoding: .utf8)
-        return fileURL
     }
 
     private func handleDroppedFiles(_ providers: [NSItemProvider]) -> Bool {
@@ -1680,7 +1625,7 @@ struct ContentView: View {
         }
 
         let fileExtension = sourceURL.pathExtension.lowercased()
-        guard isSupportedUploadFileExtension(fileExtension) else {
+        guard ReaderImportSupport.isSupportedUploadFileExtension(fileExtension) else {
             uploadAlertMessage = "Please drop a PDF, TXT, ePub, or image file."
             return
         }
@@ -1729,60 +1674,6 @@ struct ContentView: View {
                 continuation.resume(returning: nil)
             }
         }
-    }
-
-    private var homeDropOverlay: some View {
-        RoundedRectangle(cornerRadius: 28, style: .continuous)
-            .fill(Color.green.opacity(0.12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(
-                        Color.green.opacity(0.72),
-                        style: StrokeStyle(lineWidth: 2, dash: [10, 8])
-                    )
-            )
-            .overlay(
-                VStack(spacing: 8) {
-                    Image(systemName: "arrow.down.doc.fill")
-                        .font(.system(size: 28, weight: .semibold))
-                    Text("Drop PDF, ePub, TXT, or image files here")
-                        .font(.headline)
-                    Text("The file will open in the upload flow after it is validated and staged locally.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .multilineTextAlignment(.center)
-                .padding(24)
-            )
-    }
-
-    private func updateBannerView(for notice: AppUpdateNotice) -> some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(notice.title)
-                    .font(.headline.weight(.bold))
-                Text(notice.subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 12)
-
-            Button {
-                appUpdateChecker.openAppStore()
-            } label: {
-                Label("Download", systemImage: "arrow.down.circle.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.green)
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Color.green.opacity(0.35), lineWidth: 1)
-        )
     }
 
     @MainActor
@@ -1915,7 +1806,7 @@ struct ContentView: View {
                 processingImportMessage = "Saving \(context.fileName)…"
             }
 
-            placeholderEntry.title = ingest.title ?? sanitizedTitle(from: context.sourceURL.deletingPathExtension().lastPathComponent)
+            placeholderEntry.title = ingest.title ?? ReaderImportSupport.sanitizedTitle(from: context.sourceURL.deletingPathExtension().lastPathComponent)
             placeholderEntry.subtitle = ""
             placeholderEntry.sourceKindRawValue = ingest.sourceKind.rawValue
             placeholderEntry.fileExtension = context.fileExtension
@@ -1930,7 +1821,7 @@ struct ContentView: View {
             } else {
                 placeholderEntry.categoryName = nil
             }
-            placeholderEntry.avatarSymbolName = avatarSymbol(for: ingest.sourceKind)
+            placeholderEntry.avatarSymbolName = ReaderImportSupport.avatarSymbol(for: ingest.sourceKind)
             placeholderEntry.accentName = placeholderEntry.accentName.isEmpty ? (Self.accentPalette.randomElement() ?? "emerald") : placeholderEntry.accentName
             placeholderEntry.phonemeText = nil
             placeholderEntry.phonemeUpdatedAt = nil
@@ -2070,7 +1961,7 @@ struct ContentView: View {
         guard let context = pendingImportContext, pendingImportEntry == nil else { return }
 
         let placeholder = LibraryEntry(
-            title: sanitizedTitle(from: context.sourceURL.deletingPathExtension().lastPathComponent),
+            title: ReaderImportSupport.sanitizedTitle(from: context.sourceURL.deletingPathExtension().lastPathComponent),
             subtitle: "Importing…",
             sourceKind: context.sourceKind,
             fileExtension: context.fileExtension,
@@ -2080,7 +1971,7 @@ struct ContentView: View {
             coverImageFilePath: nil,
             fileSizeBytes: 0,
             categoryName: nil,
-            avatarSymbolName: avatarSymbol(for: context.sourceKind),
+            avatarSymbolName: ReaderImportSupport.avatarSymbol(for: context.sourceKind),
             accentName: Self.accentPalette.randomElement() ?? "emerald",
             phonemeText: nil,
             phonemeUpdatedAt: nil,
@@ -2107,7 +1998,7 @@ struct ContentView: View {
         }
 
         let extensionName = sourceURL.pathExtension.lowercased()
-        guard isSupportedUploadFileExtension(extensionName) else {
+        guard ReaderImportSupport.isSupportedUploadFileExtension(extensionName) else {
             throw UploadError.unsupportedFileType
         }
 
@@ -2123,8 +2014,8 @@ struct ContentView: View {
             throw UploadError.invalidFile
         }
 
-        let directoryURL = try makeUploadDirectory(for: sourceURL)
-        let baseName = sanitizedImportedFileBaseName(from: sourceURL)
+        let directoryURL = try ReaderImportSupport.makeUploadDirectory(for: sourceURL)
+        let baseName = ReaderImportSupport.sanitizedImportedFileBaseName(from: sourceURL)
         let destinationURL = directoryURL.appendingPathComponent("\(baseName).\(extensionName)")
 
         if fileManager.fileExists(atPath: destinationURL.path) {
@@ -2134,30 +2025,6 @@ struct ContentView: View {
         try fileManager.copyItem(at: sourceURL, to: destinationURL)
         return (destinationURL, directoryURL)
     }
-
-    private func sanitizedImportedFileBaseName(from sourceURL: URL) -> String {
-        let fileStem = sourceURL.deletingPathExtension().lastPathComponent
-        let sanitizedStem = fileStem
-            .replacingOccurrences(of: " ", with: "_")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: ":", with: "_")
-        let timestamp = Self.importTimestampFormatter.string(from: .now)
-        return "\(sanitizedStem)_\(timestamp)"
-    }
-
-    private func sanitizedStorageFileName(for title: String) -> String {
-        title
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-    }
-
-    private static let importTimestampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyyMMdd_HHmmssSSS"
-        return formatter
-    }()
 
     @MainActor
     private func applyPhonemeCache(_ phonemeText: String, to entry: LibraryEntry) {
@@ -2238,7 +2105,7 @@ struct ContentView: View {
 
     private func storeUploadedFile(sourceURL: URL, fileExtension: String, fileData: Data) throws -> URL {
         let fileManager = FileManager.default
-        let directoryURL = try uploadedFilesDirectory()
+        let directoryURL = try ReaderImportSupport.uploadedFilesDirectory()
         let baseName = sourceURL.deletingPathExtension().lastPathComponent
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
@@ -2258,7 +2125,7 @@ struct ContentView: View {
         if let directoryURL {
             resolvedDirectoryURL = directoryURL
         } else {
-            resolvedDirectoryURL = try uploadedFilesDirectory()
+            resolvedDirectoryURL = try ReaderImportSupport.uploadedFilesDirectory()
         }
         let destinationFileName: String
         if directoryURL == nil {
@@ -2442,8 +2309,8 @@ struct ContentView: View {
 
     private func makeFreeBookDownloadDirectory(for book: FreeBook) throws -> URL {
         let fileManager = FileManager.default
-        let rootDirectory = try uploadedFilesDirectory()
-        let timestamp = Self.importTimestampFormatter.string(from: .now)
+        let rootDirectory = try ReaderImportSupport.uploadedFilesDirectory()
+        let timestamp = ReaderImportSupport.importTimestampString()
         let folderName = "free-book-\(book.id)-\(timestamp)-\(freeBookFileName(for: book))"
         let sanitizedFolderName = folderName
             .replacingOccurrences(of: " ", with: "_")
@@ -2587,94 +2454,6 @@ struct ContentView: View {
         }
     }
 
-    private func uploadedFilesDirectory() throws -> URL {
-        let fileManager = FileManager.default
-        let supportDirectory = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let appDirectory = supportDirectory.appendingPathComponent("Anything Reader", isDirectory: true)
-        let uploadsDirectory = appDirectory.appendingPathComponent("Uploaded Files", isDirectory: true)
-
-        if !fileManager.fileExists(atPath: uploadsDirectory.path) {
-            try fileManager.createDirectory(at: uploadsDirectory, withIntermediateDirectories: true)
-        }
-
-        return uploadsDirectory
-    }
-
-    private func makeUploadDirectory(for sourceURL: URL) throws -> URL {
-        let fileManager = FileManager.default
-        let rootDirectory = try uploadedFilesDirectory()
-        let directoryName = sanitizedUploadedFileDirectoryName(from: sourceURL)
-        let destinationDirectory = rootDirectory.appendingPathComponent(directoryName, isDirectory: true)
-
-        if !fileManager.fileExists(atPath: destinationDirectory.path) {
-            try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
-        }
-
-        return destinationDirectory
-    }
-
-    private func sanitizedUploadedFileDirectoryName(from sourceURL: URL) -> String {
-        let timestamp = Self.importTimestampFormatter.string(from: .now)
-        let stem = sourceURL.deletingPathExtension().lastPathComponent
-            .replacingOccurrences(of: " ", with: "_")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: ":", with: "_")
-        let sanitizedStem = stem.isEmpty ? "upload" : stem
-        return "\(timestamp)-\(sanitizedStem)"
-    }
-
-    private func readerSourceKind(for fileExtension: String) -> ReaderSourceKind {
-        if UTType(filenameExtension: fileExtension)?.conforms(to: .image) == true {
-            return .image
-        }
-
-        switch fileExtension.lowercased() {
-        case "pdf":
-            return .pdf
-        case "epub":
-            return .epub
-        case "txt":
-            return .text
-        case "html", "htm":
-            return .html
-        default:
-            return .text
-        }
-    }
-
-    private func isSupportedUploadFileExtension(_ fileExtension: String) -> Bool {
-        guard !fileExtension.isEmpty else { return false }
-
-        if ["pdf", "txt", "epub"].contains(fileExtension) {
-            return true
-        }
-
-        return UTType(filenameExtension: fileExtension)?.conforms(to: .image) == true
-    }
-
-    private func avatarSymbol(for sourceKind: ReaderSourceKind) -> String {
-        switch sourceKind {
-        case .pdf:
-            return "doc.richtext.fill"
-        case .epub:
-            return "book.fill"
-        case .image:
-            return "doc.text.image"
-        case .text, .html, .pastedText:
-            return "doc.text.fill"
-        }
-    }
-
-    private func sanitizedTitle(from fileName: String) -> String {
-        let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled Upload" : trimmed
-    }
-
     private enum UploadError: LocalizedError {
         case invalidFile
         case unsupportedFileType
@@ -2766,13 +2545,13 @@ struct ContentView: View {
         playbackSessionToken = UUID()
         let sessionToken = playbackSessionToken
         let normalizedText = ReaderPlaybackChunkService.normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) ?? ""
-        let duration = estimatedPlaybackDuration(for: normalizedText)
+        let duration = ReaderPlaybackSupport.estimatedPlaybackDuration(for: normalizedText)
         let isSummaryPlayback = textFileURL?.path == entry.summarizedTextFileURL?.path
         let resumeProgress = persistProgress
-            ? playbackResumeProgress(for: entry, textFileURL: textFileURL, duration: duration)
+            ? ReaderPlaybackSupport.playbackResumeProgress(for: entry, textFileURL: textFileURL, duration: duration)
             : 0
         let resumeTargetIndex = persistProgress && !isSummaryPlayback
-            ? (entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: resumeProgress))
+            ? (entry.currentReadingPositionIndex ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: resumeProgress))
             : nil
         let chunks = ReaderPlaybackChunkService.chunks(for: entry, textFileURL: textFileURL)
         let startingChunkIndex = resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) } ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: chunks.count)
@@ -2793,9 +2572,9 @@ struct ContentView: View {
         playbackState = PlaybackState(
             title: displayTitle ?? entry.title,
             subtitle: entry.subtitle,
-            readingPositionText: displayTitle ?? entry.currentReadingPositionDisplayText ?? readingPositionText(for: entry, progress: resumeProgress),
+            readingPositionText: displayTitle ?? entry.currentReadingPositionDisplayText ?? ReaderPlaybackSupport.readingPositionText(for: entry, progress: resumeProgress),
             readingPositionOverrideText: nil,
-            readingPositionIndexOverride: persistProgress && !isSummaryPlayback ? (entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: resumeProgress)) : nil,
+            readingPositionIndexOverride: persistProgress && !isSummaryPlayback ? (entry.currentReadingPositionIndex ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: resumeProgress)) : nil,
             readingPositionTotalCount: persistProgress && !isSummaryPlayback ? (entry.currentReadingPositionTotalCount ?? (entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count)) : nil,
             avatarSymbol: entry.avatarSymbolName,
             accentName: entry.accentName,
@@ -2975,8 +2754,8 @@ struct ContentView: View {
     private func jumpToReadingTarget(_ target: ReaderJumpTarget) {
         guard let entry = activeEntry else { return }
 
-        let newProgress = readingProgress(for: target, in: entry)
-        let explicitReadingPositionText = readingPositionText(for: entry, targetIndex: target.index)
+        let newProgress = ReaderPlaybackSupport.readingProgress(for: target, in: entry)
+        let explicitReadingPositionText = ReaderPlaybackSupport.readingPositionText(for: entry, targetIndex: target.index)
         entry.progress = newProgress
         entry.currentReadingPositionIndex = target.index
         entry.currentReadingPositionTotalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
@@ -2993,8 +2772,8 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func scheduleReadingTargetNavigation(_ direction: ReadingNavigationDirection) {
-        guard let entry = activeEntry, canNavigateReadingTarget(direction, in: entry) else { return }
+    private func scheduleReadingTargetNavigation(_ direction: PlaybackNavigationDirection) {
+        guard let entry = activeEntry, ReaderPlaybackSupport.canNavigateReadingTarget(direction, in: entry, currentProgress: playbackState.progress) else { return }
 
         cancelReadingNavigationTask()
 
@@ -3008,7 +2787,7 @@ struct ContentView: View {
 
             guard !Task.isCancelled else { return }
             guard let currentEntry = activeEntry, currentEntry.persistentModelID == entryID else { return }
-            guard let target = adjacentReadingTarget(for: direction, in: currentEntry) else { return }
+            guard let target = ReaderPlaybackSupport.adjacentReadingTarget(for: direction, in: currentEntry, currentProgress: playbackState.progress) else { return }
 
             jumpToReadingTarget(target)
         }
@@ -3098,13 +2877,13 @@ struct ContentView: View {
         playbackChunkIndex = update.chunkIndex
 
         if activePlaybackSummaryFilePath == nil, activePlaybackShouldPersistProgress {
-            let targetIndex = readingPositionIndex(for: entry, chunkIndex: update.chunkIndex)
-                ?? self.readingPositionIndex(for: entry, progress: update.progress)
+            let targetIndex = ReaderPlaybackSupport.readingPositionIndex(for: entry, chunkIndex: update.chunkIndex)
+                ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: update.progress)
             playbackState.readingPositionIndexOverride = targetIndex
             playbackState.readingPositionTotalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
             playbackState.readingPositionText = targetIndex.flatMap {
-                readingPositionText(for: entry, targetIndex: $0)
-            } ?? readingPositionText(for: entry, progress: update.progress)
+                ReaderPlaybackSupport.readingPositionText(for: entry, targetIndex: $0)
+            } ?? ReaderPlaybackSupport.readingPositionText(for: entry, progress: update.progress)
             playbackState.readingPositionOverrideText = nil
         }
     }
@@ -3437,156 +3216,21 @@ struct ContentView: View {
         playLibraryEntry(entry)
     }
 
-    private func readingPositionText(for entry: LibraryEntry, progress: Double) -> String {
-        guard let structureKind = entry.readingStructureKind else { return "" }
-
-        let targets = entry.readingJumpTargets
-        guard !targets.isEmpty else { return "" }
-
-        let index = ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: targets.count)
-        let target = targets[min(index, targets.count - 1)]
-        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        switch structureKind {
-        case .page:
-            if title.isEmpty {
-                return "Page \(index + 1) of \(targets.count)"
-            }
-            return "Page \(index + 1) of \(targets.count) · \(title)"
-        case .chapter:
-            if title.isEmpty {
-                return "Chapter \(index + 1) of \(targets.count)"
-            }
-            return "Chapter \(index + 1) of \(targets.count) · \(title)"
-        case .section:
-            if title.isEmpty {
-                return "Section \(index + 1) of \(targets.count)"
-            }
-            return "Section \(index + 1) of \(targets.count) · \(title)"
-        }
-    }
-
-    private func readingPositionText(for entry: LibraryEntry, targetIndex: Int) -> String {
-        guard let structureKind = entry.readingStructureKind else { return "" }
-
-        let targets = entry.readingJumpTargets
-        guard !targets.isEmpty else { return "" }
-
-        let index = min(max(targetIndex, 0), targets.count - 1)
-        let target = targets[index]
-        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        switch structureKind {
-        case .page:
-            if title.isEmpty {
-                return "Page \(index + 1) of \(targets.count)"
-            }
-            return "Page \(index + 1) of \(targets.count) · \(title)"
-        case .chapter:
-            if title.isEmpty {
-                return "Chapter \(index + 1) of \(targets.count)"
-            }
-            return "Chapter \(index + 1) of \(targets.count) · \(title)"
-        case .section:
-            if title.isEmpty {
-                return "Section \(index + 1) of \(targets.count)"
-            }
-            return "Section \(index + 1) of \(targets.count) · \(title)"
-        }
-    }
-
-    private func readingPositionIndex(for entry: LibraryEntry, progress: Double) -> Int? {
-        let targets = entry.readingJumpTargets
-        guard !targets.isEmpty else { return nil }
-        return ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: targets.count)
-    }
-
-    private func readingPositionIndex(for entry: LibraryEntry, chunkIndex: Int) -> Int? {
-        let targets = entry.readingJumpTargets
-        guard !targets.isEmpty else { return nil }
-        return ReaderPlaybackChunkService.readingTargetIndex(forChunkIndex: chunkIndex, in: entry)
-    }
-
     private func syncReadingPositionState(for entry: LibraryEntry?, progress: Double, chunkIndex: Int? = nil) {
         guard let entry else { return }
 
         let totalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
-        let index = chunkIndex.flatMap { readingPositionIndex(for: entry, chunkIndex: $0) }
+        let index = chunkIndex.flatMap { ReaderPlaybackSupport.readingPositionIndex(for: entry, chunkIndex: $0) }
             ?? playbackState.readingPositionIndexOverride
             ?? entry.currentReadingPositionIndex
-            ?? readingPositionIndex(for: entry, progress: progress)
+            ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: progress)
 
         entry.currentReadingPositionIndex = index
         entry.currentReadingPositionTotalCount = totalCount
         playbackState.readingPositionIndexOverride = index
         playbackState.readingPositionTotalCount = totalCount
-        playbackState.readingPositionText = entry.currentReadingPositionDisplayText ?? readingPositionText(for: entry, progress: progress)
+        playbackState.readingPositionText = entry.currentReadingPositionDisplayText ?? ReaderPlaybackSupport.readingPositionText(for: entry, progress: progress)
         playbackState.readingPositionOverrideText = nil
-    }
-
-    private func readingProgress(for target: ReaderJumpTarget, in entry: LibraryEntry) -> Double {
-        let targets = entry.readingJumpTargets
-        guard !targets.isEmpty else { return 0 }
-        return ReaderPlaybackChunkService.progress(for: target.index, chunkCount: targets.count)
-    }
-
-    private func playbackResumeProgress(for entry: LibraryEntry, textFileURL: URL? = nil, duration: Int) -> Double {
-        if let textFileURL,
-           let summaryURL = entry.summarizedTextFileURL,
-           summaryURL.path == textFileURL.path {
-            let elapsedSeconds = entry.summarizedTextPlaybackPositionSeconds ?? 0
-            guard duration > 0 else { return 0 }
-            return min(max(Double(elapsedSeconds) / Double(duration), 0), 0.999_999)
-        }
-
-        if let currentIndex = entry.currentReadingPositionIndex,
-           let totalCount = entry.currentReadingPositionTotalCount,
-           totalCount > 0 {
-            return ReaderPlaybackChunkService.progress(for: currentIndex, chunkCount: totalCount)
-        }
-
-        return entry.progress
-    }
-
-    private func estimatedPlaybackDuration(for normalizedText: String) -> Int {
-        max(600, min(10800, normalizedText.isEmpty ? 1800 : max(600, normalizedText.count / 12)))
-    }
-
-    private func adjacentReadingTarget(for direction: ReadingNavigationDirection, in entry: LibraryEntry) -> ReaderJumpTarget? {
-        let targets = entry.readingJumpTargets
-        guard !targets.isEmpty else { return nil }
-
-        let currentIndex = readingTargetIndex(for: entry) ?? 0
-        let targetIndex: Int
-
-        switch direction {
-        case .backward:
-            targetIndex = currentIndex - 1
-        case .forward:
-            targetIndex = currentIndex + 1
-        }
-
-        guard targets.indices.contains(targetIndex) else { return nil }
-        return targets[targetIndex]
-    }
-
-    private func canNavigateReadingTarget(_ direction: ReadingNavigationDirection, in entry: LibraryEntry?) -> Bool {
-        guard let entry else { return false }
-        let targets = entry.readingJumpTargets
-        guard !targets.isEmpty else { return false }
-
-        let currentIndex = readingTargetIndex(for: entry) ?? 0
-
-        switch direction {
-        case .backward:
-            return currentIndex > 0
-        case .forward:
-            return currentIndex < targets.count - 1
-        }
-    }
-
-    private func readingTargetIndex(for entry: LibraryEntry) -> Int? {
-        entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: playbackState.progress)
     }
 
     private func cancelReadingNavigationTask() {
