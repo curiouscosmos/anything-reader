@@ -114,11 +114,10 @@ struct FreeBooksView: View {
                         await store.setLanguageFilter(.all)
                     }
                 } label: {
-                    if store.selectedLanguageFilter == .all {
-                        Label(FreeBookLanguageFilter.all.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(FreeBookLanguageFilter.all.displayName)
-                    }
+                    filterOptionLabel(
+                        title: FreeBookLanguageFilter.all.displayName,
+                        isSelected: store.selectedLanguageFilter == .all
+                    )
                 }
                 .readerPointerCursor()
 
@@ -129,11 +128,10 @@ struct FreeBooksView: View {
                                 await store.setLanguageFilter(filter)
                             }
                         } label: {
-                            if store.selectedLanguageFilter == filter {
-                                Label(filter.displayName, systemImage: "checkmark")
-                            } else {
-                                Text(filter.displayName)
-                            }
+                            filterOptionLabel(
+                                title: filter.displayName,
+                                isSelected: store.selectedLanguageFilter == filter
+                            )
                         }
                         .readerPointerCursor()
                     }
@@ -150,11 +148,10 @@ struct FreeBooksView: View {
                         await store.setCategoryFilter(.all)
                     }
                 } label: {
-                    if store.selectedCategoryFilter == .all {
-                        Label(FreeBookCategoryFilter.all.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(FreeBookCategoryFilter.all.displayName)
-                    }
+                    filterOptionLabel(
+                        title: FreeBookCategoryFilter.all.displayName,
+                        isSelected: store.selectedCategoryFilter == .all
+                    )
                 }
                 .readerPointerCursor()
 
@@ -166,11 +163,10 @@ struct FreeBooksView: View {
                                     await store.setCategoryFilter(filter)
                             }
                         } label: {
-                                if store.selectedCategoryFilter == filter {
-                                    Label(filter.displayName, systemImage: "checkmark")
-                                } else {
-                                    Text(filter.displayName)
-                                }
+                                filterOptionLabel(
+                                    title: filter.displayName,
+                                    isSelected: store.selectedCategoryFilter == filter
+                                )
                             }
                         }
                         .readerPointerCursor()
@@ -211,14 +207,39 @@ struct FreeBooksView: View {
                 .foregroundStyle(.secondary)
 
             Menu(content: content) {
-                Label(selectedTitle, systemImage: "line.3.horizontal.decrease.circle")
-                    .font(.headline)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                filterOptionLabel(title: selectedTitle, isSelected: true, systemImage: "line.3.horizontal.decrease.circle")
             }
             .accessibilityIdentifier(menuIdentifier)
             .readerPointerCursor()
         }
+    }
+
+    private func filterOptionLabel(
+        title: String,
+        isSelected: Bool,
+        systemImage: String? = nil
+    ) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            if isSelected, let systemImage {
+                Image(systemName: systemImage)
+            } else if isSelected {
+                Image(systemName: "checkmark")
+            } else if let systemImage {
+                Image(systemName: systemImage)
+            } else {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+            }
+        }
+        .font(.headline)
+        .foregroundStyle(isSelected ? .white : .primary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isSelected ? Color.green.opacity(0.92) : Color.green.opacity(0.16))
+        )
     }
 
     private var booksGrid: some View {
