@@ -18,7 +18,7 @@ struct FreeBooksView: View {
     private let booksTopAnchorID = "free-books-grid-top"
 
     private let columns = [
-        GridItem(.adaptive(minimum: 220), spacing: 16)
+        GridItem(.adaptive(minimum: 260, maximum: 260), spacing: 8)
     ]
 
     var body: some View {
@@ -109,20 +109,35 @@ struct FreeBooksView: View {
                 selectedTitle: store.selectedLanguageFilter.displayName,
                 menuIdentifier: "free-books-language-filter-menu"
             ) {
-                ForEach(FreeBookLanguageFilter.allCases) { filter in
                 Button {
                     Task {
-                        await store.setLanguageFilter(filter)
+                        await store.setLanguageFilter(.all)
                     }
                 } label: {
-                        if store.selectedLanguageFilter == filter {
-                            Label(filter.displayName, systemImage: "checkmark")
-                        } else {
-                            Text(filter.displayName)
-                        }
+                    if store.selectedLanguageFilter == .all {
+                        Label(FreeBookLanguageFilter.all.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(FreeBookLanguageFilter.all.displayName)
                     }
                 }
                 .readerPointerCursor()
+
+                ForEach(FreeBookLanguageFilter.allCases) { filter in
+                    if filter != .all {
+                        Button {
+                            Task {
+                                await store.setLanguageFilter(filter)
+                            }
+                        } label: {
+                            if store.selectedLanguageFilter == filter {
+                                Label(filter.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(filter.displayName)
+                            }
+                        }
+                        .readerPointerCursor()
+                    }
+                }
             }
 
             filterMenu(
@@ -213,7 +228,7 @@ struct FreeBooksView: View {
                     .frame(height: 1)
                     .id(booksTopAnchorID)
 
-                LazyVGrid(columns: columns, spacing: 16) {
+                LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(store.books) { book in
                         FreeBookCardView(
                             book: book,

@@ -25,31 +25,32 @@ struct FreeBookCardView: View {
                 LinearGradient(
                     colors: [
                         .clear,
-                        .black.opacity(0.05),
-                        .black.opacity(0.70)
+                        .black.opacity(0.12),
+                        .black.opacity(0.78)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
+
+                bookMetaOverlay
+                    .padding(16)
             }
-            .frame(height: 300)
-            // .clipped()
-            
-            bookMetaOverlay
-                .padding(16)
-            
+            .frame(width: 260, height: 320)
+            .clipped()
+
             actionButtons
                 .padding(14)
+                .frame(height: 64)
                 .background(cardFooterBackground)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: 260, height: 390)
         .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.12), radius: 18, x: 0, y: 10)
+        .shadow(color: .black.opacity(0.14), radius: 22, x: 0, y: 12)
         .task(id: coverCacheTaskID) {
             await resolveCachedCoverArtIfNeeded()
         }
@@ -61,7 +62,7 @@ struct FreeBookCardView: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.primary.opacity(0.08),
+                            Color.primary.opacity(0.10),
                             Color.primary.opacity(0.03)
                         ],
                         startPoint: .topLeading,
@@ -73,6 +74,7 @@ struct FreeBookCardView: View {
                 Image(nsImage: cachedImage)
                     .resizable()
                     .scaledToFill()
+                    .frame(width: 260, height: 320, alignment: .top)
                     .clipped()
             } else if isResolvingCoverArt {
                 ProgressView()
@@ -81,7 +83,6 @@ struct FreeBookCardView: View {
                 placeholderCover
             }
         }
-        .frame(maxWidth: .infinity)
     }
 
     private var bookMetaOverlay: some View {
@@ -90,10 +91,11 @@ struct FreeBookCardView: View {
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.white)
                 .lineLimit(2)
+                .shadow(radius: 4)
 
             Text(book.displayAuthors)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(.white.opacity(0.84))
                 .lineLimit(1)
 
             HStack(spacing: 8) {
@@ -101,6 +103,7 @@ struct FreeBookCardView: View {
                 metaPill(book.displayFormat)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func metaPill(_ text: String) -> some View {
@@ -123,6 +126,7 @@ struct FreeBookCardView: View {
                 onView?()
             } label: {
                 Label("View", systemImage: "eye.fill")
+                    .labelStyle(.titleAndIcon)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(BookCardSecondaryButtonStyle())
@@ -132,7 +136,8 @@ struct FreeBookCardView: View {
             Button {
                 onDownload?()
             } label: {
-                Label("Download", systemImage: "arrow.down.circle.fill")
+                Label("Get", systemImage: "arrow.down.circle.fill")
+                    .labelStyle(.titleAndIcon)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(BookCardPrimaryButtonStyle())
@@ -196,17 +201,11 @@ private struct BookCardPrimaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.callout.weight(.bold))
             .foregroundStyle(.white)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
             .padding(.vertical, 11)
-            .readerPointerCursor()
             .background(
-                LinearGradient(
-                    colors: [
-                        Color.green,
-                        Color.green
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
+                ReaderStyle.accentColor(named: "green"),
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .opacity(configuration.isPressed ? 0.82 : 1)
