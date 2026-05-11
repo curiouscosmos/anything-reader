@@ -10,12 +10,14 @@ import CryptoKit
 
 // Persists generated phonemes on disk so the app can reuse them across launches.
 actor PhonemeCacheService {
+    // Shared singleton because phoneme caching is used by every TTS entry point.
     static let shared = PhonemeCacheService()
 
     private var inMemoryCache: [String: String] = [:]
 
     private init() {}
 
+    // Returns cached phonemes for a full entry, checking memory first and disk second.
     func cachedPhonemes(for entry: LibraryEntry, providerID: ReaderTTSProviderID = .kokoro) async -> String? {
         let key = cacheKey(for: entry, providerID: providerID)
 
@@ -38,6 +40,7 @@ actor PhonemeCacheService {
         return nil
     }
 
+    // Returns cached phonemes for one chunk so playback can resume without recomputing.
     func cachedPhonemes(for entry: LibraryEntry, chunkIndex: Int, providerID: ReaderTTSProviderID = .kokoro) async -> String? {
         let key = chunkCacheKey(for: entry, chunkIndex: chunkIndex, providerID: providerID)
 
@@ -54,6 +57,7 @@ actor PhonemeCacheService {
         return nil
     }
 
+    // Stores the full-entry phoneme string in memory and on disk.
     func store(_ phonemes: String, for entry: LibraryEntry, providerID: ReaderTTSProviderID = .kokoro) async {
         let normalized = phonemes.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
@@ -72,6 +76,7 @@ actor PhonemeCacheService {
         }
     }
 
+    // Stores chunk-level phonemes so chunked playback can prefetch efficiently.
     func store(_ phonemes: String, for entry: LibraryEntry, chunkIndex: Int, providerID: ReaderTTSProviderID = .kokoro) async {
         let normalized = phonemes.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
@@ -90,6 +95,7 @@ actor PhonemeCacheService {
         }
     }
 
+    // Removes cached phonemes for one entry across all providers or a single provider.
     func removeCache(for entry: LibraryEntry, providerID: ReaderTTSProviderID? = nil) async {
         let providerIDs = providerID.map { [$0] } ?? ReaderTTSProviderID.allCases
 
@@ -110,6 +116,7 @@ actor PhonemeCacheService {
         }
     }
 
+    // Prefetches a small window of chunk phonemes ahead of the current playback position.
     func primeChunks(for entry: LibraryEntry, chunks: [String], startingAt chunkIndex: Int, providerID: ReaderTTSProviderID = .kokoro, prefetchCount: Int = 2) async {
         guard !chunks.isEmpty else { return }
         let boundedStartIndex = min(max(chunkIndex, 0), chunks.count - 1)
@@ -130,6 +137,7 @@ actor PhonemeCacheService {
         }
     }
 
+    // Synthesizes the whole entry when no cached full-text phonemes are available.
     func primeCache(for entry: LibraryEntry, providerID: ReaderTTSProviderID = .kokoro) async -> String? {
         if let cached = await cachedPhonemes(for: entry, providerID: providerID) {
             return cached
@@ -146,20 +154,24 @@ actor PhonemeCacheService {
         return phonemes
     }
 
+    // Builds the hashed key used to store one entry/provider pair.
     private func cacheKey(for entry: LibraryEntry, providerID: ReaderTTSProviderID? = nil) -> String {
         let source = entry.storedFilePath ?? entry.cacheIdentity
         let providerPrefix = providerID?.rawValue ?? "all"
         return hashedKey(from: "\(providerPrefix)|\(source)")
     }
 
+    // Builds the hashed key used to store one entry chunk.
     private func chunkCacheKey(for entry: LibraryEntry, chunkIndex: Int, providerID: ReaderTTSProviderID? = nil) -> String {
         "\(cacheKey(for: entry, providerID: providerID))-chunk-\(String(format: "%03d", chunkIndex))"
     }
 
+    // Returns the on-disk file URL for one cached phoneme entry.
     private func cacheFileURL(for key: String) -> URL {
         cacheDirectory().appendingPathComponent("\(key).txt")
     }
 
+    // Returns the application-support folder used for phoneme cache files.
     private func cacheDirectory() -> URL {
         let supportDirectory = fileManager().urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -168,15 +180,18 @@ actor PhonemeCacheService {
             .appendingPathComponent("Phoneme Cache", isDirectory: true)
     }
 
+    // Centralized FileManager access so the cache code stays easy to patch in one place.
     private func fileManager() -> FileManager {
         .default
     }
 
+    // Hashes cache keys so the stored filenames stay short and filesystem-safe.
     private func hashedKey(from string: String) -> String {
         let digest = SHA256.hash(data: Data(string.utf8))
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 
+    // Produces phonemes from either the Kokoro G2P service or the fallback text normalizer.
     private func phonemes(for text: String, providerID: ReaderTTSProviderID) async -> String {
         switch providerID {
         case .kokoro:
@@ -186,6 +201,7 @@ actor PhonemeCacheService {
         }
     }
 
+    // Returns the normalized source text used to seed the phoneme cache.
     @MainActor
     private func nonEmptySourceText(for entry: LibraryEntry) -> String? {
         let text = ReaderPlaybackChunkService.normalizedText(for: entry)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

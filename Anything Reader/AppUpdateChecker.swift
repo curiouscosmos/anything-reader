@@ -10,6 +10,7 @@ import Combine
 import Foundation
 
 struct AppUpdateNotice: Equatable {
+    // These values are compared against the local bundle version to decide whether to show a banner.
     let currentVersion: String
     let minimumSupportedVersion: String
     let unstableVersions: [String]
@@ -43,6 +44,7 @@ struct AppUpdateNotice: Equatable {
 
 @MainActor
 final class AppUpdateChecker: ObservableObject {
+    // App-wide singleton because update state is shared by the shell and multiple views.
     static let shared = AppUpdateChecker()
 
     @Published private(set) var notice: AppUpdateNotice?
@@ -54,6 +56,7 @@ final class AppUpdateChecker: ObservableObject {
 
     private init() {}
 
+    // Launches the background polling loop once per app session.
     func startMonitoring() {
         guard monitoringTask == nil else { return }
 
@@ -75,11 +78,13 @@ final class AppUpdateChecker: ObservableObject {
         }
     }
 
+    // Opens the App Store listing associated with the current build.
     func openAppStore() {
         guard let url = notice?.appStoreURL else { return }
         NSWorkspace.shared.open(url)
     }
 
+    // Fetches the remote version JSON and computes the current update state.
     func checkNow() async {
         guard !isChecking else { return }
         isChecking = true
@@ -111,6 +116,7 @@ final class AppUpdateChecker: ObservableObject {
         }
     }
 
+    // Compares semantic versions so we can do a stable minimum-version check.
     private static var currentAppVersion: String {
         let bundleVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         return bundleVersion?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
@@ -128,6 +134,7 @@ final class AppUpdateChecker: ObservableObject {
     }
 }
 
+// Decoded configuration payload returned by the remote version-check endpoint.
 private struct RemoteVersionPayload: Decodable {
     struct PlatformPayload: Decodable {
         let minSupportedVersion: String
@@ -139,6 +146,7 @@ private struct RemoteVersionPayload: Decodable {
     let windows: PlatformPayload
 }
 
+// Lightweight semantic version helper that avoids depending on a full versioning library.
 private struct SemanticVersion: Comparable {
     private let components: [Int]
 

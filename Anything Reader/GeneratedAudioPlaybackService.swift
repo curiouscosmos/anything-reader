@@ -14,6 +14,7 @@ import Foundation
 
 @MainActor
 final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    // Shared singleton because generated audio playback is coordinated from multiple reader screens.
     static let shared = GeneratedAudioPlaybackService()
 
     @Published private(set) var isPlaying = false
@@ -34,6 +35,7 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
     private static let volumeStorageKey = "generatedAudioPlaybackVolume"
     private static let playbackSpeedStorageKey = "generatedAudioPlaybackSpeed"
 
+    // Restores persisted playback preferences so the app remembers volume and speed.
     private override init() {
         let storedVolume = UserDefaults.standard.object(forKey: Self.volumeStorageKey) as? Double
         let storedSpeed = UserDefaults.standard.object(forKey: Self.playbackSpeedStorageKey) as? Double
@@ -42,20 +44,24 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         super.init()
     }
 
+    // True when a file is already loaded, even if playback is currently paused.
     var hasLoadedAudio: Bool {
         currentFileURL != nil
     }
 
+    // Checks whether the requested file is the active file and is currently playing.
     func isPlayingAudio(for fileURL: URL) -> Bool {
         guard let currentFileURL else { return false }
         return currentFileURL.standardizedFileURL.path == fileURL.standardizedFileURL.path && isPlaying
     }
 
+    // Checks whether the requested file is the currently loaded file.
     func hasLoadedAudio(for fileURL: URL) -> Bool {
         guard let currentFileURL else { return false }
         return currentFileURL.standardizedFileURL.path == fileURL.standardizedFileURL.path
     }
 
+    // Updates player volume and persists the user preference.
     func setVolume(_ newValue: Double) {
         let clamped = min(max(newValue, 0), 1)
         volume = clamped
@@ -63,6 +69,7 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         UserDefaults.standard.set(clamped, forKey: Self.volumeStorageKey)
     }
 
+    // Updates player rate and persists the speed preference.
     func setPlaybackSpeed(_ newValue: Double) {
         let clamped = Self.clampPlaybackSpeed(newValue)
         playbackSpeed = clamped
@@ -73,6 +80,7 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         UserDefaults.standard.set(clamped, forKey: Self.playbackSpeedStorageKey)
     }
 
+    // Loads or resumes a rendered file and wires up the progress callbacks for the UI.
     func play(
         fileURL: URL,
         title: String,
@@ -152,6 +160,7 @@ final class GeneratedAudioPlaybackService: NSObject, ObservableObject, AVAudioPl
         }
     }
 
+    // Toggles pause and resume for the loaded generated-audio file.
     func togglePlayback() {
         guard let player, currentFileURL != nil else { return }
 

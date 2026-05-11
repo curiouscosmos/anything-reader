@@ -7,12 +7,15 @@
 
 import Foundation
 
+// Indicates whether playback navigation should move backward or forward through reading targets.
 enum PlaybackNavigationDirection {
     case backward
     case forward
 }
 
+// Pure helpers for mapping playback progress to reading-position labels and indices.
 enum ReaderPlaybackSupport {
+    // Returns the current reading-position label for chunk-based playback progress.
     static func readingPositionText(for entry: LibraryEntry, progress: Double) -> String {
         guard let structureKind = entry.readingStructureKind else { return "" }
 
@@ -29,6 +32,7 @@ enum ReaderPlaybackSupport {
         )
     }
 
+    // Returns the reading-position label for an explicit target index.
     static func readingPositionText(for entry: LibraryEntry, targetIndex: Int) -> String {
         guard let structureKind = entry.readingStructureKind else { return "" }
 
@@ -45,24 +49,28 @@ enum ReaderPlaybackSupport {
         )
     }
 
+    // Maps playback progress back to a jump-target index when the entry has structured reading data.
     static func readingPositionIndex(for entry: LibraryEntry, progress: Double) -> Int? {
         let targets = entry.readingJumpTargets
         guard !targets.isEmpty else { return nil }
         return ReaderPlaybackChunkService.chunkIndex(for: progress, chunkCount: targets.count)
     }
 
+    // Maps a chunk index back to the corresponding reading target.
     static func readingPositionIndex(for entry: LibraryEntry, chunkIndex: Int) -> Int? {
         let targets = entry.readingJumpTargets
         guard !targets.isEmpty else { return nil }
         return ReaderPlaybackChunkService.readingTargetIndex(forChunkIndex: chunkIndex, in: entry)
     }
 
+    // Returns a normalized progress value for a structured reading target.
     static func readingProgress(for target: ReaderJumpTarget, in entry: LibraryEntry) -> Double {
         let targets = entry.readingJumpTargets
         guard !targets.isEmpty else { return 0 }
         return ReaderPlaybackChunkService.progress(for: target.index, chunkCount: targets.count)
     }
 
+    // Derives the progress used to resume playback after the player stops or restarts.
     static func playbackResumeProgress(for entry: LibraryEntry, textFileURL: URL? = nil, duration: Int) -> Double {
         if let textFileURL,
            let summaryURL = entry.summarizedTextFileURL,
@@ -81,10 +89,12 @@ enum ReaderPlaybackSupport {
         return entry.progress
     }
 
+    // Estimates a duration for narration fallback UI when no real playback time is available.
     static func estimatedPlaybackDuration(for normalizedText: String) -> Int {
         max(600, min(10800, normalizedText.isEmpty ? 1800 : max(600, normalizedText.count / 12)))
     }
 
+    // Finds the next or previous reading target for keyboard and transport controls.
     static func adjacentReadingTarget(
         for direction: PlaybackNavigationDirection,
         in entry: LibraryEntry,
@@ -107,6 +117,7 @@ enum ReaderPlaybackSupport {
         return targets[targetIndex]
     }
 
+    // Checks whether a forward/backward jump is possible from the current position.
     static func canNavigateReadingTarget(
         _ direction: PlaybackNavigationDirection,
         in entry: LibraryEntry?,
@@ -126,6 +137,7 @@ enum ReaderPlaybackSupport {
         }
     }
 
+    // Resolves the current reading target index from either persisted state or current progress.
     static func readingTargetIndex(for entry: LibraryEntry, currentProgress: Double) -> Int? {
         entry.currentReadingPositionIndex ?? readingPositionIndex(for: entry, progress: currentProgress)
     }

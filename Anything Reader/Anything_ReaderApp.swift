@@ -8,8 +8,10 @@
 import SwiftUI
 import SwiftData
 
+// Application entry point that wires the persistent store, startup services, and root content view.
 @main
 struct Anything_ReaderApp: App {
+    // Shared model container backed by the app's on-disk SwiftData store.
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             LibraryEntry.self,
@@ -27,11 +29,13 @@ struct Anything_ReaderApp: App {
         }
     }()
 
+    // Performs one-time startup wiring before the first window appears.
     init() {
         StartupLaunchService.shared.registerAtLoginOnFirstInstallIfNeeded()
         _ = RSSPushNotificationService.shared
     }
 
+    // Root scene for the whole app.
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -39,6 +43,7 @@ struct Anything_ReaderApp: App {
         .modelContainer(sharedModelContainer)
     }
 
+    // Returns the persistent SwiftData configuration, falling back to in-memory storage if needed.
     private static func persistentModelConfiguration(for schema: Schema) throws -> ModelConfiguration {
         let fileManager = FileManager.default
         let applicationSupportDirectory = try fileManager.url(

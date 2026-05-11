@@ -8,6 +8,7 @@
 
 import SwiftUI
 
+// A compact player volume control that keeps the player bar focused on transport actions.
 struct ReaderVolumeControlView: View {
     @Binding var volume: Double
     let preferredMode: AppearanceMode
@@ -33,6 +34,7 @@ struct ReaderVolumeControlView: View {
         .background(surfaceColor, in: RoundedRectangle(cornerRadius: 8))
     }
 
+    // Chooses the SF Symbol that matches the current volume level.
     private var volumeSymbolName: String {
         switch volume {
         case 0:
@@ -46,15 +48,18 @@ struct ReaderVolumeControlView: View {
         }
     }
 
+    // Uses a softer background tint in light mode and a translucent one in dark mode.
     private var surfaceColor: Color {
         preferredMode == .light ? Color.white.opacity(0.56) : Color.white.opacity(0.07)
     }
 
+    // Secondary text color keeps the percentage label readable against both themes.
     private var secondaryTextColor: Color {
         preferredMode == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.72)
     }
 }
 
+// Playback speed control shown alongside the volume slider in the player bar.
 struct ReaderPlaybackSpeedControlView: View {
     @Binding var playbackSpeed: Double
     let preferredMode: AppearanceMode
@@ -80,10 +85,12 @@ struct ReaderPlaybackSpeedControlView: View {
         .background(surfaceColor, in: Rectangle())
     }
 
+    // Matches the volume control background treatment so the player bar feels consistent.
     private var surfaceColor: Color {
         preferredMode == .light ? Color.white.opacity(0.56) : Color.white.opacity(0.07)
     }
 
+    // Secondary text color keeps the speed label readable against both themes.
     private var secondaryTextColor: Color {
         preferredMode == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.72)
     }

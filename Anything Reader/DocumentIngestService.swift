@@ -13,6 +13,7 @@ import Vision
 import UniformTypeIdentifiers
 import ZIPFoundation
 
+// Final normalized document record written to disk and later used by the reader UI and TTS pipeline.
 struct IngestedDocument {
     let title: String?
     let normalizedText: String
@@ -28,6 +29,7 @@ struct IngestedDocument {
     let readingJumpTargets: [ReaderJumpTarget]
 }
 
+// Intermediate draft used while raw text and reading metadata are being extracted.
 struct IngestedDocumentDraft {
     let title: String?
     let rawText: String
@@ -42,6 +44,7 @@ struct IngestedDocumentDraft {
     let readingJumpTargets: [ReaderJumpTarget]
 }
 
+// Errors emitted when the ingest pipeline cannot read or normalize the source file.
 enum DocumentIngestError: LocalizedError {
     case invalidFile
     case unsupportedFileType
@@ -68,11 +71,14 @@ enum DocumentIngestError: LocalizedError {
     }
 }
 
+// Owns extraction for PDFs, ePubs, HTML, plain text, and images so file handling stays isolated.
 actor DocumentIngestService {
+    // Shared singleton because document ingest is invoked from multiple entry points.
     static let shared = DocumentIngestService()
 
     private init() {}
 
+    // Runs extraction followed by normalization and returns the canonical document payload.
     func process(
         stagedFileURL: URL,
         fileExtension: String,
@@ -94,6 +100,7 @@ actor DocumentIngestService {
         )
     }
 
+    // Produces a draft that contains raw text and metadata before normalization begins.
     func extractDraft(
         stagedFileURL: URL,
         fileExtension: String,
@@ -126,6 +133,7 @@ actor DocumentIngestService {
 
         switch sourceKind {
         case .pdf:
+            // PDFs may need direct text extraction depending on the document contents.
             guard let pdfDocument else {
                 throw DocumentIngestError.unreadableDocument
             }
@@ -138,12 +146,14 @@ actor DocumentIngestService {
             pdfExtractionMode = pdfExtraction.mode
             readingMetadata = PDFTextExtractionService.readingMetadata(from: pdfDocument)
         case .epub:
+            // ePubs are unpacked from the archive and normalized into a flat text stream.
             let epubTextExtraction = try EPUBTextExtractionService.extractText(from: stagedFileURL)
             rawText = epubTextExtraction.text
             extractedTitle = bestTitleCandidate(from: rawText)
             pdfExtractionMode = nil
             readingMetadata = epubTextExtraction.readingMetadata
         case .image:
+            // Images are routed through Vision OCR using the detected or user-selected language.
             rawText = try ImageTextExtractionService.extractText(
                 from: stagedFileURL,
                 preferredLanguage: resolvedLanguage
@@ -158,11 +168,13 @@ actor DocumentIngestService {
                 readingJumpTargets: []
             )
         case .html:
+            // HTML is normalized after stripping markup and resolving metadata hints.
             rawText = try HTMLTextExtractionService.extractText(from: stagedFileURL)
             extractedTitle = bestTitleCandidate(from: rawText)
             pdfExtractionMode = nil
             readingMetadata = TXTReadingMetadataService.readingMetadata(from: rawText)
         case .text, .pastedText:
+            // Plain text only needs decoding plus reading-metadata detection.
             guard let text = String(data: fileData, encoding: .utf8) else {
                 throw DocumentIngestError.unreadableDocument
             }
@@ -190,6 +202,7 @@ actor DocumentIngestService {
         )
     }
 
+    // Converts the draft into the final persisted file form and writes the normalized text to disk.
     func finalize(
         draft: IngestedDocumentDraft,
         sourceText: String,
@@ -224,6 +237,7 @@ actor DocumentIngestService {
         )
     }
 
+    // Stores the normalized text beside the source file so the app can reopen it later.
     private func saveNormalizedText(
         _ text: String,
         originalFileName: String,
@@ -251,6 +265,7 @@ actor DocumentIngestService {
         return destinationURL
     }
 
+    // Returns the local uploads folder for a staged import source.
     private func uploadDirectory(for sourceURL: URL) throws -> URL {
         let fileManager = FileManager.default
         let directoryURL = sourceURL.deletingLastPathComponent()
@@ -262,6 +277,7 @@ actor DocumentIngestService {
         return directoryURL
     }
 
+    // Returns the shared Application Support upload staging directory.
     private func uploadedFilesDirectory() throws -> URL {
         let fileManager = FileManager.default
         let supportDirectory = try fileManager.url(

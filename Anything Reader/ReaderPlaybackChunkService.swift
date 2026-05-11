@@ -9,7 +9,9 @@
 import Foundation
 import SwiftData
 
+// Breaks normalized text into TTS-friendly chunks and resolves playback positions from structured content.
 struct ReaderPlaybackChunkService {
+    // Chunking defaults tuned to keep synthesis responsive without making chunks too small.
     static let initialChunkLength = 80
     static let preferredChunkLength = 240
     static let prefetchChunkCount = 3
@@ -17,10 +19,12 @@ struct ReaderPlaybackChunkService {
     static let epubChapterBreakMarker = "[[EPUB_CHAPTER_BREAK]]"
     static let txtSectionBreakMarker = "[[TXT_SECTION_BREAK]]"
 
+    // Loads normalized text from disk and trims it into a reusable in-memory string.
     static func normalizedText(for entry: LibraryEntry) -> String? {
         normalizedText(for: entry.normalizedTextFileURL)
     }
 
+    // Same as above, but accepts an explicit file URL when the caller has one.
     static func normalizedText(for textFileURL: URL?) -> String? {
         guard let textFileURL else { return nil }
 
@@ -34,6 +38,7 @@ struct ReaderPlaybackChunkService {
         return nil
     }
 
+    // Builds chunk arrays from a library entry using source-specific structure when available.
     static func chunks(for entry: LibraryEntry, textFileURL: URL? = nil) -> [String] {
         guard let text = normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) else { return [] }
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
@@ -65,6 +70,7 @@ struct ReaderPlaybackChunkService {
         return chunks(from: text, language: language)
     }
 
+    // Splits already-normalized text into sentence-safe chunks.
     static func chunks(from text: String, language: TextLanguage? = nil) -> [String] {
         let resolvedLanguage = language ?? TextNormalizationService.detectLanguage(for: text)
         let cleaned = TextNormalizationService.normalize(text, language: resolvedLanguage)
@@ -84,6 +90,7 @@ struct ReaderPlaybackChunkService {
         )
     }
 
+    // Returns page/chapter/section chunks when the source file already contains structure markers.
     static func pageChunks(for entry: LibraryEntry, textFileURL: URL? = nil) -> [String] {
         guard let text = normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) else { return [] }
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
@@ -115,6 +122,7 @@ struct ReaderPlaybackChunkService {
         return chunks(from: cleaned, language: language)
     }
 
+    // Resolves a chunk index from a structured reading target.
     static func chunkIndex(for readingTargetIndex: Int, in entry: LibraryEntry) -> Int? {
         guard let text = normalizedText(for: entry), !entry.readingJumpTargets.isEmpty else { return nil }
 
@@ -142,6 +150,7 @@ struct ReaderPlaybackChunkService {
         )
     }
 
+    // Resolves a structured reading target from a chunk index.
     static func readingTargetIndex(forChunkIndex chunkIndex: Int, in entry: LibraryEntry) -> Int? {
         guard let text = normalizedText(for: entry), !entry.readingJumpTargets.isEmpty else { return nil }
 
@@ -176,6 +185,7 @@ struct ReaderPlaybackChunkService {
         return Self.chunkIndex(for: Double(chunkIndex), chunkCount: entry.readingJumpTargets.count)
     }
 
+    // Maps a playback progress fraction to the chunk index to synthesize or resume from.
     static func chunkIndex(for progress: Double, chunkCount: Int) -> Int {
         guard chunkCount > 0 else { return 0 }
         let clampedProgress = min(max(progress, 0), 0.999_999)
@@ -183,6 +193,7 @@ struct ReaderPlaybackChunkService {
         return min(max(index, 0), chunkCount - 1)
     }
 
+    // Converts a chunk index back into a progress fraction centered in that chunk's bucket.
     static func progress(for chunkIndex: Int, chunkCount: Int) -> Double {
         guard chunkCount > 0 else { return 0 }
         let boundedIndex = min(max(chunkIndex, 0), chunkCount - 1)

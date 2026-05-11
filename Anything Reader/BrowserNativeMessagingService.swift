@@ -1,5 +1,6 @@
 import Foundation
 
+// Message payload written by the browser host into the app inbox directory.
 nonisolated struct BrowserNativeMessage: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let title: String?
@@ -10,7 +11,9 @@ nonisolated struct BrowserNativeMessage: Codable, Identifiable, Hashable, Sendab
     let receivedAt: Date
 }
 
+// Manages the browser-native-messaging bridge and the helper host binary.
 actor BrowserNativeMessagingService {
+    // Shared singleton because browser installation and message consumption are global concerns.
     static let shared = BrowserNativeMessagingService()
 
     private let hostName = "com.anythingreader.mac"
@@ -21,6 +24,7 @@ actor BrowserNativeMessagingService {
     private let hostSourceFileName = "AnythingReaderHost.swift"
     private let manifestFileName = "com.anythingreader.mac.json"
 
+    // Installs the host binary and manifests if the browser bridge is not yet set up.
     func installHostIfNeeded() throws {
         let hostExecutableURL = try ensureHostExecutable()
 
@@ -39,6 +43,7 @@ actor BrowserNativeMessagingService {
         try syncChromeManifestIfNeeded(hostExecutableURL: hostExecutableURL)
     }
 
+    // Reads all queued browser messages, then deletes them so they are not processed twice.
     func consumePendingMessages() throws -> [BrowserNativeMessage] {
         let fileManager = FileManager.default
         let inboxDirectoryURL = try browserInboxDirectoryURL()
@@ -74,6 +79,7 @@ actor BrowserNativeMessagingService {
         return messages
     }
 
+    // Materializes the embedded host source and compiles it into the executable helper.
     private func ensureHostExecutable() throws -> URL {
         let sourceURL = try browserHostSourceURL()
         let executableURL = try browserHostExecutableURL()
@@ -89,6 +95,7 @@ actor BrowserNativeMessagingService {
         return executableURL
     }
 
+    // Invokes swiftc to build the host helper and surfaces compiler diagnostics if it fails.
     private func compileHost(from sourceURL: URL, to executableURL: URL) throws {
         let process = Process()
         let standardErrorPipe = Pipe()

@@ -10,11 +10,14 @@ import Foundation
 import PDFKit
 import ZIPFoundation
 
+// Extracts and saves a representative cover image for imported PDFs and ePubs.
 actor CoverArtService {
+    // Shared singleton because cover-art extraction is triggered from the import pipeline.
     static let shared = CoverArtService()
 
     private init() {}
 
+    // Returns a persisted PNG cover URL when the source file contains usable art.
     @MainActor
     func generateCoverImageURL(
         sourceURL: URL,
@@ -44,6 +47,7 @@ actor CoverArtService {
         }
     }
 
+    // Uses the first PDF page as a thumbnail when the document has no embedded cover art.
     @MainActor
     private func extractPDFCoverData(from url: URL) throws -> Data? {
         guard let document = PDFDocument(url: url), let page = document.page(at: 0) else {
@@ -54,6 +58,7 @@ actor CoverArtService {
         return pngData(from: thumbnail)
     }
 
+    // Searches the EPUB archive for metadata or image entries that look like a cover.
     @MainActor
     private func extractEPUBCoverData(from url: URL) throws -> Data? {
         let archive = try Archive(url: url, accessMode: .read)
@@ -83,6 +88,7 @@ actor CoverArtService {
         return nil
     }
 
+    // Saves the chosen image data beside the source file using a stable filename.
     @MainActor
     private func saveImageData(_ data: Data, sourceURL: URL, originalFileName: String) throws -> URL {
         let fileManager = FileManager.default
@@ -108,6 +114,7 @@ actor CoverArtService {
         return destinationURL
     }
 
+    // Converts NSImage values into PNG data so the cover file is easy to reuse later.
     @MainActor
     private func pngData(from image: NSImage) -> Data? {
         guard let tiffRepresentation = image.tiffRepresentation,
@@ -118,6 +125,7 @@ actor CoverArtService {
         return bitmap.representation(using: .png, properties: [:])
     }
 
+    // Keeps generated filenames safe for filesystem use.
     nonisolated private func sanitizedFileName(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Document" : trimmed
@@ -125,6 +133,7 @@ actor CoverArtService {
             .replacingOccurrences(of: ":", with: "-")
     }
 
+    // Reads and decompresses a single archive entry into memory.
     nonisolated private func extractArchiveData(_ archive: Archive, entryPath: String) throws -> Data? {
         guard let entry = archive[entryPath] else { return nil }
 
@@ -135,6 +144,7 @@ actor CoverArtService {
         return output.isEmpty ? nil : output
     }
 
+    // Finds the OPF file path inside the EPUB container manifest.
     nonisolated private func opfPath(from containerData: Data) throws -> String? {
         let document = try XMLDocument(data: containerData, options: [])
         guard
@@ -147,6 +157,7 @@ actor CoverArtService {
         return fullPath
     }
 
+    // Resolves the EPUB cover path from metadata or manifest item references.
     nonisolated private func coverImagePath(from document: XMLDocument, basePath: String) throws -> String? {
         if let metaNodes = try? document.nodes(forXPath: "//*[local-name()='metadata']/*[local-name()='meta']") {
             for node in metaNodes {

@@ -9,15 +9,19 @@
 import AVFoundation
 import Foundation
 
+// Exports a normalized document into a local AAC file using the active TTS provider.
 actor LibraryAudioGenerationService {
+    // Shared singleton because export generation is invoked from the reader shell and background workflows.
     static let shared = LibraryAudioGenerationService()
 
     private init() {}
 
+    // Warms the selected voice so the first real export starts faster.
     func prewarm(voice: ReaderTTSVoiceSelection) async {
         _ = try? await renderSamples(text: voice.sampleText, voice: voice)
     }
 
+    // Converts a normalized text file into a compressed audio file ready for playback.
     func generateAudioFile(
         from normalizedTextFileURL: URL,
         entryTitle: String,
@@ -71,6 +75,7 @@ actor LibraryAudioGenerationService {
         return destinationURL
     }
 
+    // Writes the synthesized samples into an AAC container on disk.
     private func writeAACFile(
         chunks: [String],
         voice: ReaderTTSVoiceSelection,
@@ -135,11 +140,13 @@ actor LibraryAudioGenerationService {
         }
     }
 
+    // Synthesizes one chunk at a time so long documents can be exported reliably.
     private func renderSamples(text: String, voice: ReaderTTSVoiceSelection) async throws -> [Float] {
         let outputURL = try await synthesizeToWav(text: text, voice: voice)
         return try readSamples(from: outputURL)
     }
 
+    // Routes synthesis to the configured provider-specific implementation.
     private func synthesizeToWav(text: String, voice: ReaderTTSVoiceSelection) async throws -> URL {
         switch voice.providerID {
         case .kokoro:
@@ -150,6 +157,7 @@ actor LibraryAudioGenerationService {
         }
     }
 
+    // Reads PCM samples from the temporary WAV file returned by the speech runtime.
     private func readSamples(from url: URL) throws -> [Float] {
         let audioFile = try AVAudioFile(forReading: url)
         let format = audioFile.processingFormat

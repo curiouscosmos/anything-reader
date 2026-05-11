@@ -50,6 +50,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
 // Playback state for the persistent player bar.
 struct PlaybackState {
+    // Text and icon metadata are kept together so the player bar can render without re-deriving state.
     var title: String = "Nothing playing"
     var subtitle: String = "Select a PDF, ePub, text file, or paste text"
     var readingPositionText: String = ""
@@ -81,6 +82,7 @@ struct PlaybackState {
 
 // Theme and formatting helpers used across multiple views.
 enum ReaderStyle {
+    // Centralizes accent lookup so the UI keeps a consistent palette across views.
     static func accentColor(named name: String) -> Color {
         switch name {
         case "teal":
@@ -98,6 +100,7 @@ enum ReaderStyle {
         }
     }
 
+    // Formats elapsed or remaining time into the compact `m:ss` player label.
     static func formattedTime(_ totalSeconds: Int) -> String {
         let clamped = max(0, totalSeconds)
         let minutes = clamped / 60

@@ -8,6 +8,7 @@
 
 import SwiftUI
 
+// Collects the app's transient alerts and confirmation dialog so the main shell stays readable.
 struct ReaderNotificationModifier: ViewModifier {
     @Binding var uploadAlertMessage: String?
     @Binding var browserImportAlertMessage: String?
@@ -23,6 +24,7 @@ struct ReaderNotificationModifier: ViewModifier {
     let onDiscardPendingImport: () -> Void
     let onConfirmAudioDeletion: () -> Void
 
+    // Builds the alert stack for all of the import, playback, and summary failure states.
     func body(content: Content) -> some View {
         content
             .alert(
@@ -155,6 +157,7 @@ struct ReaderNotificationModifier: ViewModifier {
 }
 
 extension View {
+    // Convenience wrapper so any screen can opt into the shared notification stack.
     func readerNotifications(
         uploadAlertMessage: Binding<String?>,
         browserImportAlertMessage: Binding<String?>,

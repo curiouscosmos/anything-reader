@@ -12,6 +12,7 @@ import Foundation
 import FoundationModels
 #endif
 
+// Summarization failures are returned as localized errors so the import flow can tell the user what happened.
 enum FileSummarizationError: LocalizedError {
     case unavailable
     case emptyInput
@@ -29,7 +30,9 @@ enum FileSummarizationError: LocalizedError {
     }
 }
 
+// Wraps Apple Intelligence summarization into a file-oriented service that can run hierarchically.
 actor FileSummarizationService {
+    // Shared singleton because summarization is used from import and reread flows.
     static let shared = FileSummarizationService()
 
     private let sectionCharacterLimit = 1_500
@@ -39,6 +42,7 @@ actor FileSummarizationService {
 
     private init() {}
 
+    // Produces a concise summary for the provided text and language.
     func summarize(text: String, language: TextLanguage) async throws -> String {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else {
@@ -69,6 +73,7 @@ actor FileSummarizationService {
         return finalSummary
     }
 
+    // Summarizes each section independently so long inputs can be processed in chunks.
     private func summarizeSections(_ sections: [String], language: TextLanguage) async throws -> [String] {
         var summaries: [String] = []
         summaries.reserveCapacity(sections.count)
@@ -82,6 +87,7 @@ actor FileSummarizationService {
         return summaries
     }
 
+    // Recursively summarizes text until the result fits within the requested budget.
     private func summarizeHierarchically(
         _ text: String,
         language: TextLanguage,
@@ -138,6 +144,7 @@ actor FileSummarizationService {
         )
     }
 
+    // Handles one section of text and recurses only when the section still exceeds the limit.
     private func summarizeSectionHierarchically(
         _ text: String,
         language: TextLanguage,
@@ -182,8 +189,8 @@ actor FileSummarizationService {
                     currentLimit: maximumCharacters
                 ),
                 depth: depth + 1
-            )
-        }
+        )
+    }
 
         do {
             return try await summarizeSingleSection(sections[0], language: language)

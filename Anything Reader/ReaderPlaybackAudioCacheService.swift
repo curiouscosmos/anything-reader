@@ -12,10 +12,12 @@ import SwiftData
 
 // Persists rendered WAV files for the first live narration chunk across runs.
 actor ReaderPlaybackAudioCacheService {
+    // Shared singleton because the first-chunk cache is used by the live narrator everywhere.
     static let shared = ReaderPlaybackAudioCacheService()
 
     private init() {}
 
+    // Returns a cached audio URL when the stored metadata still matches the current entry.
     func cachedAudioURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) async -> URL? {
         let cacheURL = cacheFileURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
         let metadataURL = cacheMetadataURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
@@ -31,6 +33,7 @@ actor ReaderPlaybackAudioCacheService {
         return cacheURL
     }
 
+    // Copies a generated WAV file into the cache and writes matching entry metadata.
     func storeAudio(
         at sourceURL: URL,
         for entry: LibraryEntry,
@@ -91,20 +94,24 @@ actor ReaderPlaybackAudioCacheService {
         }
     }
 
+    // Removes all cached audio for a single library entry.
     func removeCache(for entry: LibraryEntry) async {
         try? FileManager.default.removeItem(at: entryCacheDirectory(for: entry))
     }
 
+    // Builds the final WAV path for one cached chunk.
     private func cacheFileURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> URL {
         entryCacheDirectory(for: entry)
             .appendingPathComponent("\(cacheKey(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)).wav")
     }
 
+    // Builds the sidecar metadata file path for one cached chunk.
     private func cacheMetadataURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> URL {
         entryCacheDirectory(for: entry)
             .appendingPathComponent("\(cacheKey(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)).entryid")
     }
 
+    // Returns the base cache directory used for first-chunk audio.
     private func cacheDirectory() -> URL {
         let supportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -113,10 +120,12 @@ actor ReaderPlaybackAudioCacheService {
             .appendingPathComponent("First Chunk Audio Cache", isDirectory: true)
     }
 
+    // Returns the per-entry directory so each library item keeps its cache isolated.
     private func entryCacheDirectory(for entry: LibraryEntry) -> URL {
         cacheDirectory().appendingPathComponent(hashedKey(from: cacheEntryID(for: entry)), isDirectory: true)
     }
 
+    // Builds a stable cache identity from the model identifier.
     private func cacheEntryID(for entry: LibraryEntry) -> String {
         let modelID = entry.persistentModelID
         return [
@@ -127,10 +136,12 @@ actor ReaderPlaybackAudioCacheService {
         .joined(separator: "|")
     }
 
+    // Hashes the entry/provider/voice/chunk tuple into a safe filesystem key.
     private func cacheKey(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> String {
         hashedKey(from: "\(cacheEntryID(for: entry))|\(providerID.rawValue)|\(voiceName)|\(chunkText)")
     }
 
+    // Converts raw text into a short stable key for cache filenames.
     private func hashedKey(from string: String) -> String {
         let digest = SHA256.hash(data: Data(string.utf8))
         return digest.compactMap { String(format: "%02x", $0) }.joined()

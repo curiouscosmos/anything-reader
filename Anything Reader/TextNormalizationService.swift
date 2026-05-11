@@ -10,8 +10,10 @@ import NaturalLanguage
 
 // Normalizes imported and pasted text into a stable, TTS-friendly form.
 enum TextNormalizationService {
+    // Version bump when the normalization rules change in a way that should invalidate older output.
     static let normalizationVersion = 2
 
+    // Uses script heuristics first, then falls back to language detection when needed.
     nonisolated static func detectLanguage(for text: String) -> TextLanguage {
         let sampleText = sampleTextForDetection(from: text)
 
@@ -107,6 +109,7 @@ enum TextNormalizationService {
         return textLanguage(for: recognizerLanguage.rawValue)
     }
 
+    // Converts raw imported text into a canonical form with normalized spacing and punctuation.
     nonisolated static func normalize(_ text: String, language: TextLanguage? = nil) -> String {
         let resolvedLanguage = language ?? detectLanguage(for: text)
         let canonical = text
@@ -128,6 +131,7 @@ enum TextNormalizationService {
         return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // Applies language-specific spacing and punctuation cleanup to a single line.
     nonisolated private static func normalizeLine(_ line: String, language: TextLanguage) -> String {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }

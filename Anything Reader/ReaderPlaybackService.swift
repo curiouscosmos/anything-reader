@@ -27,6 +27,7 @@ struct ReaderPlaybackUpdate {
 // remain in its own isolated player service.
 @MainActor
 final class ReaderPlaybackService: NSObject, ObservableObject {
+    // Shared singleton because the narration queue is global to the active reader session.
     static let shared = ReaderPlaybackService()
 
     @Published private(set) var isPlaying = false
@@ -61,6 +62,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         playerNode.volume = Float(volume)
     }
 
+    // Stops playback, cancels synthesis, and clears all session-specific caches.
     func stop() {
         stopRequested = true
         playbackSessionID = UUID()
@@ -101,6 +103,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         )
     }
 
+    // Persists the player volume and updates the active audio node immediately.
     func setVolume(_ newValue: Double) {
         let clampedVolume = min(max(newValue, 0), 1)
         volume = clampedVolume
@@ -108,6 +111,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         UserDefaults.standard.set(clampedVolume, forKey: Self.volumeStorageKey)
     }
 
+    // Starts chunked narration playback for the given entry and voice selection.
     func play(
         entry: LibraryEntry,
         voice: ReaderTTSVoiceSelection,
