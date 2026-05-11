@@ -2169,6 +2169,7 @@ struct RSSHomeTickerView: View {
 
     @State private var currentIndex = 0
     @State private var isHovered = false
+    @State private var isSectionVisible = true
     @State private var isVisible = true
     @State private var isReadAloudLoading = false
     @State private var cycleStartedAt: Date?
@@ -2195,6 +2196,10 @@ struct RSSHomeTickerView: View {
     private var currentFeedItem: RSSFeedItemRecord? {
         guard !visibleItems.isEmpty else { return nil }
         return visibleItems[min(currentIndex, visibleItems.count - 1)]
+    }
+
+    private var isTickerPaused: Bool {
+        isHovered || !isSectionVisible
     }
 
     var body: some View {
@@ -2256,19 +2261,12 @@ struct RSSHomeTickerView: View {
                         .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                 )
                 .onHover { hovering in
-                    if hovering == isHovered {
-                        return
-                    }
-
                     isHovered = hovering
-                    if hovering {
-                        if pauseStartedAt == nil {
-                            pauseStartedAt = Date()
-                        }
-                    } else if let pauseStartedAt {
-                        accumulatedPausedTime += Date().timeIntervalSince(pauseStartedAt)
-                        self.pauseStartedAt = nil
-                    }
+                    updateTickerPauseState()
+                }
+                .onScrollVisibilityChange(threshold: 0.1) { isVisibleOnScreen in
+                    isSectionVisible = isVisibleOnScreen
+                    updateTickerPauseState()
                 }
                 .task(id: feedIdentityKey) {
                     await runTickerLoop()
@@ -2310,6 +2308,21 @@ struct RSSHomeTickerView: View {
 
     private var currentCycleElapsedTime: TimeInterval {
         tickerProgressFraction * displayDuration
+    }
+
+    @MainActor
+    private func updateTickerPauseState() {
+        if isTickerPaused {
+            if pauseStartedAt == nil {
+                pauseStartedAt = .now
+            }
+            return
+        }
+
+        if let pauseStartedAt {
+            accumulatedPausedTime += Date().timeIntervalSince(pauseStartedAt)
+            self.pauseStartedAt = nil
+        }
     }
 
     @MainActor
@@ -2378,7 +2391,7 @@ struct RSSHomeTickerView: View {
         guard !visibleItems.isEmpty else { return }
 
         while !Task.isCancelled {
-            guard !isHovered else {
+            guard !isTickerPaused else {
                 try? await Task.sleep(nanoseconds: 120_000_000)
                 continue
             }
@@ -2388,7 +2401,7 @@ struct RSSHomeTickerView: View {
                     return
                 }
 
-                if isHovered {
+                if isTickerPaused {
                     try? await Task.sleep(nanoseconds: 120_000_000)
                     continue
                 }
