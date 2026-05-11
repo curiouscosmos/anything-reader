@@ -136,7 +136,7 @@ struct FreeBookCardView: View {
             Button {
                 onDownload?()
             } label: {
-                Label("Get", systemImage: "arrow.down.circle.fill")
+                Label("Download", systemImage: "arrow.down.circle.fill")
                     .labelStyle(.titleAndIcon)
                     .frame(maxWidth: .infinity)
             }
@@ -206,7 +206,7 @@ private struct BookCardPrimaryButtonStyle: ButtonStyle {
             .padding(.vertical, 11)
             .background(
                 ReaderStyle.accentColor(named: "green"),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .opacity(configuration.isPressed ? 0.82 : 1)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
@@ -222,10 +222,10 @@ private struct BookCardSecondaryButtonStyle: ButtonStyle {
             .readerPointerCursor()
             .background(
                 Color.primary.opacity(0.07),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
             )
             .opacity(configuration.isPressed ? 0.75 : 1)

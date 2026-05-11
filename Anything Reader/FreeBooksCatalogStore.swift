@@ -16,7 +16,7 @@ final class FreeBooksCatalogStore: ObservableObject {
     @Published private(set) var books: [FreeBook] = []
     @Published private(set) var totalBooksCount = 0
     @Published var selectedLanguageFilter: FreeBookLanguageFilter = .all
-    @Published var selectedCategoryFilter: FreeBookCategoryFilter = .all
+    @Published var selectedCategoryFilter: FreeBookCategoryFilter = .art
     @Published var searchText: String = ""
     @Published private(set) var isLoadingBooks = false
     @Published private(set) var isLoadingMoreBooks = false
