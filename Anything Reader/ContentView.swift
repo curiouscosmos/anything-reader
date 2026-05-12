@@ -2526,7 +2526,8 @@ struct ContentView: View {
         for entry: LibraryEntry,
         textFileURL: URL? = nil,
         displayTitle: String? = nil,
-        persistProgress: Bool = true
+        persistProgress: Bool = true,
+        startingChunkIndexOverride: Int? = nil
     ) {
         let priorEntry = activeEntry
         audioMixerPlaybackService.beginReaderPlaybackTransition()
@@ -2554,7 +2555,9 @@ struct ContentView: View {
             ? (entry.currentReadingPositionIndex ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: resumeProgress))
             : nil
         let chunks = ReaderPlaybackChunkService.chunks(for: entry, textFileURL: textFileURL)
-        let startingChunkIndex = resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) } ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: chunks.count)
+        let startingChunkIndex = startingChunkIndexOverride
+            ?? resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) }
+            ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: chunks.count)
 
         // Store the active record so progress updates persist to SwiftData.
         activeEntry = entry
@@ -2756,6 +2759,7 @@ struct ContentView: View {
 
         let newProgress = ReaderPlaybackSupport.readingProgress(for: target, in: entry)
         let explicitReadingPositionText = ReaderPlaybackSupport.readingPositionText(for: entry, targetIndex: target.index)
+        let startingChunkIndex = ReaderPlaybackChunkService.chunkIndex(for: target.index, in: entry)
         entry.progress = newProgress
         entry.currentReadingPositionIndex = target.index
         entry.currentReadingPositionTotalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
@@ -2768,7 +2772,10 @@ struct ContentView: View {
         entry.lastOpened = .now
         try? modelContext.save()
         discardPlaybackAudioCache(for: entry)
-        startPlayback(for: entry)
+        startPlayback(
+            for: entry,
+            startingChunkIndexOverride: startingChunkIndex
+        )
     }
 
     @MainActor
