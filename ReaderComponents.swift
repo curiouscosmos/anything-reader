@@ -1457,7 +1457,7 @@ struct ReaderCardArtworkView: View {
         Image(nsImage: image)
             .resizable()
             .scaledToFit() // preserve full cover
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Color.gray.opacity(preferredMode == .light ? 0.08 : 0.2))
@@ -2218,8 +2218,6 @@ struct RSSHomeTickerView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
-                    progressLine
-
                     if let currentFeedItem {
                         ZStack(alignment: .bottomTrailing) {
                             RSSHomeTickerRowView(
@@ -2254,7 +2252,7 @@ struct RSSHomeTickerView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 16)
+                .padding(.vertical, 16)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -2274,23 +2272,6 @@ struct RSSHomeTickerView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    private var progressLine: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { _ in
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.primary.opacity(preferredMode == .light ? 0.10 : 0.16))
-
-                    Capsule()
-                        .fill(ReaderStyle.accentColor(named: "emerald"))
-                        .frame(width: max(0, proxy.size.width * tickerProgressFraction))
-                }
-            }
-        }
-        .frame(height: 2)
-        .accessibilityHidden(true)
     }
 
     private var tickerProgressFraction: Double {

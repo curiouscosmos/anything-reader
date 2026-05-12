@@ -2558,6 +2558,10 @@ struct ContentView: View {
         let startingChunkIndex = startingChunkIndexOverride
             ?? resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) }
             ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: chunks.count)
+        
+//        if resumeTargetIndex != nil {
+//            print("Anything Reader resumeTargetIndex -> '\(resumeTargetIndex)': \(startingChunkIndex)")
+//        }
 
         // Store the active record so progress updates persist to SwiftData.
         activeEntry = entry
