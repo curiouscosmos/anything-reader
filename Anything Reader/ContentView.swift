@@ -51,7 +51,7 @@ struct ContentView: View {
     @AppStorage("didPromptForRSSPushNotificationsOnFirstLaunch") private var didPromptForRSSPushNotificationsOnFirstLaunch = false
     @State private var isShowingFileImporter = false
     @State private var isShowingImportLanguageSheet = false
-    @State private var audioGenerationSheetEntry: LibraryEntry?
+    @State private var audioGenerationSheetContext: AudioGenerationSheetContext?
     @State private var pendingAudioDeletionEntry: LibraryEntry?
     @State private var summaryGenerationSuccess: SummaryGenerationSuccess?
     @State private var pendingSummaryEntry: LibraryEntry?
@@ -107,6 +107,15 @@ struct ContentView: View {
     @State private var coverArtGenerationKeys: Set<String> = []
     @State private var didBackfillMissingCoverArt = false
     @State private var didPresentKokoroDownloadGate = false
+
+    private struct AudioGenerationSheetContext: Identifiable {
+        let entry: LibraryEntry
+        let providerID: ReaderTTSProviderID
+
+        var id: String {
+            "\(entry.persistentModelID)-\(providerID.rawValue)"
+        }
+    }
     @State private var audioGenerationAlertMessage: String?
     @State private var isHomeDropTargeted = false
     @State private var presentedUpdateVersion: String?
@@ -390,13 +399,13 @@ struct ContentView: View {
                 onCancel: discardPendingImport
             )
         }
-        .sheet(item: $audioGenerationSheetEntry) { entry in
+        .sheet(item: $audioGenerationSheetContext) { context in
             ReaderGenerateAudioSheet(
-                providerID: pendingAudioProviderID,
+                providerID: context.providerID,
                 voiceName: $pendingAudioVoiceName,
-                voiceOptions: ttsCoordinator.availableVoiceOptions(for: pendingAudioProviderID),
+                voiceOptions: ttsCoordinator.availableVoiceOptions(for: context.providerID),
                 onGenerate: {
-                    confirmPendingAudioGeneration(for: entry)
+                    confirmPendingAudioGeneration(for: context.entry)
                 },
                 onCancel: discardPendingAudioGeneration
             )
@@ -3033,11 +3042,11 @@ struct ContentView: View {
         let selectedProviderID = ReaderTTSProviderID(rawValue: activeTTSProviderIDRawValue) ?? ttsCoordinator.activeProviderID
         pendingAudioGenerationEntry = entry
         pendingAudioProviderID = selectedProviderID
-        pendingAudioVoiceName = ttsCoordinator.selectedVoiceName(for: pendingAudioProviderID)
-        audioGenerationSheetEntry = entry
+        pendingAudioVoiceName = ttsCoordinator.selectedVoiceName(for: selectedProviderID)
+        audioGenerationSheetContext = AudioGenerationSheetContext(entry: entry, providerID: selectedProviderID)
         audioGenerationProgressValue = nil
         audioGenerationPrewarmTask?.cancel()
-        let voice = ttsCoordinator.voiceSelection(for: pendingAudioProviderID)
+        let voice = ttsCoordinator.voiceSelection(for: selectedProviderID)
         audioGenerationPrewarmTask = Task {
             await LibraryAudioGenerationService.shared.prewarm(voice: voice)
         }
@@ -3054,7 +3063,7 @@ struct ContentView: View {
         guard audioGenerationTask == nil else { return }
 
         pendingAudioGenerationEntry = entry
-        audioGenerationSheetEntry = nil
+        audioGenerationSheetContext = nil
         audioGenerationProgressValue = 0
         beginIdleSleepAssertion(for: .audio)
 
@@ -3072,7 +3081,7 @@ struct ContentView: View {
         audioGenerationPrewarmTask?.cancel()
         audioGenerationPrewarmTask = nil
         pendingAudioGenerationEntry = nil
-        audioGenerationSheetEntry = nil
+        audioGenerationSheetContext = nil
         pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
         pendingAudioProviderID = .kokoro
         audioGenerationProgressValue = nil
@@ -3189,7 +3198,7 @@ struct ContentView: View {
         audioGenerationPrewarmTask?.cancel()
         audioGenerationPrewarmTask = nil
         pendingAudioGenerationEntry = nil
-        audioGenerationSheetEntry = nil
+        audioGenerationSheetContext = nil
         pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
         audioGenerationProgressValue = nil
         endIdleSleepAssertion(for: .audio)
