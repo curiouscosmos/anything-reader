@@ -2579,53 +2579,104 @@ struct ContentView: View {
         persistProgress: Bool = true,
         startingChunkIndexOverride: Int? = nil
     ) {
+        // Keep a reference to the previously active entry so we can decide
+        // whether any old playback state or cached audio needs to be cleared.
         let priorEntry = activeEntry
+
+        // Notify the audio mixer that the reader is leaving its current playback
+        // state and is about to start a different source.
         audioMixerPlaybackService.beginReaderPlaybackTransition()
+
+        // Stop the chunk-based reader playback engine before we reconfigure the
+        // new entry. This prevents old tasks from continuing to feed audio.
         readerPlaybackService.stop()
+
+        // Cancel any UI-driven playback task tied to the previous entry.
         stopPlaybackTask()
+
+        // Cancel warmup work from the previous entry so it does not race the
+        // new playback session.
         stopPlaybackWarmupTask()
+
+        // Stop any pending navigation jump task so the new entry starts cleanly.
         cancelReadingNavigationTask()
 
+        // If we are switching to a different entry or summary file, drop any
+        // cache that belongs to the previous file so the new session does not
+        // reuse stale audio.
         if let priorEntry,
            priorEntry.persistentModelID != entry.persistentModelID
             || activePlaybackSummaryFilePath != textFileURL?.path {
             discardPlaybackAudioCache(for: priorEntry)
         }
 
+        // Generated-audio playback is a separate AVAudioPlayer-based path, so
+        // it must be stopped before we start the chunked narration path.
         stopGeneratedAudioPlayback()
+
+        // Create a fresh token so late callbacks from an earlier playback
+        // session cannot mutate the new session’s UI state.
         playbackSessionToken = UUID()
         let sessionToken = playbackSessionToken
+
+        // Normalize the source text so chunking and resume calculations use the
+        // same text representation as the reader playback pipeline.
         let normalizedText = ReaderPlaybackChunkService.normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) ?? ""
-        let duration = ReaderPlaybackSupport.estimatedPlaybackDuration(for: normalizedText)
+
+        // The current implementation treats duration as unknown here; it is
+        // kept at zero because progress is tracked from actual playback events.
+        let duration = 0
+
+        // Detect whether this is a generated summary so progress can be resumed
+        // against the summary-specific saved position instead of the main entry.
         let isSummaryPlayback = textFileURL?.path == entry.summarizedTextFileURL?.path
+
+        // Rebuild the resume fraction from persisted state when playback is
+        // configured to remember position.
         let resumeProgress = persistProgress
             ? ReaderPlaybackSupport.playbackResumeProgress(for: entry, textFileURL: textFileURL, duration: duration)
             : 0
+
+        // For normal narration we can resume by reading the stored jump target
+        // or by mapping the saved progress fraction back to a reading position.
         let resumeTargetIndex = persistProgress && !isSummaryPlayback
             ? (entry.currentReadingPositionIndex ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: resumeProgress))
             : nil
+
+        // Split the normalized text into playback chunks for the reader engine.
         let chunks = ReaderPlaybackChunkService.chunks(for: entry, textFileURL: textFileURL)
+
+        // Pick the first chunk to start from, preferring an explicit chunk
+        // override, then a saved reading position, then the progress fraction.
         let startingChunkIndex = startingChunkIndexOverride
             ?? resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) }
             ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: chunks.count)
-        
-//        if resumeTargetIndex != nil {
-//            print("Anything Reader resumeTargetIndex -> '\(resumeTargetIndex)': \(startingChunkIndex)")
-//        }
 
-        // Store the active record so progress updates persist to SwiftData.
+        // Store the active record so progress updates can persist to SwiftData.
         activeEntry = entry
+
+        // Remember whether this is the summary file so completion handlers know
+        // which progress field should be reset later.
         activePlaybackSummaryFilePath = textFileURL?.path == entry.summarizedTextFileURL?.path ? textFileURL?.path : nil
         activePlaybackShouldPersistProgress = persistProgress
         summaryPlaybackLastSavedElapsedSeconds = activePlaybackSummaryFilePath != nil ? Int((Double(duration) * resumeProgress).rounded()) : 0
+
+        // Update the "last opened" timestamp immediately so the library sorts
+        // the entry correctly even if playback is interrupted.
         entry.lastOpened = .now
 
+        // Cache the chunk list and the initial chunk pointer for the playback
+        // service and the on-screen progress UI.
         playbackChunks = chunks
         playbackChunkIndex = startingChunkIndex
 
+        // Save the current elapsed position before playback starts so the
+        // persistence task has a stable baseline.
         let elapsedSeconds = Int((Double(duration) * resumeProgress).rounded())
         playbackProgressLastSavedElapsedSeconds = elapsedSeconds
 
+        // Prime the visible playback state before the engine begins emitting
+        // progress updates.
         playbackState = PlaybackState(
             title: displayTitle ?? entry.title,
             subtitle: entry.subtitle,
@@ -2641,12 +2692,19 @@ struct ContentView: View {
             isPlaying: true
         )
 
+        // Persist the resume fraction now so a relaunch can restore the same
+        // position even if playback never advances far enough to trigger a save.
         if persistProgress {
             entry.progress = resumeProgress
             try? modelContext.save()
         }
 
+        // Reader narration uses the currently selected TTS provider for the
+        // chunked playback path.
         let voice = ttsCoordinator.activeVoiceSelection()
+
+        // Start the chunked speech pipeline and feed it callbacks for progress,
+        // completion, and failures.
         readerPlaybackService.play(
             entry: entry,
             voice: voice,
@@ -2683,6 +2741,8 @@ struct ContentView: View {
             }
         )
 
+        // If progress persistence is enabled, keep a background task alive so
+        // the current position keeps getting written back during playback.
         if persistProgress {
             startPlaybackProgressPersistenceTask(for: sessionToken)
         }
@@ -2739,21 +2799,27 @@ struct ContentView: View {
     private func togglePlayback() {
         print("Playing file now ->")
         if playbackState.isPlaying {
+            print("Playing file now -> 1")
             playbackState.isPlaying = false
             readerPlaybackService.pause()
             stopPlaybackProgressPersistenceTask()
             persistPlayerProgress(force: true)
         } else if readerPlaybackService.isPaused, activeEntry != nil {
+            print("Playing file now -> 2")
             readerPlaybackService.resume()
             playbackState.isPlaying = true
             if activePlaybackShouldPersistProgress || activePlaybackSummaryFilePath != nil {
+                print("Playing file now -> 3")
                 startPlaybackProgressPersistenceTask(for: playbackSessionToken)
             }
         } else {
+            print("Playing file now -> 4")
             if let entry = activeEntry {
+                print("Playing file now -> 5")
                 if let activePlaybackSummaryFilePath,
                    let summaryURL = entry.summarizedTextFileURL,
                    summaryURL.path == activePlaybackSummaryFilePath {
+                    print("Playing file now -> 6")
                     startPlayback(
                         for: entry,
                         textFileURL: summaryURL,
@@ -2761,9 +2827,11 @@ struct ContentView: View {
                         persistProgress: true
                     )
                 } else {
+                    print("Playing file now -> 7")
                     startPlayback(for: entry)
                 }
             } else {
+                print("Playing file now -> 8")
                 playbackState.isPlaying = false
             }
         }

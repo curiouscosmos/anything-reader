@@ -84,14 +84,14 @@ actor DocumentIngestService {
         fileExtension: String,
         originalFileName: String,
         documentLanguage: TextLanguage
-    ) throws -> IngestedDocument {
+    ) async throws -> IngestedDocument {
         let draft = try extractDraft(
             stagedFileURL: stagedFileURL,
             fileExtension: fileExtension,
             documentLanguage: documentLanguage
         )
 
-        return try finalize(
+        return try await finalize(
             draft: draft,
             sourceText: draft.rawText,
             normalizedLanguage: draft.detectedLanguage,
@@ -209,17 +209,33 @@ actor DocumentIngestService {
         normalizedLanguage: TextLanguage,
         originalFileName: String,
         sourceURL: URL
-    ) throws -> IngestedDocument {
+    ) async throws -> IngestedDocument {
         let normalizedText = TextNormalizationService.normalize(sourceText, language: normalizedLanguage)
         guard !normalizedText.isEmpty else {
             throw DocumentIngestError.normalizationFailed
         }
 
-        let normalizedURL = try saveNormalizedText(
+        let normalizedURL = try await saveNormalizedText(
             normalizedText,
             originalFileName: originalFileName,
             sourceURL: sourceURL
         )
+
+        // Keep the chunk cache beside the normalized file so playback can reuse
+        // it without rescanning the document on every launch.
+        await MainActor.run {
+            do {
+                try ReaderPlaybackChunkService.storeChunkCache(
+                    normalizedText: normalizedText,
+                    normalizedTextFileURL: normalizedURL,
+                    sourceKind: draft.sourceKind,
+                    language: normalizedLanguage,
+                    readingJumpTargets: draft.readingJumpTargets
+                )
+            } catch {
+                print("Failed to write playback chunk cache for \(normalizedURL.lastPathComponent): \(error)")
+            }
+        }
 
         return IngestedDocument(
             title: draft.title,
@@ -242,13 +258,19 @@ actor DocumentIngestService {
         _ text: String,
         originalFileName: String,
         sourceURL: URL
-    ) throws -> URL {
+    ) async throws -> URL {
         let fileManager = FileManager.default
         let directoryURL = try uploadDirectory(for: sourceURL)
         let baseName = sourceURL.lastPathComponent
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         let destinationURL = directoryURL.appendingPathComponent("\(baseName).txt")
+
+        // Remove any stale chunk sidecars up front so a re-import cannot leave
+        // behind playback metadata from the previous normalized text.
+        await MainActor.run {
+            ReaderPlaybackChunkService.removeCachedChunkArtifacts(for: destinationURL)
+        }
 
         if fileManager.fileExists(atPath: destinationURL.path) {
             try fileManager.removeItem(at: destinationURL)

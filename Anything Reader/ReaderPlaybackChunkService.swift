@@ -38,36 +38,105 @@ struct ReaderPlaybackChunkService {
         return nil
     }
 
+    // Returns the chunk sidecar URL next to a normalized text file.
+    private static func chunkCacheURL(for normalizedTextFileURL: URL) -> URL {
+        normalizedTextFileURL
+            .deletingPathExtension()
+            .appendingPathExtension("chunks")
+            .appendingPathExtension("json")
+    }
+
+    // Returns the jump-target sidecar URL next to a normalized text file.
+    private static func jumpMapCacheURL(for normalizedTextFileURL: URL) -> URL {
+        normalizedTextFileURL
+            .deletingPathExtension()
+            .appendingPathExtension("jumpMap")
+            .appendingPathExtension("json")
+    }
+
+    // Loads the cached chunk strings when the sidecar already exists.
+    static func cachedChunks(for textFileURL: URL?) -> [String]? {
+        guard let textFileURL else { return nil }
+        let cacheURL = chunkCacheURL(for: textFileURL)
+        guard let data = try? Data(contentsOf: cacheURL) else { return nil }
+        return try? JSONDecoder().decode([String].self, from: data)
+    }
+
+    // Loads the cached jump-map indices when the sidecar already exists.
+    static func cachedJumpMap(for textFileURL: URL?) -> [Int]? {
+        guard let textFileURL else { return nil }
+        let cacheURL = jumpMapCacheURL(for: textFileURL)
+        guard let data = try? Data(contentsOf: cacheURL) else { return nil }
+        return try? JSONDecoder().decode([Int].self, from: data)
+    }
+
+    // Removes both playback sidecars so a re-import can rewrite them cleanly.
+    static func removeCachedChunkArtifacts(for textFileURL: URL?) {
+        guard let textFileURL else { return }
+        let fileManager = FileManager.default
+
+        [chunkCacheURL(for: textFileURL), jumpMapCacheURL(for: textFileURL)].forEach { cacheURL in
+            if fileManager.fileExists(atPath: cacheURL.path) {
+                try? fileManager.removeItem(at: cacheURL)
+            }
+        }
+    }
+
+    // Writes the cached chunk strings and jump targets beside the normalized text file.
+    static func storeChunkCache(
+        normalizedText: String,
+        normalizedTextFileURL: URL,
+        sourceKind: ReaderSourceKind,
+        language: TextLanguage?,
+        readingJumpTargets: [ReaderJumpTarget]
+    ) throws {
+        let resolvedLanguage = language ?? TextNormalizationService.detectLanguage(for: normalizedText)
+        let chunks = chunkList(
+            fromNormalizedText: normalizedText,
+            sourceKind: sourceKind,
+            language: resolvedLanguage
+        )
+        let jumpMap = jumpMap(
+            forNormalizedText: normalizedText,
+            sourceKind: sourceKind,
+            language: resolvedLanguage,
+            readingJumpTargets: readingJumpTargets,
+            chunkCount: chunks.count
+        )
+
+        let encoder = JSONEncoder()
+        let chunkData = try encoder.encode(chunks)
+        let jumpMapData = try encoder.encode(jumpMap)
+
+        try chunkData.write(to: chunkCacheURL(for: normalizedTextFileURL), options: [.atomic])
+        try jumpMapData.write(to: jumpMapCacheURL(for: normalizedTextFileURL), options: [.atomic])
+    }
+
     // Builds chunk arrays from a library entry using source-specific structure when available.
     static func chunks(for entry: LibraryEntry, textFileURL: URL? = nil) -> [String] {
-        guard let text = normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) else { return [] }
+        guard let resolvedTextFileURL = textFileURL ?? entry.normalizedTextFileURL else { return [] }
+
+        if let cachedChunks = cachedChunks(for: resolvedTextFileURL) {
+            return cachedChunks
+        }
+
+        guard let text = normalizedText(for: resolvedTextFileURL) else { return [] }
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
+        let chunks = chunkList(fromNormalizedText: text, sourceKind: entry.sourceKind, language: language)
 
-        if entry.sourceKind == .pdf {
-            return structuredChunks(
-                from: text,
-                marker: pdfPageBreakMarker,
-                language: language
-            ) ?? chunks(from: text, language: language)
+        // Legacy entries may not yet have sidecars. Regenerate them only for the
+        // main normalized file, not for ad-hoc summary playback sources.
+        if resolvedTextFileURL == entry.normalizedTextFileURL {
+            try? storeChunkCache(
+                normalizedText: text,
+                normalizedTextFileURL: resolvedTextFileURL,
+                sourceKind: entry.sourceKind,
+                language: language,
+                readingJumpTargets: entry.readingJumpTargets
+            )
         }
 
-        if entry.sourceKind == .epub {
-            return structuredChunks(
-                from: text,
-                marker: epubChapterBreakMarker,
-                language: language
-            ) ?? chunks(from: text, language: language)
-        }
-
-        if entry.sourceKind == .text || entry.sourceKind == .html || entry.sourceKind == .pastedText || entry.sourceKind == .image {
-            return structuredChunks(
-                from: text,
-                marker: txtSectionBreakMarker,
-                language: language
-            ) ?? chunks(from: text, language: language)
-        }
-
-        return chunks(from: text, language: language)
+        return chunks
     }
 
     // Splits already-normalized text into sentence-safe chunks.
@@ -124,22 +193,18 @@ struct ReaderPlaybackChunkService {
 
     // Resolves a chunk index from a structured reading target.
     static func chunkIndex(for readingTargetIndex: Int, in entry: LibraryEntry) -> Int? {
-        guard let text = normalizedText(for: entry), !entry.readingJumpTargets.isEmpty else { return nil }
-
-        let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
         let targetIndex = min(max(readingTargetIndex, 0), entry.readingJumpTargets.count - 1)
-        let marker: String? = {
-            switch entry.sourceKind {
-            case .pdf:
-                return pdfPageBreakMarker
-            case .epub:
-                return epubChapterBreakMarker
-            case .text, .html, .pastedText, .image:
-                return txtSectionBreakMarker
-            }
-        }()
 
-        if let startIndices = structuredChunkStartIndices(from: text, marker: marker, language: language),
+        if let cachedJumpMap = cachedJumpMap(for: entry.normalizedTextFileURL),
+           cachedJumpMap.count == entry.readingJumpTargets.count,
+           cachedJumpMap.indices.contains(targetIndex) {
+            return cachedJumpMap[targetIndex]
+        }
+
+        guard let text = normalizedText(for: entry), !entry.readingJumpTargets.isEmpty else { return nil }
+        let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
+
+        if let startIndices = structuredChunkStartIndices(from: text, marker: marker(for: entry.sourceKind), language: language),
            startIndices.indices.contains(targetIndex) {
             return startIndices[targetIndex]
         }
@@ -152,21 +217,28 @@ struct ReaderPlaybackChunkService {
 
     // Resolves a structured reading target from a chunk index.
     static func readingTargetIndex(forChunkIndex chunkIndex: Int, in entry: LibraryEntry) -> Int? {
+        if let cachedJumpMap = cachedJumpMap(for: entry.normalizedTextFileURL),
+           cachedJumpMap.count == entry.readingJumpTargets.count,
+           !cachedJumpMap.isEmpty {
+            let boundedChunkIndex = max(chunkIndex, 0)
+            var currentTargetIndex = 0
+
+            for (index, startIndex) in cachedJumpMap.enumerated() {
+                if boundedChunkIndex >= startIndex {
+                    currentTargetIndex = index
+                } else {
+                    break
+                }
+            }
+
+            return currentTargetIndex
+        }
+
         guard let text = normalizedText(for: entry), !entry.readingJumpTargets.isEmpty else { return nil }
 
         let language = entry.textLanguage ?? TextNormalizationService.detectLanguage(for: text)
-        let marker: String? = {
-            switch entry.sourceKind {
-            case .pdf:
-                return pdfPageBreakMarker
-            case .epub:
-                return epubChapterBreakMarker
-            case .text, .html, .pastedText, .image:
-                return txtSectionBreakMarker
-            }
-        }()
 
-        if let startIndices = structuredChunkStartIndices(from: text, marker: marker, language: language),
+        if let startIndices = structuredChunkStartIndices(from: text, marker: marker(for: entry.sourceKind), language: language),
            !startIndices.isEmpty {
             let boundedChunkIndex = max(chunkIndex, 0)
             var currentTargetIndex = 0
@@ -238,6 +310,64 @@ struct ReaderPlaybackChunkService {
             return #"(?<=[।॥!?؛;…])\s*"#
         default:
             return #"(?<=[.!?])\s+"#
+        }
+    }
+
+    // Resolves the marker used for structured reading sources.
+    private static func marker(for sourceKind: ReaderSourceKind) -> String? {
+        switch sourceKind {
+        case .pdf:
+            return pdfPageBreakMarker
+        case .epub:
+            return epubChapterBreakMarker
+        case .text, .html, .pastedText, .image:
+            return txtSectionBreakMarker
+        }
+    }
+
+    // Builds the chunk list from already-normalized text while honoring any
+    // source-specific page/chapter/section markers.
+    private static func chunkList(
+        fromNormalizedText normalizedText: String,
+        sourceKind: ReaderSourceKind,
+        language: TextLanguage
+    ) -> [String] {
+        let cleaned = TextNormalizationService.normalize(normalizedText, language: language)
+        guard !cleaned.isEmpty else { return [] }
+
+        if let marker = marker(for: sourceKind) {
+            return structuredChunks(
+                from: cleaned,
+                marker: marker,
+                language: language
+            ) ?? chunks(from: cleaned, language: language)
+        }
+
+        return chunks(from: cleaned, language: language)
+    }
+
+    // Rebuilds the jump-map cache from the chunk layout so page/chapter/section
+    // jumps can start from the correct chunk after a later app launch.
+    private static func jumpMap(
+        forNormalizedText normalizedText: String,
+        sourceKind: ReaderSourceKind,
+        language: TextLanguage,
+        readingJumpTargets: [ReaderJumpTarget],
+        chunkCount: Int
+    ) -> [Int] {
+        guard !readingJumpTargets.isEmpty, chunkCount > 0 else { return [] }
+
+        if let marker = marker(for: sourceKind),
+           let startIndices = structuredChunkStartIndices(from: normalizedText, marker: marker, language: language),
+           startIndices.count == readingJumpTargets.count {
+            return startIndices
+        }
+
+        return readingJumpTargets.indices.map { targetIndex in
+            chunkIndex(
+                for: Double(targetIndex) / Double(max(readingJumpTargets.count, 1)),
+                chunkCount: chunkCount
+            )
         }
     }
 
