@@ -14,17 +14,17 @@
 #include <vector>
 
 #define ORT_API_MANUAL_INIT 1
-#include "/Users/damanmehta/Library/Developer/Xcode/DerivedData/Anything_Reader-fznozxeulprkpackkdujajfqhqfw/SourcePackages/artifacts/onnxruntime-swift-package-manager/onnxruntime/onnxruntime.xcframework/macos-arm64_x86_64/onnxruntime.framework/Versions/A/Headers/onnxruntime_cxx_api.h"
+#include <onnxruntime/onnxruntime_cxx_api.h>
 
 namespace {
 constexpr NSInteger SupertonicErrorCode = 1;
 static NSString *const SupertonicErrorDomain = @"SupertonicONNXBridgeErrorDomain";
 
 struct SupertonicConfig {
-    int sampleRate = 0;
-    int baseChunkSize = 0;
-    int chunkCompressFactor = 0;
-    int latentDim = 0;
+    int sampleRate = 44100;
+    int baseChunkSize = 512;
+    int chunkCompressFactor = 6;
+    int latentDim = 24;
 };
 
 struct SupertonicStyleTensor {
@@ -73,17 +73,6 @@ static id SupertonicJSONValue(NSURL *url, NSError **error) {
     }
 
     return object;
-}
-
-static SupertonicConfig SupertonicDecodeConfig(NSDictionary *dictionary) {
-    SupertonicConfig config;
-    NSDictionary *ae = dictionary[@"ae"];
-    NSDictionary *ttl = dictionary[@"ttl"];
-    config.sampleRate = [ae[@"sample_rate"] integerValue];
-    config.baseChunkSize = [ae[@"base_chunk_size"] integerValue];
-    config.chunkCompressFactor = [ttl[@"chunk_compress_factor"] integerValue];
-    config.latentDim = [ttl[@"latent_dim"] integerValue];
-    return config;
 }
 
 static SupertonicStyleTensor SupertonicDecodeStyleTensor(NSDictionary *dictionary) {
@@ -234,17 +223,62 @@ static std::vector<std::string> SupertonicChunkText(NSString *text, NSUInteger m
             continue;
         }
 
-        std::string candidate = current.empty()
-            ? std::string(trimmed.UTF8String)
-            : current + " " + std::string(trimmed.UTF8String);
+        NSMutableString *working = [trimmed mutableCopy];
+        while (working.length > 0) {
+            NSUInteger limit = current.empty()
+                ? maxLen
+                : (current.size() >= maxLen ? 0 : maxLen - current.size() - 1);
 
-        if (current.empty()) {
-            current = candidate;
-        } else if (candidate.size() <= maxLen) {
-            current = candidate;
-        } else {
-            result.push_back(current);
-            current = std::string(trimmed.UTF8String);
+            if (limit == 0) {
+                result.push_back(current);
+                current.clear();
+                continue;
+            }
+
+            if (working.length <= limit) {
+                std::string addition = std::string(working.UTF8String);
+                if (current.empty()) {
+                    current = addition;
+                } else {
+                    current += " ";
+                    current += addition;
+                }
+                break;
+            }
+
+            NSRange splitRange = [working rangeOfString:@" " options:0 range:NSMakeRange(0, limit)];
+            if (splitRange.location == NSNotFound || splitRange.location == 0) {
+                splitRange = [working rangeOfString:@" " options:NSBackwardsSearch range:NSMakeRange(0, limit)];
+            }
+
+            if (splitRange.location == NSNotFound || splitRange.location == 0) {
+                NSString *prefix = [working substringToIndex:limit];
+                std::string addition = std::string(prefix.UTF8String);
+                if (current.empty()) {
+                    current = addition;
+                } else {
+                    current += " ";
+                    current += addition;
+                }
+                [working replaceCharactersInRange:NSMakeRange(0, limit) withString:@""];
+            } else {
+                NSString *prefix = [[working substringToIndex:splitRange.location] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (prefix.length > 0) {
+                    std::string addition = std::string(prefix.UTF8String);
+                    if (current.empty()) {
+                        current = addition;
+                    } else {
+                        current += " ";
+                        current += addition;
+                    }
+                }
+                [working replaceCharactersInRange:NSMakeRange(0, NSMaxRange(splitRange)) withString:@""];
+            }
+
+            if (current.size() >= maxLen) {
+                result.push_back(current);
+                current.clear();
+            }
         }
     }
 
@@ -472,7 +506,7 @@ public:
 
         for (size_t index = 0; index < chunks.size(); ++index) {
             const std::string &chunk = chunks[index];
-            auto result = infer({chunk}, {lang.UTF8String ?: ""}, style, 8, 1.05f);
+            auto result = infer({chunk}, {lang.UTF8String ?: ""}, style, 8, 0.9f);
             const float duration = result.second[0];
             const size_t wavLen = std::min(static_cast<size_t>(duration * static_cast<float>(config_.sampleRate)), result.first.size());
             std::vector<float> wavChunk(result.first.begin(), result.first.begin() + wavLen);
@@ -726,31 +760,6 @@ private:
 };
 
 static std::shared_ptr<SupertonicTextToSpeech> SupertonicLoadEngine(NSURL *rootURL, NSError **error) {
-    NSArray<NSURL *> *configCandidates = @[
-        [rootURL URLByAppendingPathComponent:@"config.json"],
-        [rootURL URLByAppendingPathComponent:@"tts.json"],
-        [[rootURL URLByAppendingPathComponent:@"onnx"] URLByAppendingPathComponent:@"tts.json"]
-    ];
-
-    NSDictionary *configDictionary = nil;
-    for (NSURL *candidate in configCandidates) {
-        if ([[NSFileManager defaultManager] fileExistsAtPath:candidate.path]) {
-            id json = SupertonicJSONValue(candidate, error);
-            if (![json isKindOfClass:[NSDictionary class]]) {
-                return nil;
-            }
-            configDictionary = (NSDictionary *)json;
-            break;
-        }
-    }
-
-    if (configDictionary == nil) {
-        if (error && *error == nil) {
-            *error = SupertonicMakeError(@"Supertonic config file was not found.");
-        }
-        return nil;
-    }
-
     NSURL *indexerURL = [[rootURL URLByAppendingPathComponent:@"onnx"] URLByAppendingPathComponent:@"unicode_indexer.json"];
     NSError *indexerError = nil;
     std::vector<int64_t> indexer = SupertonicLoadIndexer(indexerURL, &indexerError);
@@ -761,7 +770,7 @@ static std::shared_ptr<SupertonicTextToSpeech> SupertonicLoadEngine(NSURL *rootU
         return nil;
     }
 
-    SupertonicConfig config = SupertonicDecodeConfig(configDictionary);
+    SupertonicConfig config;
     return std::make_shared<SupertonicTextToSpeech>(config, std::move(indexer), SupertonicPathString(rootURL));
 }
 

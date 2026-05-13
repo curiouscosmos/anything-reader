@@ -2908,12 +2908,13 @@ struct ContentView: View {
 
     @MainActor
     private func discardPlaybackAudioCache(for entry: LibraryEntry) {
-        // The first-chunk cache is session-scoped for a specific entry/position.
-        // When the user switches files or jumps to a different chapter, that old
-        // cache no longer has a live playback target, so it is cleared explicitly.
-        Task {
-            await ReaderPlaybackAudioCacheService.shared.removeCache(for: entry)
-        }
+        // Keep the first-chunk cache around across file switches, chapter jumps,
+        // and voice changes. The cache is already keyed by entry, provider, voice,
+        // chunk text, and language, so preserving it makes repeat playback of the
+        // same file instant instead of forcing a cold re-render.
+        //
+        // Explicit cache removal still happens when a library entry is deleted.
+        _ = entry
     }
 
     @MainActor

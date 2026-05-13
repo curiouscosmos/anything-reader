@@ -504,6 +504,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Anyhting Reader";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(BUILD_DIR)/SourcePackages/artifacts/onnxruntime-swift-package-manager/onnxruntime/onnxruntime.xcframework/macos-arm64_x86_64",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -539,6 +543,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Anyhting Reader";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(BUILD_DIR)/SourcePackages/artifacts/onnxruntime-swift-package-manager/onnxruntime/onnxruntime.xcframework/macos-arm64_x86_64",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
