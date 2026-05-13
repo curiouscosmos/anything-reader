@@ -272,6 +272,24 @@ static std::vector<std::vector<float>> SupertonicLengthToMask(const std::vector<
     return masks;
 }
 
+static std::vector<float> SupertonicFlattenTensor(const std::vector<std::vector<std::vector<float>>> &tensor) {
+    std::vector<float> flat;
+    size_t totalSize = 0;
+    for (const auto &batch : tensor) {
+        for (const auto &plane : batch) {
+            totalSize += plane.size();
+        }
+    }
+
+    flat.reserve(totalSize);
+    for (const auto &batch : tensor) {
+        for (const auto &plane : batch) {
+            flat.insert(flat.end(), plane.begin(), plane.end());
+        }
+    }
+    return flat;
+}
+
 static std::pair<std::vector<std::vector<std::vector<float>>>, std::vector<std::vector<std::vector<float>>>> SupertonicSampleNoisyLatent(
     const std::vector<float> &duration,
     int sampleRate,
@@ -434,6 +452,10 @@ public:
         env_.emplace(ORT_LOGGING_LEVEL_WARNING, "supertonic");
 
         Ort::SessionOptions sessionOptions;
+        sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        sessionOptions.SetIntraOpNumThreads(2);
+        sessionOptions.SetInterOpNumThreads(1);
+        sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
         const std::string onnxRoot = modelRootPath + "/onnx";
 
         dpOrt_.emplace(*env_, (onnxRoot + "/duration_predictor.onnx").c_str(), sessionOptions);
@@ -576,6 +598,10 @@ private:
         auto latentPair = SupertonicSampleNoisyLatent(duration, config_.sampleRate, config_.baseChunkSize, config_.chunkCompressFactor, config_.latentDim);
         std::vector<std::vector<std::vector<float>>> xt = latentPair.first;
         std::vector<std::vector<std::vector<float>>> latentMask = latentPair.second;
+        std::vector<float> xtFlat = SupertonicFlattenTensor(xt);
+        std::vector<float> latentMaskFlat = SupertonicFlattenTensor(latentMask);
+        const size_t latentDimValue = xt.empty() ? 0 : xt[0].size();
+        const size_t latentLen = xt.empty() || xt[0].empty() ? 0 : xt[0][0].size();
 
         std::vector<float> totalStepArray(batchSize, static_cast<float>(totalStep));
         std::vector<int64_t> totalStepShape = { static_cast<int64_t>(batchSize) };
@@ -586,6 +612,24 @@ private:
             totalStepShape.data(),
             totalStepShape.size()
         );
+        std::vector<int64_t> xtShape = {
+            static_cast<int64_t>(batchSize),
+            static_cast<int64_t>(latentDimValue),
+            static_cast<int64_t>(latentLen)
+        };
+        std::vector<int64_t> latentMaskShape = {
+            static_cast<int64_t>(batchSize),
+            1,
+            static_cast<int64_t>(latentLen)
+        };
+        Ort::Value latentMaskValue = Ort::Value::CreateTensor<float>(
+            memoryInfo,
+            latentMaskFlat.data(),
+            latentMaskFlat.size(),
+            latentMaskShape.data(),
+            latentMaskShape.size()
+        );
+        std::vector<int64_t> currentStepShape = { static_cast<int64_t>(batchSize) };
 
         for (int step = 0; step < totalStep; ++step) {
             std::vector<float> currentStepArray(batchSize, static_cast<float>(step));
@@ -593,46 +637,16 @@ private:
                 memoryInfo,
                 currentStepArray.data(),
                 currentStepArray.size(),
-                totalStepShape.data(),
-                totalStepShape.size()
+                currentStepShape.data(),
+                currentStepShape.size()
             );
 
-            std::vector<float> xtFlat;
-            for (const auto &batch : xt) {
-                for (const auto &depth : batch) {
-                    xtFlat.insert(xtFlat.end(), depth.begin(), depth.end());
-                }
-            }
-            std::vector<int64_t> xtShape = {
-                static_cast<int64_t>(batchSize),
-                static_cast<int64_t>(xt.empty() ? 0 : xt[0].size()),
-                static_cast<int64_t>(xt.empty() || xt[0].empty() ? 0 : xt[0][0].size())
-            };
             Ort::Value xtValue = Ort::Value::CreateTensor<float>(
                 memoryInfo,
                 xtFlat.data(),
                 xtFlat.size(),
                 xtShape.data(),
                 xtShape.size()
-            );
-
-            std::vector<float> latentMaskFlat;
-            for (const auto &batchMask : latentMask) {
-                for (const auto &plane : batchMask) {
-                    latentMaskFlat.insert(latentMaskFlat.end(), plane.begin(), plane.end());
-                }
-            }
-            std::vector<int64_t> latentMaskShape = {
-                static_cast<int64_t>(batchSize),
-                1,
-                static_cast<int64_t>(latentMask.empty() ? 0 : latentMask[0][0].size())
-            };
-            Ort::Value latentMaskValue = Ort::Value::CreateTensor<float>(
-                memoryInfo,
-                latentMaskFlat.data(),
-                latentMaskFlat.size(),
-                latentMaskShape.data(),
-                latentMaskShape.size()
             );
 
             const char *veInputNames[] = {
@@ -669,46 +683,15 @@ private:
             const auto denoisedInfo = veOutput.GetTensorTypeAndShapeInfo();
             const size_t denoisedCount = denoisedInfo.GetElementCount();
             const float *denoisedData = veOutput.GetTensorData<float>();
-            std::vector<float> denoisedFlat(denoisedData, denoisedData + denoisedCount);
-
-            const size_t latentDimValue = xt.empty() ? 0 : xt[0].size();
-            const size_t latentLen = xt.empty() || xt[0].empty() ? 0 : xt[0][0].size();
-            std::vector<std::vector<std::vector<float>>> newLatent;
-            newLatent.reserve(batchSize);
-            size_t idx = 0;
-            for (size_t batchIndex = 0; batchIndex < batchSize; ++batchIndex) {
-                std::vector<std::vector<float>> batchDepth;
-                for (size_t depthIndex = 0; depthIndex < latentDimValue; ++depthIndex) {
-                    std::vector<float> row;
-                    for (size_t timeIndex = 0; timeIndex < latentLen; ++timeIndex) {
-                        if (idx < denoisedFlat.size()) {
-                            row.push_back(denoisedFlat[idx++]);
-                        }
-                    }
-                    batchDepth.push_back(std::move(row));
-                }
-                newLatent.push_back(std::move(batchDepth));
-            }
-            xt = std::move(newLatent);
+            xtFlat.assign(denoisedData, denoisedData + denoisedCount);
         }
 
-        std::vector<float> finalXtFlat;
-        for (const auto &batch : xt) {
-            for (const auto &depth : batch) {
-                finalXtFlat.insert(finalXtFlat.end(), depth.begin(), depth.end());
-            }
-        }
-        std::vector<int64_t> finalXtShape = {
-            static_cast<int64_t>(batchSize),
-            static_cast<int64_t>(xt.empty() ? 0 : xt[0].size()),
-            static_cast<int64_t>(xt.empty() || xt[0].empty() ? 0 : xt[0][0].size())
-        };
         Ort::Value finalXtValue = Ort::Value::CreateTensor<float>(
             memoryInfo,
-            finalXtFlat.data(),
-            finalXtFlat.size(),
-            finalXtShape.data(),
-            finalXtShape.size()
+            xtFlat.data(),
+            xtFlat.size(),
+            xtShape.data(),
+            xtShape.size()
         );
 
         const char *vocInputNames[] = { "latent" };
