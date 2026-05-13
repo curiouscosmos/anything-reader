@@ -16,6 +16,11 @@ actor LibraryAudioGenerationService {
 
     private init() {}
 
+    private struct RenderedAudioChunk {
+        let samples: [Float]
+        let sampleRate: Double
+    }
+
     // Warms the selected voice so the first real export starts faster.
     func prewarm(voice: ReaderTTSVoiceSelection) async {
         _ = try? await renderSamples(text: voice.sampleText, voice: voice, language: nil)
@@ -90,17 +95,36 @@ actor LibraryAudioGenerationService {
             try fileManager.removeItem(at: outputURL)
         }
 
-        let sampleRate: Double = 24_000
+        var renderedChunks: [(index: Int, chunk: RenderedAudioChunk)] = []
+        renderedChunks.reserveCapacity(chunks.count)
+
+        for (index, chunk) in chunks.enumerated() {
+            let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedChunk.isEmpty else { continue }
+
+            let rendered = try await renderSamples(text: trimmedChunk, voice: voice, language: language)
+            guard !rendered.samples.isEmpty else { continue }
+            renderedChunks.append((index: index, chunk: rendered))
+
+            if let progressHandler {
+                await progressHandler(min(1, Double(index + 1) / Double(chunks.count)))
+            }
+        }
+
+        guard let firstRenderedChunk = renderedChunks.first?.chunk else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
         let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
+            sampleRate: firstRenderedChunk.sampleRate,
             channels: 1,
             interleaved: false
         )!
 
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: sampleRate,
+            AVSampleRateKey: firstRenderedChunk.sampleRate,
             AVNumberOfChannelsKey: 1,
             AVEncoderBitRateKey: 64_000,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
@@ -113,29 +137,13 @@ actor LibraryAudioGenerationService {
             interleaved: false
         )
 
-        var writtenChunkCount = 0
         var isFirstChunk = true
-
-        for chunk in chunks {
-            let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedChunk.isEmpty else {
-                continue
+        for rendered in renderedChunks {
+            if !isFirstChunk {
+                try writeSilence(seconds: 0.08, to: audioFile, format: format)
             }
-
-            let samples = try await renderSamples(text: trimmedChunk, voice: voice, language: language)
-            if !samples.isEmpty {
-                try writeSamples(samples, to: audioFile, format: format)
-
-                if !isFirstChunk {
-                    try writeSilence(seconds: 0.08, to: audioFile, format: format)
-                }
-                isFirstChunk = false
-            }
-
-            writtenChunkCount += 1
-            if let progressHandler {
-                await progressHandler(min(1, Double(writtenChunkCount) / Double(chunks.count)))
-            }
+            try writeSamples(rendered.chunk.samples, to: audioFile, format: format)
+            isFirstChunk = false
         }
 
         if let progressHandler {
@@ -144,7 +152,7 @@ actor LibraryAudioGenerationService {
     }
 
     // Synthesizes one chunk at a time so long documents can be exported reliably.
-    private func renderSamples(text: String, voice: ReaderTTSVoiceSelection, language: TextLanguage?) async throws -> [Float] {
+    private func renderSamples(text: String, voice: ReaderTTSVoiceSelection, language: TextLanguage?) async throws -> RenderedAudioChunk {
         let outputURL = try await synthesizeToWav(text: text, voice: voice, language: language)
         return try readSamples(from: outputURL)
     }
@@ -163,7 +171,7 @@ actor LibraryAudioGenerationService {
     }
 
     // Reads PCM samples from the temporary WAV file returned by the speech runtime.
-    private func readSamples(from url: URL) throws -> [Float] {
+    private func readSamples(from url: URL) throws -> RenderedAudioChunk {
         let audioFile = try AVAudioFile(forReading: url)
         let format = audioFile.processingFormat
         let frameCount = AVAudioFrameCount(audioFile.length)
@@ -175,10 +183,13 @@ actor LibraryAudioGenerationService {
         try audioFile.read(into: buffer)
 
         guard let channelData = buffer.floatChannelData?[0] else {
-            return []
+            return RenderedAudioChunk(samples: [], sampleRate: format.sampleRate)
         }
 
-        return Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
+        return RenderedAudioChunk(
+            samples: Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength))),
+            sampleRate: format.sampleRate
+        )
     }
 
     private func writeSamples(_ samples: [Float], to audioFile: AVAudioFile, format: AVAudioFormat) throws {

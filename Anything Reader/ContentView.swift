@@ -405,7 +405,11 @@ struct ContentView: View {
                 voiceName: $pendingAudioVoiceName,
                 voiceOptions: ttsCoordinator.availableVoiceOptions(for: context.providerID),
                 onGenerate: {
-                    confirmPendingAudioGeneration(for: context.entry)
+                    confirmPendingAudioGeneration(
+                        for: context.entry,
+                        voiceName: pendingAudioVoiceName,
+                        providerID: context.providerID
+                    )
                 },
                 onCancel: discardPendingAudioGeneration
             )
@@ -3059,7 +3063,11 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func confirmPendingAudioGeneration(for entry: LibraryEntry) {
+    private func confirmPendingAudioGeneration(
+        for entry: LibraryEntry,
+        voiceName: String,
+        providerID: ReaderTTSProviderID
+    ) {
         guard audioGenerationTask == nil else { return }
 
         pendingAudioGenerationEntry = entry
@@ -3067,8 +3075,6 @@ struct ContentView: View {
         audioGenerationProgressValue = 0
         beginIdleSleepAssertion(for: .audio)
 
-        let voiceName = pendingAudioVoiceName
-        let providerID = pendingAudioProviderID
         audioGenerationTask = Task {
             await processPendingAudioGeneration(for: entry, voiceName: voiceName, providerID: providerID)
         }
