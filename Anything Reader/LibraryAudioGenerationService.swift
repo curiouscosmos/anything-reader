@@ -18,7 +18,7 @@ actor LibraryAudioGenerationService {
 
     // Warms the selected voice so the first real export starts faster.
     func prewarm(voice: ReaderTTSVoiceSelection) async {
-        _ = try? await renderSamples(text: voice.sampleText, voice: voice)
+        _ = try? await renderSamples(text: voice.sampleText, voice: voice, language: nil)
     }
 
     // Converts a normalized text file into a compressed audio file ready for playback.
@@ -26,6 +26,7 @@ actor LibraryAudioGenerationService {
         from normalizedTextFileURL: URL,
         entryTitle: String,
         voice: ReaderTTSVoiceSelection,
+        language: TextLanguage? = nil,
         destinationDirectoryURL: URL? = nil,
         progressHandler: (@Sendable (Double) async -> Void)? = nil
     ) async throws -> URL {
@@ -57,6 +58,7 @@ actor LibraryAudioGenerationService {
             try await writeAACFile(
                 chunks: chunks,
                 voice: voice,
+                language: language,
                 to: stagingURL,
                 progressHandler: progressHandler
             )
@@ -79,6 +81,7 @@ actor LibraryAudioGenerationService {
     private func writeAACFile(
         chunks: [String],
         voice: ReaderTTSVoiceSelection,
+        language: TextLanguage?,
         to outputURL: URL,
         progressHandler: (@Sendable (Double) async -> Void)? = nil
     ) async throws {
@@ -119,7 +122,7 @@ actor LibraryAudioGenerationService {
                 continue
             }
 
-            let samples = try await renderSamples(text: trimmedChunk, voice: voice)
+            let samples = try await renderSamples(text: trimmedChunk, voice: voice, language: language)
             if !samples.isEmpty {
                 try writeSamples(samples, to: audioFile, format: format)
 
@@ -141,19 +144,21 @@ actor LibraryAudioGenerationService {
     }
 
     // Synthesizes one chunk at a time so long documents can be exported reliably.
-    private func renderSamples(text: String, voice: ReaderTTSVoiceSelection) async throws -> [Float] {
-        let outputURL = try await synthesizeToWav(text: text, voice: voice)
+    private func renderSamples(text: String, voice: ReaderTTSVoiceSelection, language: TextLanguage?) async throws -> [Float] {
+        let outputURL = try await synthesizeToWav(text: text, voice: voice, language: language)
         return try readSamples(from: outputURL)
     }
 
     // Routes synthesis to the configured provider-specific implementation.
-    private func synthesizeToWav(text: String, voice: ReaderTTSVoiceSelection) async throws -> URL {
+    private func synthesizeToWav(text: String, voice: ReaderTTSVoiceSelection, language: TextLanguage?) async throws -> URL {
         switch voice.providerID {
         case .kokoro:
             let kokoroVoice = KokoroVoiceCatalog.voice(named: voice.voiceName)
             return try await KokoroSpeechService.shared.synthesize(text: text, voice: kokoroVoice)
         case .moonshine:
             return try await MoonshineSpeechService.shared.synthesize(text: text, voice: voice)
+        case .supertonic:
+            return try await SupertonicSpeechService.shared.synthesize(text: text, voice: voice, language: language)
         }
     }
 

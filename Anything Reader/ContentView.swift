@@ -26,6 +26,7 @@ struct ContentView: View {
     @AppStorage("activeTTSProviderID") private var activeTTSProviderIDRawValue: String = ReaderTTSProviderID.kokoro.rawValue
     @AppStorage("kokoroVoiceName") private var kokoroVoiceName: String = KokoroVoiceCatalog.defaultVoiceName
     @AppStorage("moonshineVoiceName") private var moonshineVoiceName: String = MoonshineVoiceCatalog.defaultVoiceName
+    @AppStorage("supertonicVoiceName") private var supertonicVoiceName: String = SupertonicVoiceCatalog.defaultVoiceName
 
     @State private var selection: SidebarSelection = .home
     @State private var homeSearchText = ""
@@ -112,8 +113,10 @@ struct ContentView: View {
     @State private var updateDialogNotice: AppUpdateNotice?
     @StateObject private var kokoroModelStore = KokoroModelStore.shared
     @StateObject private var moonshineModelStore = MoonshineModelStore.shared
+    @StateObject private var supertonicModelStore = SupertonicModelStore.shared
     @StateObject private var kokoroSpeechService = KokoroSpeechService.shared
     @StateObject private var moonshineSpeechService = MoonshineSpeechService.shared
+    @StateObject private var supertonicSpeechService = SupertonicSpeechService.shared
     @StateObject private var ttsCoordinator = ReaderTTSCoordinator.shared
     @StateObject private var readerPlaybackService = ReaderPlaybackService.shared
     @StateObject private var generatedAudioPlaybackService = GeneratedAudioPlaybackService.shared
@@ -122,6 +125,53 @@ struct ContentView: View {
     @StateObject private var rssFeedRefreshService = RSSFeedRefreshService.shared
     @StateObject private var appUpdateChecker = AppUpdateChecker.shared
     @State private var translationCoordinator = DocumentTranslationCoordinator()
+
+    private var categoryDeletionDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingCategoryDeletionName != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingCategoryDeletionName = nil
+                }
+            }
+        )
+    }
+
+    private var documentTranslationOverlay: some View {
+        DocumentTranslationHostView(coordinator: translationCoordinator)
+    }
+
+    private func performStartupTasks() async {
+        cleanupGeneratedDemoContentIfNeeded()
+        backfillMissingCoverArtIfNeeded()
+        backfillCategoryIconsIfNeeded()
+        await backfillGeneratedAudioMetadataIfNeeded()
+        audioMixerLibraryService.loadIfNeeded(using: modelContext)
+        audioMixerLibraryService.repairLibraryIfNeeded(using: modelContext)
+        validateSelectedTTSConfiguration()
+        ttsCoordinator.refreshInstallationStatus()
+        promptForTTSDownloadIfNeeded()
+    }
+
+    private func performBrowserStartupTasks() async {
+        do {
+            try await BrowserNativeMessagingService.shared.installHostIfNeeded()
+        } catch {
+            browserHostInstallAlertMessage = "Chrome manifest install failed: \(error.localizedDescription)"
+        }
+        await monitorBrowserInbox()
+    }
+
+    private func confirmCategoryDeletion() {
+        if let categoryName = pendingCategoryDeletionName {
+            deleteCategory(named: categoryName)
+        }
+        pendingCategoryDeletionName = nil
+    }
+
+    private func cancelCategoryDeletion() {
+        pendingCategoryDeletionName = nil
+    }
 
     private enum IdleSleepAssertionKind {
         case importing
@@ -299,9 +349,11 @@ struct ContentView: View {
                 activeProviderIDRawValue: $activeTTSProviderIDRawValue,
                 kokoroVoiceName: $kokoroVoiceName,
                 moonshineVoiceName: $moonshineVoiceName,
+                supertonicVoiceName: $supertonicVoiceName,
                 ttsCoordinator: ttsCoordinator,
                 isKokoroPlaying: kokoroSpeechService.isPlaying,
                 isMoonshinePlaying: moonshineSpeechService.isPlaying,
+                isSupertonicPlaying: supertonicSpeechService.isPlaying,
                 onPlaySample: playTTSVoiceSample
             )
         }
@@ -309,6 +361,7 @@ struct ContentView: View {
             ReaderTTSDownloadSheet(
                 kokoroModelStore: kokoroModelStore,
                 moonshineModelStore: moonshineModelStore,
+                supertonicModelStore: supertonicModelStore,
                 ttsCoordinator: ttsCoordinator,
                 preferredMode: preferredMode,
             )
@@ -429,52 +482,17 @@ struct ContentView: View {
                     .padding(.top, 16)
             }
         }
-        .overlay {
-            DocumentTranslationHostView(coordinator: translationCoordinator)
-        }
-        .confirmationDialog(
-            "Delete Category?",
-            isPresented: Binding(
-                get: { pendingCategoryDeletionName != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingCategoryDeletionName = nil
-                    }
-                }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete Category", role: .destructive) {
-                if let categoryName = pendingCategoryDeletionName {
-                    deleteCategory(named: categoryName)
-                }
-                pendingCategoryDeletionName = nil
-            }
-
-            Button("Cancel", role: .cancel) {
-                pendingCategoryDeletionName = nil
-            }
-        } message: {
-            Text("This will remove the category from all library items that use it.")
+        .overlay(documentTranslationOverlay)
+        .categoryDeletionConfirmationDialog(
+            isPresented: categoryDeletionDialogBinding,
+            onDelete: confirmCategoryDeletion,
+            onCancel: cancelCategoryDeletion
+        )
+        .task {
+            await performStartupTasks()
         }
         .task {
-            cleanupGeneratedDemoContentIfNeeded()
-            backfillMissingCoverArtIfNeeded()
-            backfillCategoryIconsIfNeeded()
-            await backfillGeneratedAudioMetadataIfNeeded()
-            audioMixerLibraryService.loadIfNeeded(using: modelContext)
-            audioMixerLibraryService.repairLibraryIfNeeded(using: modelContext)
-            validateSelectedTTSConfiguration()
-            ttsCoordinator.refreshInstallationStatus()
-            promptForTTSDownloadIfNeeded()
-        }
-        .task {
-            do {
-                try await BrowserNativeMessagingService.shared.installHostIfNeeded()
-            } catch {
-                browserHostInstallAlertMessage = "Chrome manifest install failed: \(error.localizedDescription)"
-            }
-            await monitorBrowserInbox()
+            await performBrowserStartupTasks()
         }
         .task {
             appUpdateChecker.startMonitoring()
@@ -511,6 +529,15 @@ struct ContentView: View {
                 isShowingKokoroDownloadModal = true
             }
         }
+        .onChange(of: supertonicModelStore.status) { _, _ in
+            ttsCoordinator.refreshInstallationStatus()
+            if case .installed(let providerID) = ttsCoordinator.availabilityStatus {
+                successToastMessage = "\(providerID.title) model downloaded and ready"
+            } else if case .failed(let message) = ttsCoordinator.availabilityStatus {
+                successToastMessage = "TTS model download failed: \(message)"
+                isShowingKokoroDownloadModal = true
+            }
+        }
         .onChange(of: appUpdateChecker.notice) { _, newNotice in
             guard let newNotice else { return }
             guard presentedUpdateVersion != newNotice.currentVersion else { return }
@@ -531,6 +558,10 @@ struct ContentView: View {
         }
         .onChange(of: moonshineVoiceName) { _, newValue in
             ttsCoordinator.setSelectedVoiceName(newValue, for: .moonshine)
+            restartPlaybackForSelectedVoiceIfNeeded()
+        }
+        .onChange(of: supertonicVoiceName) { _, newValue in
+            ttsCoordinator.setSelectedVoiceName(newValue, for: .supertonic)
             restartPlaybackForSelectedVoiceIfNeeded()
         }
         .onChange(of: readerPlaybackService.isPlaying) { _, _ in
@@ -571,6 +602,11 @@ struct ContentView: View {
         let moonshineNames = Set(MoonshineVoiceCatalog.allVoices.map(\.voiceName))
         if !moonshineNames.contains(moonshineVoiceName) {
             moonshineVoiceName = MoonshineVoiceCatalog.defaultVoiceName
+        }
+
+        let supertonicNames = Set(SupertonicVoiceCatalog.allVoices.map(\.voiceName))
+        if !supertonicNames.contains(supertonicVoiceName) {
+            supertonicVoiceName = SupertonicVoiceCatalog.defaultVoiceName
         }
 
         if ReaderTTSProviderID(rawValue: activeTTSProviderIDRawValue) == nil {
@@ -632,7 +668,7 @@ struct ContentView: View {
         guard !didPresentKokoroDownloadGate else { return }
         didPresentKokoroDownloadGate = true
 
-        if !kokoroModelStore.isInstalled && !moonshineModelStore.isInstalled {
+        if !kokoroModelStore.isInstalled && !moonshineModelStore.isInstalled && !supertonicModelStore.isInstalled {
             isShowingKokoroDownloadModal = true
         }
     }
@@ -2687,6 +2723,7 @@ struct ContentView: View {
 
     @MainActor
     private func togglePlayback() {
+        print("Playing file now ->")
         if playbackState.isPlaying {
             playbackState.isPlaying = false
             readerPlaybackService.pause()
@@ -3064,6 +3101,7 @@ struct ContentView: View {
                 from: normalizedTextFileURL,
                 entryTitle: entry.title,
                 voice: voice,
+                language: entry.textLanguage,
                 destinationDirectoryURL: normalizedTextFileURL.deletingLastPathComponent(),
                 progressHandler: { fraction in
                     await MainActor.run {
@@ -3301,4 +3339,24 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .modelContainer(for: [LibraryEntry.self, ReaderCategory.self], inMemory: true)
+}
+
+
+private extension View {
+    func categoryDeletionConfirmationDialog(
+        isPresented: Binding<Bool>,
+        onDelete: @escaping () -> Void,
+        onCancel: @escaping () -> Void
+    ) -> some View {
+        confirmationDialog(
+            "Delete Category?",
+            isPresented: isPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Category", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel, action: onCancel)
+        } message: {
+            Text("This will remove the category from all library items that use it.")
+        }
+    }
 }

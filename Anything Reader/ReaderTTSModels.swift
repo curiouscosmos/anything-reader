@@ -11,6 +11,7 @@ import Combine
 enum ReaderTTSProviderID: String, CaseIterable, Identifiable, Codable {
     case kokoro
     case moonshine
+    case supertonic
 
     var id: String { rawValue }
 
@@ -20,6 +21,8 @@ enum ReaderTTSProviderID: String, CaseIterable, Identifiable, Codable {
             return "Kokoro"
         case .moonshine:
             return "Moonshine"
+        case .supertonic:
+            return "Supertonic"
         }
     }
 }
@@ -34,6 +37,7 @@ final class ReaderTTSCoordinator: ObservableObject {
     private let activeProviderStorageKey = "activeTTSProviderID"
     private let kokoroVoiceStorageKey = "kokoroVoiceName"
     private let moonshineVoiceStorageKey = "moonshineVoiceName"
+    private let supertonicVoiceStorageKey = "supertonicVoiceName"
 
     private init() {
         if let storedProvider = UserDefaults.standard.string(forKey: activeProviderStorageKey),
@@ -54,9 +58,14 @@ final class ReaderTTSCoordinator: ObservableObject {
         .shared
     }
 
+    var supertonicStore: SupertonicModelStore {
+        .shared
+    }
+
     func refreshInstallationStatus() {
         kokoroStore.refreshInstallationStatus()
         moonshineStore.refreshInstallationStatus()
+        supertonicStore.refreshInstallationStatus()
 
         if let installedProvider = preferredInstalledProvider() {
             if activeProviderID != installedProvider {
@@ -87,6 +96,8 @@ final class ReaderTTSCoordinator: ObservableObject {
             storedValue = UserDefaults.standard.string(forKey: kokoroVoiceStorageKey)
         case .moonshine:
             storedValue = UserDefaults.standard.string(forKey: moonshineVoiceStorageKey)
+        case .supertonic:
+            storedValue = UserDefaults.standard.string(forKey: supertonicVoiceStorageKey)
         }
 
         switch providerID {
@@ -94,6 +105,8 @@ final class ReaderTTSCoordinator: ObservableObject {
             return KokoroVoiceCatalog.allVoices.contains(where: { $0.voiceName == storedValue }) ? storedValue ?? KokoroVoiceCatalog.defaultVoiceName : KokoroVoiceCatalog.defaultVoiceName
         case .moonshine:
             return MoonshineVoiceCatalog.allVoices.contains(where: { $0.voiceName == storedValue }) ? storedValue ?? MoonshineVoiceCatalog.defaultVoiceName : MoonshineVoiceCatalog.defaultVoiceName
+        case .supertonic:
+            return SupertonicVoiceCatalog.allVoices.contains(where: { $0.voiceName == storedValue }) ? storedValue ?? SupertonicVoiceCatalog.defaultVoiceName : SupertonicVoiceCatalog.defaultVoiceName
         }
     }
 
@@ -103,6 +116,8 @@ final class ReaderTTSCoordinator: ObservableObject {
             UserDefaults.standard.set(voiceName, forKey: kokoroVoiceStorageKey)
         case .moonshine:
             UserDefaults.standard.set(voiceName, forKey: moonshineVoiceStorageKey)
+        case .supertonic:
+            UserDefaults.standard.set(voiceName, forKey: supertonicVoiceStorageKey)
         }
     }
 
@@ -116,6 +131,8 @@ final class ReaderTTSCoordinator: ObservableObject {
             return KokoroVoiceCatalog.voice(named: selectedVoiceName(for: .kokoro)).readerTTSVoiceSelection
         case .moonshine:
             return MoonshineVoiceCatalog.voice(named: selectedVoiceName(for: .moonshine))
+        case .supertonic:
+            return SupertonicVoiceCatalog.voice(named: selectedVoiceName(for: .supertonic))
         }
     }
 
@@ -125,6 +142,8 @@ final class ReaderTTSCoordinator: ObservableObject {
             return KokoroVoiceCatalog.allVoices.map(\.readerTTSVoiceSelection)
         case .moonshine:
             return MoonshineVoiceCatalog.allVoices
+        case .supertonic:
+            return SupertonicVoiceCatalog.allVoices
         }
     }
 
@@ -137,22 +156,28 @@ final class ReaderTTSCoordinator: ObservableObject {
         case .moonshine:
             MoonshineSpeechService.shared.prepareForPlayback()
             MoonshineSpeechService.shared.playSample(for: voice)
+        case .supertonic:
+            SupertonicSpeechService.shared.prepareForPlayback()
+            SupertonicSpeechService.shared.playSample(for: voice)
         }
     }
 
-    func synthesize(text: String, voice: ReaderTTSVoiceSelection) async throws -> URL {
+    func synthesize(text: String, voice: ReaderTTSVoiceSelection, language: TextLanguage? = nil) async throws -> URL {
         switch voice.providerID {
         case .kokoro:
             let kokoroVoice = KokoroVoiceCatalog.voice(named: voice.voiceName)
             return try await KokoroSpeechService.shared.synthesize(text: text, voice: kokoroVoice)
         case .moonshine:
             return try await MoonshineSpeechService.shared.synthesize(text: text, voice: voice)
+        case .supertonic:
+            return try await SupertonicSpeechService.shared.synthesize(text: text, voice: voice, language: language)
         }
     }
 
     private var isAnyProviderDownloading: Bool {
         if case .downloading = kokoroStore.status { return true }
         if case .downloading = moonshineStore.status { return true }
+        if case .downloading = supertonicStore.status { return true }
         return false
     }
 
@@ -167,6 +192,10 @@ final class ReaderTTSCoordinator: ObservableObject {
 
         if case .installed = moonshineStore.status {
             return .moonshine
+        }
+
+        if case .installed = supertonicStore.status {
+            return .supertonic
         }
 
         return nil
@@ -197,6 +226,19 @@ final class ReaderTTSCoordinator: ObservableObject {
                 return .downloading(.moonshine)
             case .installed:
                 return .installed(.moonshine)
+            case .failed(let message):
+                return .failed(message)
+            }
+        case .supertonic:
+            switch supertonicStore.status {
+            case .checking:
+                return .checking
+            case .notInstalled:
+                return .notInstalled
+            case .downloading:
+                return .downloading(.supertonic)
+            case .installed:
+                return .installed(.supertonic)
             case .failed(let message):
                 return .failed(message)
             }

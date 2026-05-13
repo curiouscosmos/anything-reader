@@ -274,7 +274,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     for: entry,
                     providerID: voice.providerID,
                     voiceName: voice.voiceName,
-                    chunkText: chunkText
+                    chunkText: chunkText,
+                    languageCode: cacheLanguageCode(for: entry, providerID: voice.providerID)
                    ) {
                     await MainActor.run {
                         guard self.playbackSessionID == sessionID else { return }
@@ -542,7 +543,11 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
             // Retain the synthesis task so later playback can await the same work.
             let task = Task<URL, Error> {
-                try await ReaderTTSCoordinator.shared.synthesize(text: chunkText, voice: voice)
+                try await ReaderTTSCoordinator.shared.synthesize(
+                    text: chunkText,
+                    voice: voice,
+                    language: playbackLanguage(for: entry, providerID: voice.providerID)
+                )
             }
             synthesisTasks[chunkIndex] = task
 
@@ -600,7 +605,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             for: entry,
             providerID: voice.providerID,
             voiceName: voice.voiceName,
-            chunkText: text
+            chunkText: text,
+            languageCode: cacheLanguageCode(for: entry, providerID: voice.providerID)
            ) {
             synthesizedAudioURLs[chunkIndex] = cachedAudioURL
             return cachedAudioURL
@@ -617,7 +623,11 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
 
         // Otherwise create a new synthesis task and store its result locally.
         let task = Task<URL, Error> {
-            try await ReaderTTSCoordinator.shared.synthesize(text: text, voice: voice)
+            try await ReaderTTSCoordinator.shared.synthesize(
+                text: text,
+                voice: voice,
+                language: playbackLanguage(for: entry, providerID: voice.providerID)
+            )
         }
 
         synthesisTasks[chunkIndex] = task
@@ -631,7 +641,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                 for: entry,
                 providerID: voice.providerID,
                 voiceName: voice.voiceName,
-                chunkText: text
+                chunkText: text,
+                languageCode: cacheLanguageCode(for: entry, providerID: voice.providerID)
                ) {
                 cachedURL = storedURL
             } else {
@@ -661,7 +672,18 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             return await KokoroG2PService.shared.phonemize(text)
         case .moonshine:
             return TextNormalizationService.normalize(text)
+        case .supertonic:
+            return TextNormalizationService.normalize(text)
         }
+    }
+
+    private func playbackLanguage(for entry: LibraryEntry, providerID: ReaderTTSProviderID) -> TextLanguage? {
+        providerID == .supertonic ? entry.textLanguage : nil
+    }
+
+    private func cacheLanguageCode(for entry: LibraryEntry, providerID: ReaderTTSProviderID) -> String? {
+        guard providerID == .supertonic else { return nil }
+        return SupertonicLanguageCatalog.languageCode(for: entry.textLanguage)
     }
 
     private func startProgressMonitor(

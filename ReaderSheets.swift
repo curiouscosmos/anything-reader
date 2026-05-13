@@ -600,9 +600,11 @@ struct ReaderTTSSettingsSheet: View {
     @Binding var activeProviderIDRawValue: String
     @Binding var kokoroVoiceName: String
     @Binding var moonshineVoiceName: String
+    @Binding var supertonicVoiceName: String
     @ObservedObject var ttsCoordinator: ReaderTTSCoordinator
     let isKokoroPlaying: Bool
     let isMoonshinePlaying: Bool
+    let isSupertonicPlaying: Bool
     let onPlaySample: (ReaderTTSVoiceSelection) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -688,6 +690,10 @@ struct ReaderTTSSettingsSheet: View {
             providers.append(.moonshine)
         }
 
+        if ttsCoordinator.supertonicStore.isInstalled {
+            providers.append(.supertonic)
+        }
+
         return providers
     }
 
@@ -697,12 +703,14 @@ struct ReaderTTSSettingsSheet: View {
             return isKokoroPlaying
         case .moonshine:
             return isMoonshinePlaying
+        case .supertonic:
+            return isSupertonicPlaying
         }
     }
 
     private var providerNote: String {
         if installedProviderIDs.isEmpty {
-            return "No TTS model is installed yet. Open the download sheet to install Kokoro or Moonshine."
+            return "No TTS model is installed yet. Open the download sheet to install Kokoro, Moonshine, or Supertonic."
         }
 
         switch currentProviderID {
@@ -710,6 +718,8 @@ struct ReaderTTSSettingsSheet: View {
             return "Kokoro offers wide variety of voices and is usually more accurate."
         case .moonshine:
             return "Moonshine uses its own local TTS runtime and is more performant."
+        case .supertonic:
+            return "Supertonic uses ONNX Runtime and supports more languages with lightweight local models."
         }
     }
 
@@ -719,6 +729,8 @@ struct ReaderTTSSettingsSheet: View {
             return KokoroVoiceCatalog.allVoices.map(\.readerTTSVoiceSelection)
         case .moonshine:
             return MoonshineVoiceCatalog.allVoices
+        case .supertonic:
+            return SupertonicVoiceCatalog.allVoices
         }
     }
 
@@ -728,6 +740,8 @@ struct ReaderTTSSettingsSheet: View {
             return $kokoroVoiceName
         case .moonshine:
             return $moonshineVoiceName
+        case .supertonic:
+            return $supertonicVoiceName
         }
     }
 
@@ -757,6 +771,7 @@ struct ReaderTTSSettingsSheet: View {
 struct ReaderTTSDownloadSheet: View {
     @ObservedObject var kokoroModelStore: KokoroModelStore
     @ObservedObject var moonshineModelStore: MoonshineModelStore
+    @ObservedObject var supertonicModelStore: SupertonicModelStore
     @ObservedObject var ttsCoordinator: ReaderTTSCoordinator
     let preferredMode: AppearanceMode
 
@@ -792,6 +807,17 @@ struct ReaderTTSDownloadSheet: View {
                                 onActivate: { ttsCoordinator.setActiveProvider(.moonshine) },
                                 onDelete: { pendingDeleteProviderID = .moonshine }
                             )
+
+                            providerRow(
+                                providerID: .supertonic,
+                                subtitle: SupertonicDownloadCatalog.defaultOption.subtitle,
+                                isInstalled: supertonicModelStore.isInstalled,
+                                isActive: ttsCoordinator.activeProviderID == .supertonic,
+                                isDownloading: isSupertonicDownloading,
+                                onDownload: { supertonicModelStore.downloadModel(option: SupertonicDownloadCatalog.defaultOption) },
+                                onActivate: { ttsCoordinator.setActiveProvider(.supertonic) },
+                                onDelete: { pendingDeleteProviderID = .supertonic }
+                            )
                         }
                     }
                     .padding(20)
@@ -816,6 +842,8 @@ struct ReaderTTSDownloadSheet: View {
                             kokoroModelStore.deleteDownloadedModel(KokoroDownloadCatalog.defaultOption)
                         case .moonshine:
                             moonshineModelStore.deleteDownloadedModel(MoonshineDownloadCatalog.defaultOption)
+                        case .supertonic:
+                            supertonicModelStore.deleteDownloadedModel(SupertonicDownloadCatalog.defaultOption)
                         }
                     }
                     pendingDeleteProviderID = nil
@@ -832,7 +860,7 @@ struct ReaderTTSDownloadSheet: View {
     }
 
     private var isInstalledAny: Bool {
-        kokoroModelStore.isInstalled || moonshineModelStore.isInstalled
+        kokoroModelStore.isInstalled || moonshineModelStore.isInstalled || supertonicModelStore.isInstalled
     }
 
     private var isKokoroDownloading: Bool {
@@ -845,16 +873,21 @@ struct ReaderTTSDownloadSheet: View {
         return false
     }
 
+    private var isSupertonicDownloading: Bool {
+        if case .downloading = supertonicModelStore.status { return true }
+        return false
+    }
+
     @ViewBuilder
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Download TTS Model")
                 .font(.title2.weight(.bold))
 
-            Text("Choose one or both offline TTS providers. The active provider can be switched at anytime without redownloading the other model.")
-                .foregroundStyle(.secondary)
+        Text("Choose one or both offline TTS providers. The active provider can be switched at anytime without redownloading the other model.")
+            .foregroundStyle(.secondary)
 
-            Text("Models are listed independently so Kokoro and Moonshine can be installed side by side.")
+            Text("Models are listed independently so Kokoro, Moonshine, and Supertonic can be installed side by side.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -954,6 +987,8 @@ struct ReaderTTSDownloadSheet: View {
             return "Kokoro offers wide variety of voices & better quality than Moonshine but requires more memory."
         case .moonshine:
             return "Moonshine is compact & fast. It works great on low-spec devices."
+        case .supertonic:
+            return "Supertonic uses ONNX Runtime and covers more languages with a compact local bundle."
         }
     }
 

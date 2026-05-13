@@ -18,9 +18,9 @@ actor ReaderPlaybackAudioCacheService {
     private init() {}
 
     // Returns a cached audio URL when the stored metadata still matches the current entry.
-    func cachedAudioURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) async -> URL? {
-        let cacheURL = cacheFileURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
-        let metadataURL = cacheMetadataURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
+    func cachedAudioURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String, languageCode: String? = nil) async -> URL? {
+        let cacheURL = cacheFileURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText, languageCode: languageCode)
+        let metadataURL = cacheMetadataURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText, languageCode: languageCode)
         let fileManager = FileManager.default
 
         guard fileManager.fileExists(atPath: cacheURL.path) else { return nil }
@@ -39,10 +39,11 @@ actor ReaderPlaybackAudioCacheService {
         for entry: LibraryEntry,
         providerID: ReaderTTSProviderID,
         voiceName: String,
-        chunkText: String
+        chunkText: String,
+        languageCode: String? = nil
     ) async -> URL? {
-        let cacheURL = cacheFileURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
-        let metadataURL = cacheMetadataURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)
+        let cacheURL = cacheFileURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText, languageCode: languageCode)
+        let metadataURL = cacheMetadataURL(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText, languageCode: languageCode)
         let fileManager = FileManager.default
 
         do {
@@ -100,15 +101,15 @@ actor ReaderPlaybackAudioCacheService {
     }
 
     // Builds the final WAV path for one cached chunk.
-    private func cacheFileURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> URL {
+    private func cacheFileURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String, languageCode: String? = nil) -> URL {
         entryCacheDirectory(for: entry)
-            .appendingPathComponent("\(cacheKey(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)).wav")
+            .appendingPathComponent("\(cacheKey(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText, languageCode: languageCode)).wav")
     }
 
     // Builds the sidecar metadata file path for one cached chunk.
-    private func cacheMetadataURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> URL {
+    private func cacheMetadataURL(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String, languageCode: String? = nil) -> URL {
         entryCacheDirectory(for: entry)
-            .appendingPathComponent("\(cacheKey(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText)).entryid")
+            .appendingPathComponent("\(cacheKey(for: entry, providerID: providerID, voiceName: voiceName, chunkText: chunkText, languageCode: languageCode)).entryid")
     }
 
     // Returns the base cache directory used for first-chunk audio.
@@ -137,8 +138,9 @@ actor ReaderPlaybackAudioCacheService {
     }
 
     // Hashes the entry/provider/voice/chunk tuple into a safe filesystem key.
-    private func cacheKey(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String) -> String {
-        hashedKey(from: "\(cacheEntryID(for: entry))|\(providerID.rawValue)|\(voiceName)|\(chunkText)")
+    private func cacheKey(for entry: LibraryEntry, providerID: ReaderTTSProviderID, voiceName: String, chunkText: String, languageCode: String? = nil) -> String {
+        let languageSuffix = languageCode.map { "|\($0)" } ?? ""
+        return hashedKey(from: "\(cacheEntryID(for: entry))|\(providerID.rawValue)|\(voiceName)\(languageSuffix)|\(chunkText)")
     }
 
     // Converts raw text into a short stable key for cache filenames.

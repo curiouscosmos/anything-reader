@@ -198,6 +198,8 @@ actor PhonemeCacheService {
             return await KokoroG2PService.shared.phonemize(text)
         case .moonshine:
             return TextNormalizationService.normalize(text)
+        case .supertonic:
+            return TextNormalizationService.normalize(text)
         }
     }
 
