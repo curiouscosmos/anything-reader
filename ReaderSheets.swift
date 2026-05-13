@@ -243,6 +243,7 @@ struct ReaderImportLanguageSheet: View {
 
 // Audio export sheet shown before the full normalized file is rendered to a local audio file.
 struct ReaderGenerateAudioSheet: View {
+    let providerID: ReaderTTSProviderID
     @Binding var voiceName: String
 
     let voiceOptions: [ReaderTTSVoiceSelection]
@@ -268,7 +269,7 @@ struct ReaderGenerateAudioSheet: View {
                             .pickerStyle(.menu)
                             .readerPointerCursor()
 
-                            Text("The selected voice will be used to synthesize the complete normalized document into a local audio export.")
+                            Text("The selected \(providerID.title) voice will be used to synthesize the complete normalized document into a local audio export.")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
@@ -281,6 +282,11 @@ struct ReaderGenerateAudioSheet: View {
             }
             .accessibilityIdentifier("generate-audio-sheet")
             .navigationTitle("Generate Audio file")
+        }
+        .id(providerID)
+        .onAppear(perform: normalizeVoiceSelection)
+        .onChange(of: providerID) { _, _ in
+            normalizeVoiceSelection()
         }
         .interactiveDismissDisabled(true)
     }
@@ -342,6 +348,13 @@ struct ReaderGenerateAudioSheet: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .background(.thinMaterial)
+    }
+
+    private func normalizeVoiceSelection() {
+        guard !voiceOptions.isEmpty else { return }
+        if !voiceOptions.contains(where: { $0.voiceName == voiceName }) {
+            voiceName = voiceOptions[0].voiceName
+        }
     }
 }
 

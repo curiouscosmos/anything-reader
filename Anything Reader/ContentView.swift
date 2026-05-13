@@ -392,6 +392,7 @@ struct ContentView: View {
         }
         .sheet(item: $audioGenerationSheetEntry) { entry in
             ReaderGenerateAudioSheet(
+                providerID: pendingAudioProviderID,
                 voiceName: $pendingAudioVoiceName,
                 voiceOptions: ttsCoordinator.availableVoiceOptions(for: pendingAudioProviderID),
                 onGenerate: {
@@ -3028,8 +3029,9 @@ struct ContentView: View {
             return
         }
 
+        let selectedProviderID = ReaderTTSProviderID(rawValue: activeTTSProviderIDRawValue) ?? ttsCoordinator.activeProviderID
         pendingAudioGenerationEntry = entry
-        pendingAudioProviderID = ttsCoordinator.activeProviderID
+        pendingAudioProviderID = selectedProviderID
         pendingAudioVoiceName = ttsCoordinator.selectedVoiceName(for: pendingAudioProviderID)
         audioGenerationSheetEntry = entry
         audioGenerationProgressValue = nil
