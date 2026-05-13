@@ -8,7 +8,7 @@
 import Foundation
 import Combine
 
-enum ReaderTTSProviderID: String, CaseIterable, Identifiable, Codable {
+enum ReaderTTSProviderID: String, CaseIterable, Identifiable, Codable, Sendable {
     case kokoro
     case moonshine
     case supertonic
@@ -258,7 +258,7 @@ enum ReaderTTSModelAvailability: Equatable {
     case failed(String)
 }
 
-struct ReaderTTSVoiceSelection: Identifiable, Hashable {
+struct ReaderTTSVoiceSelection: Identifiable, Hashable, Sendable {
     let providerID: ReaderTTSProviderID
     let voiceName: String
     let displayName: String

@@ -96,6 +96,7 @@ enum SupertonicVoiceCatalog {
 final class SupertonicSpeechService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = SupertonicSpeechService()
 
+    private let runtime = SupertonicSpeechRenderer()
     private var audioPlayer: AVAudioPlayer?
     @Published private(set) var isPlaying = false
 
@@ -128,19 +129,7 @@ final class SupertonicSpeechService: NSObject, ObservableObject, AVAudioPlayerDe
             throw CocoaError(.fileNoSuchFile)
         }
 
-        try await SupertonicModelStore.shared.ensureInstalled()
-
-        guard let modelRootURL = SupertonicModelStore.shared.modelURL() else {
-            throw CocoaError(.fileNoSuchFile)
-        }
-
-        let languageCode = SupertonicLanguageCatalog.languageCode(for: language)
-        return try supertonicSynthesize(
-            text: text,
-            voiceName: voice.voiceName,
-            languageCode: languageCode,
-            modelRootURL: modelRootURL
-        )
+        return try await runtime.synthesize(text: text, voice: voice, language: language)
     }
 
     private func playAudioFile(at url: URL) throws {
@@ -158,6 +147,25 @@ final class SupertonicSpeechService: NSObject, ObservableObject, AVAudioPlayerDe
 
     func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         isPlaying = false
+    }
+
+}
+
+actor SupertonicSpeechRenderer {
+    func synthesize(text: String, voice: ReaderTTSVoiceSelection, language: TextLanguage? = nil) async throws -> URL {
+        try await SupertonicModelStore.shared.ensureInstalled()
+
+        guard let modelRootURL = await MainActor.run(body: { SupertonicModelStore.shared.modelURL() }) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let languageCode = SupertonicLanguageCatalog.languageCode(for: language)
+        return try supertonicSynthesize(
+            text: text,
+            voiceName: voice.voiceName,
+            languageCode: languageCode,
+            modelRootURL: modelRootURL
+        )
     }
 
     private func supertonicSynthesize(
