@@ -2538,7 +2538,6 @@ struct ContentView: View {
         } else {
             if let activeEntry,
                activeEntry.persistentModelID != entry.persistentModelID {
-                readerPlaybackService.stop()
                 discardPlaybackAudioCache(for: activeEntry)
             }
             startPlayback(for: entry)
@@ -2559,7 +2558,6 @@ struct ContentView: View {
         } else {
             if let activeEntry,
                activeEntry.persistentModelID != entry.persistentModelID {
-                readerPlaybackService.stop()
                 discardPlaybackAudioCache(for: activeEntry)
             }
             startPlayback(
@@ -2726,7 +2724,7 @@ struct ContentView: View {
                 self.playbackState.progress = 0
                 self.playbackState.elapsedSeconds = 0
                 self.playbackState.isPlaying = false
-                self.logPlaybackChunkIndex("stop", entry: entry, chunkIndex: self.playbackChunkIndex)
+                self.logPlaybackChunkIndex("stop", entry: entry, chunkIndex: self.readerPlaybackService.currentAudibleChunkIndex)
                 self.audioMixerPlaybackService.endReaderPlaybackTransition()
                 if self.activePlaybackSummaryFilePath != nil {
                     entry.summarizedTextPlaybackPositionSeconds = 0
@@ -2742,7 +2740,7 @@ struct ContentView: View {
                 guard self.playbackSessionToken == sessionToken else { return }
                 self.stopPlaybackProgressPersistenceTask()
                 self.playbackState.isPlaying = false
-                self.logPlaybackChunkIndex("stop", entry: self.activeEntry, chunkIndex: self.playbackChunkIndex)
+                self.logPlaybackChunkIndex("stop", entry: self.activeEntry, chunkIndex: self.readerPlaybackService.currentAudibleChunkIndex)
                 self.audioMixerPlaybackService.endReaderPlaybackTransition()
                 self.uploadAlertMessage = message
             }
@@ -2813,31 +2811,24 @@ struct ContentView: View {
 
     @MainActor
     private func togglePlayback() {
-        print("Playing file now ->")
         if playbackState.isPlaying {
-            print("Playing file now -> 1")
-            logPlaybackChunkIndex("stop", entry: activeEntry, chunkIndex: playbackChunkIndex)
+            logPlaybackChunkIndex("stop", entry: activeEntry, chunkIndex: readerPlaybackService.currentAudibleChunkIndex)
             playbackState.isPlaying = false
             readerPlaybackService.pause()
             stopPlaybackProgressPersistenceTask()
             persistPlayerProgress(force: true)
         } else if readerPlaybackService.isPaused, activeEntry != nil {
-            print("Playing file now -> 2")
-            logPlaybackChunkIndex("resume", entry: activeEntry, chunkIndex: playbackChunkIndex)
+            logPlaybackChunkIndex("resume", entry: activeEntry, chunkIndex: readerPlaybackService.currentAudibleChunkIndex)
             readerPlaybackService.resume()
             playbackState.isPlaying = true
             if activePlaybackShouldPersistProgress || activePlaybackSummaryFilePath != nil {
-                print("Playing file now -> 3")
                 startPlaybackProgressPersistenceTask(for: playbackSessionToken)
             }
         } else {
-            print("Playing file now -> 4")
             if let entry = activeEntry {
-                print("Playing file now -> 5")
                 if let activePlaybackSummaryFilePath,
                    let summaryURL = entry.summarizedTextFileURL,
                    summaryURL.path == activePlaybackSummaryFilePath {
-                    print("Playing file now -> 6")
                     startPlayback(
                         for: entry,
                         textFileURL: summaryURL,
@@ -2845,11 +2836,9 @@ struct ContentView: View {
                         persistProgress: true
                     )
                 } else {
-                    print("Playing file now -> 7")
                     startPlayback(for: entry)
                 }
             } else {
-                print("Playing file now -> 8")
                 playbackState.isPlaying = false
             }
         }
@@ -2957,10 +2946,13 @@ struct ContentView: View {
             return
         }
 
+        let audibleChunkIndex = readerPlaybackService.currentAudibleChunkIndex
         playbackProgressLastSavedElapsedSeconds = elapsedSeconds
         activeEntry.progress = playbackState.progress
-        activeEntry.lastPlaybackChunkIndex = playbackChunkIndex
-        syncReadingPositionState(for: activeEntry, progress: playbackState.progress, chunkIndex: playbackChunkIndex)
+        activeEntry.lastPlaybackChunkIndex = audibleChunkIndex
+        // Keep the chapter/page reading state untouched here. This save path is
+        // only about the audible chunk that actually played; structured reading
+        // targets are updated separately when the user jumps between them.
         activeEntry.lastOpened = .now
         try? modelContext.save()
     }
@@ -3370,7 +3362,12 @@ struct ContentView: View {
         playLibraryEntry(entry)
     }
 
-    private func syncReadingPositionState(for entry: LibraryEntry?, progress: Double, chunkIndex: Int? = nil) {
+    private func syncReadingPositionState(
+        for entry: LibraryEntry?,
+        progress: Double,
+        chunkIndex: Int? = nil,
+        audibleChunkIndex: Int? = nil
+    ) {
         guard let entry else { return }
 
         let totalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
@@ -3381,8 +3378,8 @@ struct ContentView: View {
 
         entry.currentReadingPositionIndex = index
         entry.currentReadingPositionTotalCount = totalCount
-        if let chunkIndex {
-            entry.lastPlaybackChunkIndex = chunkIndex
+        if let audibleChunkIndex {
+            entry.lastPlaybackChunkIndex = audibleChunkIndex
         }
         playbackState.readingPositionIndexOverride = index
         playbackState.readingPositionTotalCount = totalCount

@@ -60,6 +60,9 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private var playbackSessionID = UUID()
     private var playbackSession: PlaybackSession?
     private var activeChunkIndex = 0
+    // Tracks the last chunk that actually reached audible playback. This must
+    // only move forward when a chunk completes, not when it is merely queued.
+    private(set) var currentAudibleChunkIndex = 0
 
     // UserDefaults key for preserving the player volume between launches.
     private static let volumeStorageKey = "readerPlaybackVolume"
@@ -113,6 +116,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         isBufferingFirstChunk = false
         activePlaybackIdentity = nil
         activeChunkIndex = 0
+        currentAudibleChunkIndex = 0
 
         // Tell the rest of the app that reader playback has ended.
         ReaderPlaybackEventCenter.post(
@@ -157,6 +161,7 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         isBufferingFirstChunk = true
         activePlaybackIdentity = sessionIdentity
         activeChunkIndex = max(startingChunkIndex ?? 0, 0)
+        currentAudibleChunkIndex = activeChunkIndex
         playerNode.volume = Float(volume)
 
         // Run the long-lived playback workflow off the main thread while state
@@ -282,6 +287,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                         self.scheduleAudioFile(
                             cachedAudioURL,
                             isFinalChunk: chunkIndex == chunks.count - 1,
+                            chunkIndex: chunkIndex,
+                            chunkCount: chunks.count,
                             sessionID: sessionID,
                             onFinished: onFinished
                         )
@@ -345,6 +352,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     self.scheduleAudioFile(
                         audioURL,
                         isFinalChunk: chunkIndex == chunks.count - 1,
+                        chunkIndex: chunkIndex,
+                        chunkCount: chunks.count,
                         sessionID: sessionID,
                         onFinished: onFinished
                     )
@@ -464,6 +473,8 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
     private func scheduleAudioFile(
         _ url: URL,
         isFinalChunk: Bool,
+        chunkIndex: Int,
+        chunkCount: Int,
         sessionID: UUID,
         onFinished: @escaping () -> Void
     ) {
@@ -474,10 +485,14 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         playerNode.scheduleFile(audioFile, at: nil) { [weak self] in
             guard let self else { return }
 
-            guard isFinalChunk else { return }
-
             Task { @MainActor in
                 guard self.playbackSessionID == sessionID else { return }
+                // Advance the audible chunk only after the current chunk has
+                // fully finished. Prefetched or scheduled chunks never touch
+                // this value, which keeps resume state tied to what the user
+                // actually heard.
+                self.currentAudibleChunkIndex = min(chunkIndex + 1, max(chunkCount - 1, 0))
+                guard isFinalChunk else { return }
                 self.finishPlayback(onFinished: onFinished)
             }
         }
