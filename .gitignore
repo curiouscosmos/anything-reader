@@ -7,6 +7,7 @@ xcuserdata/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.moved-aside
+Anything Reader.xcodeproj/project.xcworkspace/xcuserdata
 
 # Swift Package Manager
 .build/

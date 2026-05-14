@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import PostHog
+import Sentry
 
 // PostHog configuration is read from the Xcode scheme first, then from the bundled .env file.
 enum PostHogEnv: String {
@@ -63,6 +64,61 @@ enum PostHogEnv: String {
     }
 }
 
+// Sentry uses the same scheme-first, bundled-.env fallback as the analytics configuration.
+enum SentryEnv: String {
+    case dsn = "SENTRY_DSN"
+    case environment = "SENTRY_ENVIRONMENT"
+    case release = "SENTRY_RELEASE"
+
+    var value: String? {
+        if let value = ProcessInfo.processInfo.environment[rawValue], !value.isEmpty {
+            return value
+        }
+        return bundleValue(for: rawValue)
+    }
+
+    private func bundleValue(for key: String) -> String? {
+        guard let url = Bundle.main.url(forResource: ".env", withExtension: nil),
+              let contents = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+
+        for line in contents.split(whereSeparator: \.isNewline) {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLine.isEmpty, !trimmedLine.hasPrefix("#") else {
+                continue
+            }
+
+            let candidateLine = trimmedLine.hasPrefix("export ") ? String(trimmedLine.dropFirst(7)) : trimmedLine
+            guard let equalsIndex = candidateLine.firstIndex(of: "=") else {
+                continue
+            }
+
+            let entryKey = candidateLine[..<equalsIndex].trimmingCharacters(in: .whitespaces)
+            guard entryKey == key else {
+                continue
+            }
+
+            let entryValue = String(candidateLine[candidateLine.index(after: equalsIndex)...]
+                .trimmingCharacters(in: .whitespaces))
+            return unquote(entryValue)
+        }
+
+        return nil
+    }
+
+    private func unquote(_ value: String) -> String {
+        guard value.count >= 2,
+              let first = value.first,
+              let last = value.last,
+              (first == "\"" && last == "\"") || (first == "'" && last == "'") else {
+            return value
+        }
+
+        return String(value.dropFirst().dropLast())
+    }
+}
+
 // Application entry point that wires the persistent store, startup services, and root content view.
 @main
 struct Anything_ReaderApp: App {
@@ -86,6 +142,25 @@ struct Anything_ReaderApp: App {
 
     // Performs one-time startup wiring before the first window appears.
     init() {
+        if let sentryDSN = SentryEnv.dsn.value {
+            SentrySDK.start { options in
+                options.dsn = sentryDSN
+                if let environment = SentryEnv.environment.value {
+                    options.environment = environment
+                }
+                options.releaseName = SentryEnv.release.value
+                    ?? Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+                options.enableCrashHandler = true
+                options.tracesSampleRate = 1.0
+                options.configureProfiling = {
+                    $0.sessionSampleRate = 1.0
+                    $0.lifecycle = .trace
+                }
+            }
+        } else {
+            print("Sentry is disabled because SENTRY_DSN is not set.")
+        }
+
         // PostHog: Initialize analytics SDK
         if let projectToken = PostHogEnv.projectToken.value,
            let host = PostHogEnv.host.value {

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A1PH0G002FA0000000000001 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A1PH0G002FA0000000000002 /* PostHog */; };
+		A15E00012FB5C0DE00000001 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A15E00012FB5C0DE00000002 /* Sentry */; };
 		D1215BC12FB59B980064E318 /* .env in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC02FB59B980064E318 /* .env */; };
 		D1215BC42FB59BD40064E318 /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC22FB59BD40064E318 /* AGENTS.md */; };
 		D1215BC52FB59BD40064E318 /* AI.md in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC32FB59BD40064E318 /* AI.md */; };
@@ -108,6 +109,7 @@
 				D18512302F9F3453008E9FF8 /* KokoroSwift in Frameworks */,
 				D18512332F9F3453008E9FF8 /* STTextView in Frameworks */,
 				A1PH0G002FA0000000000001 /* PostHog in Frameworks */,
+				A15E00012FB5C0DE00000001 /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -205,6 +207,7 @@
 				D18511672F9F2B01008E9FF8 /* ZIPFoundation */,
 				A1F6B1A11AA1000000000006 /* FeedKit */,
 				A1PH0G002FA0000000000002 /* PostHog */,
+				A15E00012FB5C0DE00000002 /* Sentry */,
 			);
 			productName = "Anything Reader";
 			productReference = D1850FC62F9C1990008E9FF8 /* Anything Reader.app */;
@@ -297,6 +300,7 @@
 				D18511592F9EC5D1008E9FF8 /* XCRemoteSwiftPackageReference "mlx-swift" */,
 				A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */,
 				A1PH0G002FA0000000000003 /* XCLocalSwiftPackageReference "Packages/posthog-ios" */,
+				A15E00012FB5C0DE00000003 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D1850FC72F9C1990008E9FF8 /* Products */;
@@ -721,6 +725,14 @@
 				minimumVersion = 10.1.1;
 			};
 		};
+		A15E00012FB5C0DE00000003 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.5.1;
+			};
+		};
 		D18510522F9F1000008E9FF8 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
@@ -773,6 +785,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1PH0G002FA0000000000003 /* XCLocalSwiftPackageReference "Packages/posthog-ios" */;
 			productName = PostHog;
+		};
+		A15E00012FB5C0DE00000002 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A15E00012FB5C0DE00000003 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
 		};
 		D18511652F9F2B01008E9FF8 /* KokoroSwift */ = {
 			isa = XCSwiftPackageProductDependency;
