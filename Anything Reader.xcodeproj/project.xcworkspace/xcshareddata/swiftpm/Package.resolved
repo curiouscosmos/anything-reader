@@ -1,5 +1,5 @@
 {
-  "originHash" : "eed7bc01c1789ebffc6ad7ddef8de505df20dbd81631ece23457c59be2e458c3",
+  "originHash" : "f68cc23c5a88225613cf38923e4a329b4457f6b64dac7792bad6e02ce30426f9",
   "pins" : [
     {
       "identity" : "coretextswift",
@@ -17,15 +17,6 @@
       "state" : {
         "revision" : "e55b2cafaf67370092c91193cfb8a8b008e05888",
         "version" : "10.4.0"
-      }
-    },
-    {
-      "identity" : "kokoro-ios",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mlalma/kokoro-ios.git",
-      "state" : {
-        "revision" : "9a1e2614e5898106d00eec7fd21ff2fc89d805a6",
-        "version" : "1.0.10"
       }
     },
     {

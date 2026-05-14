@@ -501,13 +501,13 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Anyhting Reader";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(BUILD_DIR)/SourcePackages/artifacts/onnxruntime-swift-package-manager/onnxruntime/onnxruntime.xcframework/macos-arm64_x86_64",
 				);
+				INFOPLIST_KEY_CFBundleDisplayName = "Anyhting Reader";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -540,13 +540,13 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Anyhting Reader";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(BUILD_DIR)/SourcePackages/artifacts/onnxruntime-swift-package-manager/onnxruntime/onnxruntime.xcframework/macos-arm64_x86_64",
 				);
+				INFOPLIST_KEY_CFBundleDisplayName = "Anyhting Reader";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -702,13 +702,9 @@
 				minimumVersion = 0.9.20;
 			};
 		};
-		D18510622F9F2000008E9FF8 /* XCRemoteSwiftPackageReference "kokoro-ios" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/mlalma/kokoro-ios.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.0;
-			};
+		D18510622F9F2000008E9FF8 /* XCLocalSwiftPackageReference "KokoroSwift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/KokoroSwift;
 		};
 		D18511592F9EC5D1008E9FF8 /* XCRemoteSwiftPackageReference "mlx-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -739,7 +735,7 @@
 			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
 			requirement = {
 				kind = exactVersion;
-				version = 1.23.0;
+				version = 1.24.2;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -752,7 +748,7 @@
 		};
 		D18511652F9F2B01008E9FF8 /* KokoroSwift */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = D18510622F9F2000008E9FF8 /* XCRemoteSwiftPackageReference "kokoro-ios" */;
+			package = D18510622F9F2000008E9FF8 /* XCLocalSwiftPackageReference "KokoroSwift" */;
 			productName = KokoroSwift;
 		};
 		D18511662F9F2B01008E9FF8 /* MLX */ = {
