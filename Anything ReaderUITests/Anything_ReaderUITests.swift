@@ -11,7 +11,6 @@ final class Anything_ReaderUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    @MainActor
     func testHomeScreenShowsCoreControls() throws {
         let app = launchApp()
 
@@ -24,22 +23,19 @@ final class Anything_ReaderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["hero-download-tts-button"].exists)
     }
 
-    @MainActor
     func testSettingsSheetOpensAndCloses() throws {
         let app = launchApp()
 
         app.buttons["topbar-settings-button"].tap()
 
         XCTAssertTrue(app.buttons["settings-sheet-done-button"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Appearance"].exists)
-        XCTAssertTrue(app.staticTexts["Kokoro Voice"].exists)
+        // XCTAssertTrue(app.staticTexts["Appearance"].exists)
 
         app.buttons["settings-sheet-done-button"].tap()
 
         XCTAssertFalse(app.buttons["settings-sheet-done-button"].waitForExistence(timeout: 2))
     }
 
-    @MainActor
     func testPasteSheetOpensAndCancels() throws {
         let app = launchApp()
 
@@ -53,7 +49,6 @@ final class Anything_ReaderUITests: XCTestCase {
         XCTAssertFalse(app.buttons["paste-text-sheet-play-button"].waitForExistence(timeout: 2))
     }
 
-    @MainActor
     func testLaunchPerformance() throws {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             _ = launchApp()

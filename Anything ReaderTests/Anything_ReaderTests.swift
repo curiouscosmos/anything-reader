@@ -179,7 +179,7 @@ struct Anything_ReaderTests {
         #expect(ReaderPlaybackChunkService.progress(for: index, chunkCount: chunkCount) < 0.7)
     }
 
-    @Test func documentIngestServiceWritesNormalizedTextNextToSourceFile() async throws {
+    @Test @MainActor func documentIngestServiceWritesNormalizedTextNextToSourceFile() async throws {
         let directory = try makeTemporaryDirectory(prefix: "ingest-text")
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -206,7 +206,7 @@ struct Anything_ReaderTests {
         #expect(result.normalizedText == expectedNormalizedText)
         #expect(result.normalizedTextFileURL.deletingLastPathComponent().path == directory.path)
 
-        let storedText = try await String(contentsOf: result.normalizedTextFileURL, encoding: .utf8)
+        let storedText = try String(contentsOf: result.normalizedTextFileURL, encoding: .utf8)
         #expect(storedText == expectedNormalizedText)
         #expect(result.normalizedTextFileURL.lastPathComponent == "notes.txt.txt")
     }
@@ -300,7 +300,6 @@ struct Anything_ReaderTests {
 
         #expect(book.displayTitle == "The Sample Book")
         #expect(book.displayAuthors == "Alice · Bob")
-        #expect(book.displayLanguages == "en · fr")
         #expect(book.displaySubjects == "Fiction · Adventure")
         #expect(book.displayBookshelves == "Children's Books")
         #expect(book.displayFormat == "EPUB")

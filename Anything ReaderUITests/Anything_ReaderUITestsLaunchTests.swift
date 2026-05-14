@@ -17,10 +17,8 @@ final class Anything_ReaderUITestsLaunchTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    @MainActor
     func testLaunch() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = launchApp()
 
         XCTAssertTrue(app.staticTexts["Listen to anything"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["topbar-settings-button"].exists)
@@ -29,5 +27,11 @@ final class Anything_ReaderUITestsLaunchTests: XCTestCase {
         attachment.name = "Launch Screen"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func launchApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launch()
+        return app
     }
 }
