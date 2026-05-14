@@ -8,6 +8,7 @@
 import Foundation
 import AppKit
 import AVFoundation
+import PostHog
 import SwiftData
 import SwiftUI
 import Translation
@@ -1889,6 +1890,14 @@ struct ContentView: View {
 
             let shouldAutoPlay = context.shouldAutoPlay
 
+            // PostHog: Track successful document import
+            PostHogSDK.shared.capture("document_imported", properties: [
+                "source_kind": ingest.sourceKind.rawValue,
+                "page_count": ingest.pageCount,
+                "chapter_count": ingest.chapterCount,
+                "language": ingest.textLanguage.rawValue,
+            ])
+
             await MainActor.run {
                 clearPendingImportState(showing: "\(placeholderEntry.title) is ready to play.")
                 queueCoverArtGenerationIfNeeded(for: placeholderEntry)
@@ -1912,6 +1921,11 @@ struct ContentView: View {
                 }
                 return
             }
+
+            // PostHog: Track document import failure
+            PostHogSDK.shared.capture("document_import_failed", properties: [
+                "error": error.localizedDescription,
+            ])
 
             await MainActor.run {
                 isProcessingImport = false
@@ -2335,6 +2349,13 @@ struct ContentView: View {
 
             modelContext.insert(entry)
             try modelContext.save()
+
+            // PostHog: Track successful free book download
+            PostHogSDK.shared.capture("free_book_downloaded", properties: [
+                "book_title": book.displayTitle,
+                "book_author": book.displayAuthors,
+                "translated": translateToLanguage != .english || book.primaryLanguage == nil ? false : true,
+            ])
 
             freeBookDownloadSuccess = FreeBookDownloadSuccess(title: entry.title)
             playSuccessTone()
@@ -3218,6 +3239,14 @@ struct ContentView: View {
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
             pendingAudioProviderID = .kokoro
+
+            // PostHog: Track successful audio file generation
+            PostHogSDK.shared.capture("audio_file_generated", properties: [
+                "tts_provider": voice.providerID.rawValue,
+                "voice_name": voice.voiceName,
+                "duration_seconds": entry.generatedAudioDurationSeconds ?? 0,
+            ])
+
             successToastMessage = "\(entry.title) audio file is ready."
             playSuccessTone()
         } catch is CancellationError {
@@ -3230,6 +3259,12 @@ struct ContentView: View {
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName
             pendingAudioProviderID = .kokoro
             audioGenerationProgressValue = nil
+
+            // PostHog: Track audio generation failure
+            PostHogSDK.shared.capture("audio_generation_failed", properties: [
+                "error": error.localizedDescription,
+            ])
+
             audioGenerationAlertMessage = error.localizedDescription
         }
     }

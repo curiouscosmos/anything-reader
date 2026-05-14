@@ -21,6 +21,7 @@
 		D18512332F9F3453008E9FF8 /* STTextView in Frameworks */ = {isa = PBXBuildFile; productRef = D18511692F9F2B01008E9FF8 /* STTextView */; };
 		D18512342F9F3453008E9FF8 /* MoonshineVoice in Frameworks */ = {isa = PBXBuildFile; productRef = D185116A2F9F2B01008E9FF8 /* MoonshineVoice */; };
 		D18512352FAF0000008E9FF8 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = D185116D2FAF0000008E9FF8 /* onnxruntime */; };
+		A1PH0G001AA1000000000001 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A1PH0G001AA1000000000002 /* PostHog */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -100,6 +101,7 @@
 				D18512352FAF0000008E9FF8 /* onnxruntime in Frameworks */,
 				D18512302F9F3453008E9FF8 /* KokoroSwift in Frameworks */,
 				D18512332F9F3453008E9FF8 /* STTextView in Frameworks */,
+				A1PH0G001AA1000000000001 /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -193,6 +195,7 @@
 				D18511692F9F2B01008E9FF8 /* STTextView */,
 				D18511672F9F2B01008E9FF8 /* ZIPFoundation */,
 				A1F6B1A11AA1000000000006 /* FeedKit */,
+				A1PH0G001AA1000000000002 /* PostHog */,
 			);
 			productName = "Anything Reader";
 			productReference = D1850FC62F9C1990008E9FF8 /* Anything Reader.app */;
@@ -284,6 +287,7 @@
 				D18511682F9F2B01008E9FF8 /* XCRemoteSwiftPackageReference "STTextView" */,
 				D18511592F9EC5D1008E9FF8 /* XCRemoteSwiftPackageReference "mlx-swift" */,
 				A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */,
+				A1PH0G001AA1000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D1850FC72F9C1990008E9FF8 /* Products */;
@@ -742,6 +746,14 @@
 				version = 1.23.0;
 			};
 		};
+		A1PH0G001AA1000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.58.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -779,6 +791,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D185116C2FAF0000008E9FF8 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
 			productName = onnxruntime;
+		};
+		A1PH0G001AA1000000000002 /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1PH0G001AA1000000000003 /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
