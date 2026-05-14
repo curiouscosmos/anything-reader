@@ -161,7 +161,9 @@ actor LibraryAudioGenerationService {
     private func synthesizeToWav(text: String, voice: ReaderTTSVoiceSelection, language: TextLanguage?) async throws -> URL {
         switch voice.providerID {
         case .kokoro:
-            let kokoroVoice = KokoroVoiceCatalog.voice(named: voice.voiceName)
+            let kokoroVoice = await MainActor.run {
+                KokoroVoiceCatalog.voice(named: voice.voiceName)
+            }
             return try await KokoroSpeechService.shared.synthesize(text: text, voice: kokoroVoice)
         case .moonshine:
             return try await MoonshineSpeechService.shared.synthesize(text: text, voice: voice)
@@ -237,13 +239,13 @@ actor LibraryAudioGenerationService {
         if let destinationDirectoryURL {
             destinationDirectory = destinationDirectoryURL
         } else {
-            destinationDirectory = try uploadedFilesDirectory()
+            destinationDirectory = try Self.uploadedFilesDirectory()
         }
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
 
         let timestamp = Self.filenameTimestampFormatter.string(from: .now)
-        let baseName = sanitizedFileName("\(entryTitle) - \(voice.displayName) - \(timestamp)")
+        let baseName = Self.sanitizedFileName("\(entryTitle) - \(voice.displayName) - \(timestamp)")
         return destinationDirectory.appendingPathComponent(baseName).appendingPathExtension("m4a")
     }
 
@@ -259,31 +261,31 @@ actor LibraryAudioGenerationService {
         formatter.dateFormat = "yyyy-MM-dd-HHmm"
         return formatter
     }()
-}
 
-private func uploadedFilesDirectory() throws -> URL {
-    let fileManager = FileManager.default
-    let supportDirectory = try fileManager.url(
-        for: .applicationSupportDirectory,
-        in: .userDomainMask,
-        appropriateFor: nil,
-        create: true
-    )
+    nonisolated private static func uploadedFilesDirectory() throws -> URL {
+        let fileManager = FileManager.default
+        let supportDirectory = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
 
-    let baseDirectory = supportDirectory
-        .appendingPathComponent("Anything Reader", isDirectory: true)
-        .appendingPathComponent("Uploaded Files", isDirectory: true)
+        let baseDirectory = supportDirectory
+            .appendingPathComponent("Anything Reader", isDirectory: true)
+            .appendingPathComponent("Uploaded Files", isDirectory: true)
 
-    try fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
-    return baseDirectory
-}
+        try fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+        return baseDirectory
+    }
 
-private func sanitizedFileName(_ name: String) -> String {
-    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return "Document" }
+    nonisolated private static func sanitizedFileName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Document" }
 
-    let invalidCharacters = CharacterSet(charactersIn: "/\\:?%*|\"<>")
-    let components = trimmed.components(separatedBy: invalidCharacters)
-    let cleaned = components.joined(separator: "-")
-    return cleaned.isEmpty ? "Document" : cleaned
+        let invalidCharacters = CharacterSet(charactersIn: "/\\:?%*|\"<>")
+        let components = trimmed.components(separatedBy: invalidCharacters)
+        let cleaned = components.joined(separator: "-")
+        return cleaned.isEmpty ? "Document" : cleaned
+    }
 }

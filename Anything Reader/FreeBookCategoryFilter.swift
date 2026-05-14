@@ -202,7 +202,7 @@ enum FreeBookCategoryFilter: String, CaseIterable, Identifiable, Hashable {
         allCases.filter { $0.section == section && !$0.isAll }
     }
 
-    var aliases: [String] {
+    nonisolated var aliases: [String] {
         switch self {
         case .all:
             return []
@@ -351,7 +351,7 @@ enum FreeBookCategoryFilter: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var isAll: Bool {
+    nonisolated var isAll: Bool {
         self == .all
     }
 

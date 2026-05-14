@@ -9,16 +9,16 @@ import Foundation
 import SQLite3
 
 enum FreeBooksSQLiteHelpers {
-    private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    nonisolated private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    static func bindText(_ value: String, to statement: OpaquePointer, index: Int32) {
+    nonisolated static func bindText(_ value: String, to statement: OpaquePointer, index: Int32) {
         value.utf8CString.withUnsafeBufferPointer { buffer in
             guard let baseAddress = buffer.baseAddress else { return }
             sqlite3_bind_text(statement, index, baseAddress, -1, sqliteTransient)
         }
     }
 
-    static func filteredBooksQuery(
+    nonisolated static func filteredBooksQuery(
         baseSQL: String,
         languageFilter: FreeBookLanguageFilter,
         categoryFilter: FreeBookCategoryFilter,
@@ -84,7 +84,7 @@ enum FreeBooksSQLiteHelpers {
         )
     }
 
-    private static func searchQueryClause(searchText: String) -> (clause: String?, bindValues: [String]) {
+    nonisolated private static func searchQueryClause(searchText: String) -> (clause: String?, bindValues: [String]) {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else {
             return (nil, [])
@@ -116,7 +116,7 @@ enum FreeBooksSQLiteHelpers {
         return ("(\(tokenClauses.joined(separator: " AND ")))", bindValues)
     }
 
-    private static func likeClause(aliases: [String], columns: [String]) -> (clause: String?, bindValues: [String]) {
+    nonisolated private static func likeClause(aliases: [String], columns: [String]) -> (clause: String?, bindValues: [String]) {
         let terms = aliases
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty }

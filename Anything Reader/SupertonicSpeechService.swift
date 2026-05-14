@@ -129,7 +129,8 @@ final class SupertonicSpeechService: NSObject, ObservableObject, AVAudioPlayerDe
             throw CocoaError(.fileNoSuchFile)
         }
 
-        return try await runtime.synthesize(text: text, voice: voice, language: language)
+        let languageCode = SupertonicLanguageCatalog.languageCode(for: language)
+        return try await runtime.synthesize(text: text, voice: voice, languageCode: languageCode)
     }
 
     private func playAudioFile(at url: URL) throws {
@@ -152,14 +153,12 @@ final class SupertonicSpeechService: NSObject, ObservableObject, AVAudioPlayerDe
 }
 
 actor SupertonicSpeechRenderer {
-    func synthesize(text: String, voice: ReaderTTSVoiceSelection, language: TextLanguage? = nil) async throws -> URL {
+    func synthesize(text: String, voice: ReaderTTSVoiceSelection, languageCode: String) async throws -> URL {
         try await SupertonicModelStore.shared.ensureInstalled()
 
         guard let modelRootURL = await MainActor.run(body: { SupertonicModelStore.shared.modelURL() }) else {
             throw CocoaError(.fileNoSuchFile)
         }
-
-        let languageCode = SupertonicLanguageCatalog.languageCode(for: language)
         return try supertonicSynthesize(
             text: text,
             voiceName: voice.voiceName,

@@ -547,7 +547,7 @@ enum FreeBookLanguageFilter: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var queryAliases: [String] {
+    nonisolated var queryAliases: [String] {
         switch self {
         case .all:
             return []
@@ -616,7 +616,7 @@ enum FreeBookLanguageFilter: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var isAll: Bool {
+    nonisolated var isAll: Bool {
         self == .all
     }
 }
