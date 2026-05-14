@@ -3362,31 +3362,6 @@ struct ContentView: View {
         playLibraryEntry(entry)
     }
 
-    private func syncReadingPositionState(
-        for entry: LibraryEntry?,
-        progress: Double,
-        chunkIndex: Int? = nil,
-        audibleChunkIndex: Int? = nil
-    ) {
-        guard let entry else { return }
-
-        let totalCount = entry.readingJumpTargets.isEmpty ? nil : entry.readingJumpTargets.count
-        let index = chunkIndex.flatMap { ReaderPlaybackSupport.readingPositionIndex(for: entry, chunkIndex: $0) }
-            ?? playbackState.readingPositionIndexOverride
-            ?? entry.currentReadingPositionIndex
-            ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: progress)
-
-        entry.currentReadingPositionIndex = index
-        entry.currentReadingPositionTotalCount = totalCount
-        if let audibleChunkIndex {
-            entry.lastPlaybackChunkIndex = audibleChunkIndex
-        }
-        playbackState.readingPositionIndexOverride = index
-        playbackState.readingPositionTotalCount = totalCount
-        playbackState.readingPositionText = entry.currentReadingPositionDisplayText ?? ReaderPlaybackSupport.readingPositionText(for: entry, progress: progress)
-        playbackState.readingPositionOverrideText = nil
-    }
-
     private func cancelReadingNavigationTask() {
         readingNavigationTask?.cancel()
         readingNavigationTask = nil
