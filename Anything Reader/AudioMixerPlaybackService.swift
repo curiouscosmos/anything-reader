@@ -91,6 +91,12 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
         isSelected(track) && isPaused
     }
 
+    func select(track: AudioMixerTrack) {
+        selectedTrackID = track.id
+        selectedTrackTitle = track.title
+        UserDefaults.standard.set(track.id, forKey: Self.selectedTrackIDStorageKey)
+    }
+
     func togglePlayback(for track: AudioMixerTrack) {
         if isPlayingTrack(track) {
             pause()
@@ -106,9 +112,7 @@ final class AudioMixerPlaybackService: NSObject, ObservableObject, AVAudioPlayer
     }
 
     func play(track: AudioMixerTrack) {
-        selectedTrackID = track.id
-        selectedTrackTitle = track.title
-        UserDefaults.standard.set(track.id, forKey: Self.selectedTrackIDStorageKey)
+        select(track: track)
 
         guard FileManager.default.fileExists(atPath: track.fileURL.path) else {
             alertMessage = AudioMixerLibraryError.trackMissing.localizedDescription

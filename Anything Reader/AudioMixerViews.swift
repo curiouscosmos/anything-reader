@@ -206,6 +206,9 @@ struct AudioMixerView: View {
                             isSelected: playbackService.isSelected(track),
                             isPlaying: playbackService.isPlayingTrack(track),
                             canDelete: !track.isBundled,
+                            onSelect: {
+                                playbackService.select(track: track)
+                            },
                             onPlayPause: {
                                 playbackService.togglePlayback(for: track)
                             },
@@ -279,6 +282,7 @@ struct AudioMixerTrackCardView: View {
     let isSelected: Bool
     let isPlaying: Bool
     let canDelete: Bool
+    let onSelect: () -> Void
     let onPlayPause: () -> Void
     let onDelete: () -> Void
 
@@ -297,6 +301,11 @@ struct AudioMixerTrackCardView: View {
                 .strokeBorder(borderColor, lineWidth: isSelected ? 2 : 1)
         )
         .shadow(color: .black.opacity(preferredMode == .light ? 0.10 : 0.24), radius: 16, y: 8)
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture {
+            onSelect()
+        }
+        .readerPointerCursor()
         .confirmationDialog(
             "Delete \"\(track.title)\"?",
             isPresented: $isShowingDeleteConfirmation,
@@ -346,7 +355,7 @@ struct AudioMixerTrackCardView: View {
                     .foregroundStyle(.white)
                     .lineLimit(2)
 
-                Text(isPlaying ? "Playing now" : (isSelected ? "Ready to play" : "Tap play to preview"))
+                Text(isPlaying ? "Playing now" : "")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
             }
@@ -419,7 +428,7 @@ struct AudioMixerTrackCardView: View {
         }
 
         if isSelected {
-            return Color.white.opacity(0.80)
+            return Color.green.opacity(0.80)
         }
 
         return Color.white.opacity(preferredMode == .light ? 0.24 : 0.34)
