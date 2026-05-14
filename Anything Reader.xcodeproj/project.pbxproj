@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1PH0G002FA0000000000001 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A1PH0G002FA0000000000002 /* PostHog */; };
+		D1215BC12FB59B980064E318 /* .env in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC02FB59B980064E318 /* .env */; };
+		D1215BC42FB59BD40064E318 /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC22FB59BD40064E318 /* AGENTS.md */; };
+		D1215BC52FB59BD40064E318 /* AI.md in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC32FB59BD40064E318 /* AI.md */; };
 		D12D9C462FA1802E001EC25F /* hero_image.png in Resources */ = {isa = PBXBuildFile; fileRef = D12D9C452FA1802E001EC25F /* hero_image.png */; };
 		D15A58362FAEAB21005A9DEA /* FeedKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1F6B1A11AA1000000000006 /* FeedKit */; };
 		D15A59202FAFDC6E005A9DEA /* logo.png in Resources */ = {isa = PBXBuildFile; fileRef = D15A591F2FAFDC6E005A9DEA /* logo.png */; };
@@ -53,6 +57,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D1215BC02FB59B980064E318 /* .env */ = {isa = PBXFileReference; lastKnownFileType = text; path = .env; sourceTree = "<group>"; };
+		D1215BC22FB59BD40064E318 /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
+		D1215BC32FB59BD40064E318 /* AI.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AI.md; sourceTree = "<group>"; };
 		D12D9C452FA1802E001EC25F /* hero_image.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = hero_image.png; sourceTree = "<group>"; };
 		D15A591F2FAFDC6E005A9DEA /* logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = logo.png; sourceTree = "<group>"; };
 		D1850FC62F9C1990008E9FF8 /* Anything Reader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Anything Reader.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -100,6 +107,7 @@
 				D18512352FAF0000008E9FF8 /* onnxruntime in Frameworks */,
 				D18512302F9F3453008E9FF8 /* KokoroSwift in Frameworks */,
 				D18512332F9F3453008E9FF8 /* STTextView in Frameworks */,
+				A1PH0G002FA0000000000001 /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -123,6 +131,9 @@
 		D1850FBD2F9C1990008E9FF8 = {
 			isa = PBXGroup;
 			children = (
+				D1215BC22FB59BD40064E318 /* AGENTS.md */,
+				D1215BC32FB59BD40064E318 /* AI.md */,
+				D1215BC02FB59B980064E318 /* .env */,
 				D18510392F9D67AE008E9FF8 /* Assets */,
 				D1850FC82F9C1990008E9FF8 /* Anything Reader */,
 				D1850FD82F9C1991008E9FF8 /* Anything ReaderTests */,
@@ -193,6 +204,7 @@
 				D18511692F9F2B01008E9FF8 /* STTextView */,
 				D18511672F9F2B01008E9FF8 /* ZIPFoundation */,
 				A1F6B1A11AA1000000000006 /* FeedKit */,
+				A1PH0G002FA0000000000002 /* PostHog */,
 			);
 			productName = "Anything Reader";
 			productReference = D1850FC62F9C1990008E9FF8 /* Anything Reader.app */;
@@ -277,13 +289,14 @@
 			mainGroup = D1850FBD2F9C1990008E9FF8;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				D18510622F9F2000008E9FF8 /* XCRemoteSwiftPackageReference "kokoro-ios" */,
+				D18510622F9F2000008E9FF8 /* XCLocalSwiftPackageReference "Packages/KokoroSwift" */,
 				D18510522F9F1000008E9FF8 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				D185116B2F9F2B01008E9FF8 /* XCRemoteSwiftPackageReference "moonshine-swift" */,
 				D185116C2FAF0000008E9FF8 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
 				D18511682F9F2B01008E9FF8 /* XCRemoteSwiftPackageReference "STTextView" */,
 				D18511592F9EC5D1008E9FF8 /* XCRemoteSwiftPackageReference "mlx-swift" */,
 				A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */,
+				A1PH0G002FA0000000000003 /* XCLocalSwiftPackageReference "Packages/posthog-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D1850FC72F9C1990008E9FF8 /* Products */;
@@ -304,6 +317,9 @@
 			files = (
 				D185103D2F9D67F9008E9FF8 /* voices-v1.0.bin in Resources */,
 				D12D9C462FA1802E001EC25F /* hero_image.png in Resources */,
+				D1215BC42FB59BD40064E318 /* AGENTS.md in Resources */,
+				D1215BC52FB59BD40064E318 /* AI.md in Resources */,
+				D1215BC12FB59B980064E318 /* .env in Resources */,
 				D15A59202FAFDC6E005A9DEA /* logo.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -685,6 +701,17 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		A1PH0G002FA0000000000003 /* XCLocalSwiftPackageReference "Packages/posthog-ios" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Packages/posthog-ios";
+		};
+		D18510622F9F2000008E9FF8 /* XCLocalSwiftPackageReference "Packages/KokoroSwift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/KokoroSwift;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -701,10 +728,6 @@
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.9.20;
 			};
-		};
-		D18510622F9F2000008E9FF8 /* XCLocalSwiftPackageReference "KokoroSwift" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/KokoroSwift;
 		};
 		D18511592F9EC5D1008E9FF8 /* XCRemoteSwiftPackageReference "mlx-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -746,9 +769,14 @@
 			package = A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */;
 			productName = FeedKit;
 		};
+		A1PH0G002FA0000000000002 /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1PH0G002FA0000000000003 /* XCLocalSwiftPackageReference "Packages/posthog-ios" */;
+			productName = PostHog;
+		};
 		D18511652F9F2B01008E9FF8 /* KokoroSwift */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = D18510622F9F2000008E9FF8 /* XCLocalSwiftPackageReference "KokoroSwift" */;
+			package = D18510622F9F2000008E9FF8 /* XCLocalSwiftPackageReference "Packages/KokoroSwift" */;
 			productName = KokoroSwift;
 		};
 		D18511662F9F2B01008E9FF8 /* MLX */ = {

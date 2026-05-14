@@ -8,6 +8,7 @@
 import Foundation
 import AppKit
 import AVFoundation
+import PostHog
 import SwiftData
 import SwiftUI
 import Translation
@@ -528,6 +529,8 @@ struct ContentView: View {
         .onChange(of: kokoroModelStore.status) { _, _ in
             ttsCoordinator.refreshInstallationStatus()
             if case .installed(let providerID) = ttsCoordinator.availabilityStatus {
+                // PostHog: Track TTS model download
+                PostHogSDK.shared.capture("tts_model_downloaded", properties: ["provider": providerID.rawValue])
                 successToastMessage = "\(providerID.title) model downloaded and ready"
             } else if case .failed(let message) = ttsCoordinator.availabilityStatus {
                 successToastMessage = "TTS model download failed: \(message)"
@@ -537,6 +540,8 @@ struct ContentView: View {
         .onChange(of: moonshineModelStore.status) { _, _ in
             ttsCoordinator.refreshInstallationStatus()
             if case .installed(let providerID) = ttsCoordinator.availabilityStatus {
+                // PostHog: Track TTS model download
+                PostHogSDK.shared.capture("tts_model_downloaded", properties: ["provider": providerID.rawValue])
                 successToastMessage = "\(providerID.title) model downloaded and ready"
             } else if case .failed(let message) = ttsCoordinator.availabilityStatus {
                 successToastMessage = "TTS model download failed: \(message)"
@@ -546,6 +551,8 @@ struct ContentView: View {
         .onChange(of: supertonicModelStore.status) { _, _ in
             ttsCoordinator.refreshInstallationStatus()
             if case .installed(let providerID) = ttsCoordinator.availabilityStatus {
+                // PostHog: Track TTS model download
+                PostHogSDK.shared.capture("tts_model_downloaded", properties: ["provider": providerID.rawValue])
                 successToastMessage = "\(providerID.title) model downloaded and ready"
             } else if case .failed(let message) = ttsCoordinator.availabilityStatus {
                 successToastMessage = "TTS model download failed: \(message)"
@@ -1334,6 +1341,12 @@ struct ContentView: View {
                 entry.lastOpened = .now
                 try modelContext.save()
 
+                // PostHog: Track document summarization success
+                PostHogSDK.shared.capture("document_summarized", properties: [
+                    "source_kind": entry.sourceKind.rawValue,
+                    "file_type": entry.fileExtension,
+                ])
+
                 summarySuccessEntry = entry
                 summaryGenerationSuccess = SummaryGenerationSuccess(title: entry.title)
                 playSuccessTone()
@@ -1464,6 +1477,11 @@ struct ContentView: View {
             return
         }
 
+        // PostHog: Track paste text import
+        PostHogSDK.shared.capture("paste_text_imported", properties: [
+            "character_count": trimmedText.count,
+        ])
+
         pastedTitle = ""
         pastedText = ""
         isShowingPasteSheet = false
@@ -1493,6 +1511,13 @@ struct ContentView: View {
         }
 
         let resolvedTitle = ReaderImportSupport.browserTitle(for: message, existingEntries: libraryEntries)
+
+        // PostHog: Track browser extension import
+        PostHogSDK.shared.capture("browser_extension_imported", properties: [
+            "character_count": trimmedText.count,
+            "site": message.site ?? "unknown",
+            "with_summarization": message.summarize == true,
+        ])
 
         Task { @MainActor in
             do {
@@ -1647,6 +1672,12 @@ struct ContentView: View {
             defer {
                 try? FileManager.default.removeItem(at: tempURL)
             }
+
+            // PostHog: Track RSS article read-aloud import
+            PostHogSDK.shared.capture("rss_article_imported", properties: [
+                "article_title": draft.title,
+                "character_count": draft.body.count,
+            ])
 
             await preparePendingImport(from: tempURL, shouldAutoPlay: true, importCategoryName: "RSS Feed")
         } catch {
@@ -1888,6 +1919,18 @@ struct ContentView: View {
             try modelContext.save()
 
             let shouldAutoPlay = context.shouldAutoPlay
+
+            // PostHog: Track successful document import
+            PostHogSDK.shared.capture("document_imported", properties: [
+                "file_type": context.fileExtension,
+                "source_kind": context.sourceKind.rawValue,
+                "page_count": ingest.pageCount,
+                "chapter_count": ingest.chapterCount,
+                "file_size_bytes": ingest.fileSizeBytes,
+                "was_translated": isTranslateDocument,
+                "was_summarized": context.shouldSummarize,
+                "document_language": ingest.textLanguage.rawValue,
+            ])
 
             await MainActor.run {
                 clearPendingImportState(showing: "\(placeholderEntry.title) is ready to play.")
@@ -2336,6 +2379,15 @@ struct ContentView: View {
             modelContext.insert(entry)
             try modelContext.save()
 
+            // PostHog: Track free book download
+            PostHogSDK.shared.capture("free_book_downloaded", properties: [
+                "book_title": entry.title,
+                "book_id": book.id,
+                "was_translated": translateBook,
+                "page_count": ingest.pageCount,
+                "chapter_count": ingest.chapterCount,
+            ])
+
             freeBookDownloadSuccess = FreeBookDownloadSuccess(title: entry.title)
             playSuccessTone()
         } catch {
@@ -2706,6 +2758,16 @@ struct ContentView: View {
         // chunked playback path.
         let voice = ttsCoordinator.activeVoiceSelection()
 
+        // PostHog: Track document playback start
+        PostHogSDK.shared.capture("document_played", properties: [
+            "source_kind": entry.sourceKind.rawValue,
+            "file_type": entry.fileExtension,
+            "tts_provider": voice.providerID.rawValue,
+            "tts_voice": voice.voiceName,
+            "resume_progress": resumeProgress,
+            "is_summary": textFileURL?.path == entry.summarizedTextFileURL?.path,
+        ])
+
         // Start the chunked speech pipeline and feed it callbacks for progress,
         // completion, and failures.
         readerPlaybackService.play(
@@ -2788,6 +2850,14 @@ struct ContentView: View {
         }
 
         let resumeTime = entry.generatedAudioPlaybackPosition
+
+        // PostHog: Track generated audio playback start
+        PostHogSDK.shared.capture("generated_audio_played", properties: [
+            "source_kind": entry.sourceKind.rawValue,
+            "file_type": entry.fileExtension,
+            "voice_name": entry.generatedAudioVoiceName ?? "unknown",
+            "duration_seconds": entry.generatedAudioDurationSeconds ?? 0,
+        ])
 
         generatedAudioPlaybackService.play(
             fileURL: fileURL,
@@ -3214,6 +3284,15 @@ struct ContentView: View {
             entry.generatedAudioDurationSeconds = await generatedAudioDurationSeconds(for: audioFileURL)
             entry.generatedAudioPlaybackPositionSeconds = 0
             try? modelContext.save()
+
+            // PostHog: Track audio file generation success
+            PostHogSDK.shared.capture("audio_file_generated", properties: [
+                "source_kind": entry.sourceKind.rawValue,
+                "file_type": entry.fileExtension,
+                "tts_provider": providerID.rawValue,
+                "tts_voice": voice.voiceName,
+                "duration_seconds": entry.generatedAudioDurationSeconds ?? 0,
+            ])
 
             pendingAudioGenerationEntry = nil
             pendingAudioVoiceName = KokoroVoiceCatalog.defaultVoiceName

@@ -7,6 +7,61 @@
 
 import SwiftUI
 import SwiftData
+import PostHog
+
+// PostHog configuration is read from the Xcode scheme first, then from the bundled .env file.
+enum PostHogEnv: String {
+    case projectToken = "POSTHOG_PROJECT_TOKEN"
+    case host = "POSTHOG_HOST"
+
+    var value: String? {
+        if let value = ProcessInfo.processInfo.environment[rawValue], !value.isEmpty {
+            return value
+        }
+        return Self.bundleValue(for: rawValue)
+    }
+
+    private static func bundleValue(for key: String) -> String? {
+        guard let url = Bundle.main.url(forResource: ".env", withExtension: nil),
+              let contents = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+
+        for line in contents.split(whereSeparator: \.isNewline) {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLine.isEmpty, !trimmedLine.hasPrefix("#") else {
+                continue
+            }
+
+            let candidateLine = trimmedLine.hasPrefix("export ") ? String(trimmedLine.dropFirst(7)) : trimmedLine
+            guard let equalsIndex = candidateLine.firstIndex(of: "=") else {
+                continue
+            }
+
+            let entryKey = candidateLine[..<equalsIndex].trimmingCharacters(in: .whitespaces)
+            guard entryKey == key else {
+                continue
+            }
+
+            let entryValue = String(candidateLine[candidateLine.index(after: equalsIndex)...]
+                .trimmingCharacters(in: .whitespaces))
+            return unquote(entryValue)
+        }
+
+        return nil
+    }
+
+    private static func unquote(_ value: String) -> String {
+        guard value.count >= 2,
+              let first = value.first,
+              let last = value.last,
+              (first == "\"" && last == "\"") || (first == "'" && last == "'") else {
+            return value
+        }
+
+        return String(value.dropFirst().dropLast())
+    }
+}
 
 // Application entry point that wires the persistent store, startup services, and root content view.
 @main
@@ -31,6 +86,16 @@ struct Anything_ReaderApp: App {
 
     // Performs one-time startup wiring before the first window appears.
     init() {
+        // PostHog: Initialize analytics SDK
+        if let projectToken = PostHogEnv.projectToken.value,
+           let host = PostHogEnv.host.value {
+            let config = PostHogConfig(projectToken: projectToken, host: host)
+            config.captureApplicationLifecycleEvents = true
+            PostHogSDK.shared.setup(config)
+        } else {
+            print("PostHog is disabled because POSTHOG_PROJECT_TOKEN or POSTHOG_HOST is not set.")
+        }
+
         StartupLaunchService.shared.registerAtLoginOnFirstInstallIfNeeded()
         _ = RSSPushNotificationService.shared
     }
