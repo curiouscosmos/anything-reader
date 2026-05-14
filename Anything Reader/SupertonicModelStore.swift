@@ -29,7 +29,7 @@ enum SupertonicDownloadCatalog {
         .init(
             localFileName: "supertonic-3",
             displayName: "Supertonic",
-            qualityLabel: "31-language ONNX bundle",
+            qualityLabel: "66M fastest & lightest, 31-languages, 6-voices",
             downloadURL: URL(string: "https://sandalbar.s3.us-west-2.amazonaws.com/TTS/superstonic.zip")!,
             isRecommended: true
         )

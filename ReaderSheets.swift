@@ -800,6 +800,17 @@ struct ReaderTTSDownloadSheet: View {
 
                         VStack(alignment: .leading, spacing: 12) {
                             providerRow(
+                                providerID: .supertonic,
+                                subtitle: SupertonicDownloadCatalog.defaultOption.subtitle,
+                                isInstalled: supertonicModelStore.isInstalled,
+                                isActive: ttsCoordinator.activeProviderID == .supertonic,
+                                isDownloading: isSupertonicDownloading,
+                                onDownload: { supertonicModelStore.downloadModel(option: SupertonicDownloadCatalog.defaultOption) },
+                                onActivate: { ttsCoordinator.setActiveProvider(.supertonic) },
+                                onDelete: { pendingDeleteProviderID = .supertonic }
+                            )
+                            
+                            providerRow(
                                 providerID: .kokoro,
                                 subtitle: KokoroDownloadCatalog.defaultOption.subtitle,
                                 isInstalled: kokoroModelStore.isInstalled,
@@ -819,17 +830,6 @@ struct ReaderTTSDownloadSheet: View {
                                 onDownload: { moonshineModelStore.downloadModel(option: MoonshineDownloadCatalog.defaultOption) },
                                 onActivate: { ttsCoordinator.setActiveProvider(.moonshine) },
                                 onDelete: { pendingDeleteProviderID = .moonshine }
-                            )
-
-                            providerRow(
-                                providerID: .supertonic,
-                                subtitle: SupertonicDownloadCatalog.defaultOption.subtitle,
-                                isInstalled: supertonicModelStore.isInstalled,
-                                isActive: ttsCoordinator.activeProviderID == .supertonic,
-                                isDownloading: isSupertonicDownloading,
-                                onDownload: { supertonicModelStore.downloadModel(option: SupertonicDownloadCatalog.defaultOption) },
-                                onActivate: { ttsCoordinator.setActiveProvider(.supertonic) },
-                                onDelete: { pendingDeleteProviderID = .supertonic }
                             )
                         }
                     }
@@ -897,7 +897,7 @@ struct ReaderTTSDownloadSheet: View {
             Text("Download TTS Model")
                 .font(.title2.weight(.bold))
 
-        Text("Choose one or both offline TTS providers. The active provider can be switched at anytime without redownloading the other model.")
+        Text("Choose any offline TTS provider. The active provider can be switched at anytime without redownloading the other model.")
             .foregroundStyle(.secondary)
 
             Text("Models are listed independently so Kokoro, Moonshine, and Supertonic can be installed side by side.")
@@ -906,7 +906,7 @@ struct ReaderTTSDownloadSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(headerBackground, in: Rectangle())
+        .background(headerBackground, in: RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
@@ -991,7 +991,7 @@ struct ReaderTTSDownloadSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(rowBackground, in: Rectangle())
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func providerDescription(for providerID: ReaderTTSProviderID) -> String {

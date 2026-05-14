@@ -29,9 +29,9 @@ enum MoonshineDownloadCatalog {
         .init(
             localFileName: "moonshine.safetensors",
             displayName: "Moonshine",
-            qualityLabel: "Good quality",
+            qualityLabel: "250M good quality, 8-languages, 45-voices",
             downloadURL: URL(string: "https://sandalbar.s3.us-west-2.amazonaws.com/TTS/moonshine.safetensors")!,
-            isRecommended: true
+            isRecommended: false
         )
     ]
 

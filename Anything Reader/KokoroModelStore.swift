@@ -30,9 +30,9 @@ enum KokoroDownloadCatalog {
         .init(
             localFileName: "kokoro_q8f16.safetensors",
             displayName: "Kokoro",
-            qualityLabel: "Highest quality",
+            qualityLabel: "88M best quality, 8-languages, 45-voices, most accurate",
             downloadURL: URL(string: "https://sandalbar.s3.us-west-2.amazonaws.com/Kokoro/Kokoro-82M-bf16-mlx.safetensors")!,
-            isRecommended: true,
+            isRecommended: false,
             isRuntimeCompatible: true,
             qualityRank: 0
         )
