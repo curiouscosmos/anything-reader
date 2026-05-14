@@ -7,20 +7,6 @@
 
 import SwiftUI
 import SwiftData
-import PostHog
-
-// Reads PostHog configuration from Xcode scheme environment variables at launch.
-enum PostHogEnv: String {
-    case projectToken = "POSTHOG_PROJECT_TOKEN"
-    case host = "POSTHOG_HOST"
-
-    var value: String {
-        guard let value = ProcessInfo.processInfo.environment[rawValue] else {
-            fatalError("Set \(rawValue) in the Xcode scheme Run environment variables.")
-        }
-        return value
-    }
-}
 
 // Application entry point that wires the persistent store, startup services, and root content view.
 @main
@@ -45,11 +31,6 @@ struct Anything_ReaderApp: App {
 
     // Performs one-time startup wiring before the first window appears.
     init() {
-        // PostHog: Initialize analytics SDK
-        let config = PostHogConfig(apiKey: PostHogEnv.projectToken.value, host: PostHogEnv.host.value)
-        config.captureApplicationLifecycleEvents = true
-        PostHogSDK.shared.setup(config)
-
         StartupLaunchService.shared.registerAtLoginOnFirstInstallIfNeeded()
         _ = RSSPushNotificationService.shared
     }

@@ -11,7 +11,6 @@
 import AVFoundation
 import Combine
 import Foundation
-import PostHog
 import SwiftData
 
 // Lightweight progress payload for the narration player UI.
@@ -123,9 +122,6 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         ReaderPlaybackEventCenter.post(
             ReaderPlaybackEvent(kind: .didStop, source: .reader)
         )
-
-        // PostHog: Track manual playback stop
-        PostHogSDK.shared.capture("playback_stopped")
     }
 
     // Persists the player volume and updates the active audio node immediately.
@@ -184,10 +180,6 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
                     self.isBufferingFirstChunk = false
                     self.activePlaybackIdentity = nil
                     self.playbackSession = nil
-                    // PostHog: Track playback failure — no readable text
-                    PostHogSDK.shared.capture("playback_failed", properties: [
-                        "reason": "no_readable_text",
-                    ])
                     onFailure("No readable text was found in this file.")
                 }
                 return
@@ -258,14 +250,6 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
             ReaderPlaybackEventCenter.post(
                 ReaderPlaybackEvent(kind: .didStart, source: .reader)
             )
-
-            // PostHog: Track narration playback started
-            await MainActor.run {
-                PostHogSDK.shared.capture("playback_started", properties: [
-                    "tts_provider": voice.providerID.rawValue,
-                    "voice_name": voice.voiceName,
-                ])
-            }
 
             // Walk the chunk list in order, synthesizing and scheduling audio as needed.
             var scheduledChunkCount = 0
@@ -534,10 +518,6 @@ final class ReaderPlaybackService: NSObject, ObservableObject {
         ReaderPlaybackEventCenter.post(
             ReaderPlaybackEvent(kind: .didFinish, source: .reader)
         )
-
-        // PostHog: Track natural playback completion
-        PostHogSDK.shared.capture("playback_completed")
-
         onFinished()
     }
 

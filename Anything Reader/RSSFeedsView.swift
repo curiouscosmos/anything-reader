@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import PostHog
 import SwiftUI
 
 struct RSSFeedsView: View {
@@ -406,12 +405,6 @@ struct RSSFeedsView: View {
                 urlString: trimmed,
                 pushNotificationsEnabled: newFeedPushNotificationsEnabled
             )
-
-            // PostHog: Track RSS feed subscription
-            PostHogSDK.shared.capture("rss_feed_subscribed", properties: [
-                "push_notifications_enabled": newFeedPushNotificationsEnabled,
-            ])
-
             feedURLString = ""
             newFeedPushNotificationsEnabled = false
             onFeedSaved()

@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import PostHog
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
@@ -55,12 +54,6 @@ struct AudioMixerView: View {
                 guard let sourceURL = urls.first else { return }
                 do {
                     let importedTrack = try libraryService.importAudioFile(from: sourceURL)
-
-                    // PostHog: Track custom audio track import
-                    PostHogSDK.shared.capture("audio_mixer_track_imported", properties: [
-                        "track_title": importedTrack.title,
-                    ])
-
                     showUploadSuccess(message: "\(importedTrack.title) added to Audio Mixer")
                 } catch {
                     importAlertMessage = error.localizedDescription
