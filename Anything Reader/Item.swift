@@ -319,6 +319,7 @@ final class LibraryEntry {
     var readingJumpTargetsData: Data?
     var currentReadingPositionIndex: Int?
     var currentReadingPositionTotalCount: Int?
+    var lastPlaybackChunkIndex: Int?
     var progress: Double
     var lastOpened: Date
     var createdAt: Date
@@ -357,6 +358,7 @@ final class LibraryEntry {
         readingJumpTargets: [ReaderJumpTarget] = [],
         currentReadingPositionIndex: Int? = nil,
         currentReadingPositionTotalCount: Int? = nil,
+        lastPlaybackChunkIndex: Int? = nil,
         progress: Double = 0.0,
         lastOpened: Date = .now,
         createdAt: Date = .now
@@ -394,6 +396,7 @@ final class LibraryEntry {
         self.readingJumpTargetsData = Self.encodeJumpTargets(readingJumpTargets)
         self.currentReadingPositionIndex = currentReadingPositionIndex
         self.currentReadingPositionTotalCount = currentReadingPositionTotalCount
+        self.lastPlaybackChunkIndex = lastPlaybackChunkIndex
         self.progress = progress
         self.lastOpened = lastOpened
         self.createdAt = createdAt

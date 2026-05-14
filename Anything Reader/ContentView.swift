@@ -2587,6 +2587,13 @@ struct ContentView: View {
         // state and is about to start a different source.
         audioMixerPlaybackService.beginReaderPlaybackTransition()
 
+        // Persist the chunk we were actually on before the old session is torn
+        // down so a later reopen can resume at the same chunk instead of the
+        // broader chapter/page bucket.
+        if priorEntry != nil {
+            persistPlayerProgress(force: true)
+        }
+
         // Stop the chunk-based reader playback engine before we reconfigure the
         // new entry. This prevents old tasks from continuing to feed audio.
         readerPlaybackService.stop()
@@ -2619,10 +2626,6 @@ struct ContentView: View {
         playbackSessionToken = UUID()
         let sessionToken = playbackSessionToken
 
-        // Normalize the source text so chunking and resume calculations use the
-        // same text representation as the reader playback pipeline.
-        let normalizedText = ReaderPlaybackChunkService.normalizedText(for: textFileURL ?? entry.normalizedTextFileURL) ?? ""
-
         // The current implementation treats duration as unknown here; it is
         // kept at zero because progress is tracked from actual playback events.
         let duration = 0
@@ -2640,7 +2643,7 @@ struct ContentView: View {
         // For normal narration we can resume by reading the stored jump target
         // or by mapping the saved progress fraction back to a reading position.
         let resumeTargetIndex = persistProgress && !isSummaryPlayback
-            ? (entry.currentReadingPositionIndex ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: resumeProgress))
+            ? (entry.lastPlaybackChunkIndex ?? entry.currentReadingPositionIndex ?? ReaderPlaybackSupport.readingPositionIndex(for: entry, progress: resumeProgress))
             : nil
 
         // Split the normalized text into playback chunks for the reader engine.
@@ -2649,6 +2652,7 @@ struct ContentView: View {
         // Pick the first chunk to start from, preferring an explicit chunk
         // override, then a saved reading position, then the progress fraction.
         let startingChunkIndex = startingChunkIndexOverride
+            ?? entry.lastPlaybackChunkIndex
             ?? resumeTargetIndex.flatMap { ReaderPlaybackChunkService.chunkIndex(for: $0, in: entry) }
             ?? ReaderPlaybackChunkService.chunkIndex(for: resumeProgress, chunkCount: chunks.count)
 
@@ -2669,6 +2673,7 @@ struct ContentView: View {
         // service and the on-screen progress UI.
         playbackChunks = chunks
         playbackChunkIndex = startingChunkIndex
+        logPlaybackChunkIndex("start", entry: entry, chunkIndex: startingChunkIndex)
 
         // Save the current elapsed position before playback starts so the
         // persistence task has a stable baseline.
@@ -2721,6 +2726,7 @@ struct ContentView: View {
                 self.playbackState.progress = 0
                 self.playbackState.elapsedSeconds = 0
                 self.playbackState.isPlaying = false
+                self.logPlaybackChunkIndex("stop", entry: entry, chunkIndex: self.playbackChunkIndex)
                 self.audioMixerPlaybackService.endReaderPlaybackTransition()
                 if self.activePlaybackSummaryFilePath != nil {
                     entry.summarizedTextPlaybackPositionSeconds = 0
@@ -2736,6 +2742,7 @@ struct ContentView: View {
                 guard self.playbackSessionToken == sessionToken else { return }
                 self.stopPlaybackProgressPersistenceTask()
                 self.playbackState.isPlaying = false
+                self.logPlaybackChunkIndex("stop", entry: self.activeEntry, chunkIndex: self.playbackChunkIndex)
                 self.audioMixerPlaybackService.endReaderPlaybackTransition()
                 self.uploadAlertMessage = message
             }
@@ -2746,6 +2753,15 @@ struct ContentView: View {
         if persistProgress {
             startPlaybackProgressPersistenceTask(for: sessionToken)
         }
+    }
+
+    // Prints the current chunk index so playback transitions are easy to trace in
+    // the console without digging through progress persistence logs.
+    @MainActor
+    private func logPlaybackChunkIndex(_ action: String, entry: LibraryEntry?, chunkIndex: Int?) {
+        let title = entry?.title ?? "unknown"
+        let indexText = chunkIndex.map(String.init) ?? "n/a"
+        print("[Playback] \(action) | title=\(title) | chunkIndex=\(indexText)")
     }
 
     @MainActor
@@ -2800,12 +2816,14 @@ struct ContentView: View {
         print("Playing file now ->")
         if playbackState.isPlaying {
             print("Playing file now -> 1")
+            logPlaybackChunkIndex("stop", entry: activeEntry, chunkIndex: playbackChunkIndex)
             playbackState.isPlaying = false
             readerPlaybackService.pause()
             stopPlaybackProgressPersistenceTask()
             persistPlayerProgress(force: true)
         } else if readerPlaybackService.isPaused, activeEntry != nil {
             print("Playing file now -> 2")
+            logPlaybackChunkIndex("resume", entry: activeEntry, chunkIndex: playbackChunkIndex)
             readerPlaybackService.resume()
             playbackState.isPlaying = true
             if activePlaybackShouldPersistProgress || activePlaybackSummaryFilePath != nil {
@@ -2941,6 +2959,7 @@ struct ContentView: View {
 
         playbackProgressLastSavedElapsedSeconds = elapsedSeconds
         activeEntry.progress = playbackState.progress
+        activeEntry.lastPlaybackChunkIndex = playbackChunkIndex
         syncReadingPositionState(for: activeEntry, progress: playbackState.progress, chunkIndex: playbackChunkIndex)
         activeEntry.lastOpened = .now
         try? modelContext.save()
@@ -3362,6 +3381,9 @@ struct ContentView: View {
 
         entry.currentReadingPositionIndex = index
         entry.currentReadingPositionTotalCount = totalCount
+        if let chunkIndex {
+            entry.lastPlaybackChunkIndex = chunkIndex
+        }
         playbackState.readingPositionIndexOverride = index
         playbackState.readingPositionTotalCount = totalCount
         playbackState.readingPositionText = entry.currentReadingPositionDisplayText ?? ReaderPlaybackSupport.readingPositionText(for: entry, progress: progress)
