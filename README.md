@@ -1,8 +1,8 @@
-![Anything Reader banner](Assets/banner.png)
-
 # Anything Reader
 
 [![Download on the Mac App Store](Assets/mac_app_store.png)](https://apps.apple.com/us/app/anything-reader-ai-read-aloud/id6772348423)
+
+![Anything Reader banner](Assets/banner.png)
 
 Anything Reader is a local-first macOS app for turning documents, pasted text, RSS items, and browser clips into a persistent reading and listening library.
 
