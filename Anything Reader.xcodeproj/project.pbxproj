@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1PH0G002FA0000000000001 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A1PH0G002FA0000000000002 /* PostHog */; };
 		A15E00012FB5C0DE00000001 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = A15E00012FB5C0DE00000002 /* Sentry */; };
+		A1PH0G002FA0000000000001 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = A1PH0G002FA0000000000002 /* PostHog */; };
 		D1215BC12FB59B980064E318 /* .env in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC02FB59B980064E318 /* .env */; };
 		D1215BC42FB59BD40064E318 /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC22FB59BD40064E318 /* AGENTS.md */; };
 		D1215BC52FB59BD40064E318 /* AI.md in Resources */ = {isa = PBXBuildFile; fileRef = D1215BC32FB59BD40064E318 /* AI.md */; };
@@ -188,6 +188,7 @@
 				D1850FC32F9C1990008E9FF8 /* Frameworks */,
 				D185104F2F9F0000008E9FF8 /* CopyFiles */,
 				D1850FC42F9C1990008E9FF8 /* Resources */,
+				D15A59222FB67000005A9DEA /* Strip Quarantine Attributes */,
 			);
 			buildRules = (
 			);
@@ -343,6 +344,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D15A59222FB67000005A9DEA /* Strip Quarantine Attributes */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Strip Quarantine Attributes";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "APP_PATH=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nif [ -d \"$APP_PATH\" ]; then\n    /usr/bin/xattr -cr \"$APP_PATH\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		D1850FC22F9C1990008E9FF8 /* Sources */ = {
@@ -514,11 +537,12 @@
 				CODE_SIGN_ENTITLEMENTS = "Anything Reader/Anything Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YGRC778N52;
-				ENABLE_APP_SANDBOX = NO;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 5TD3Z8LZ2H;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
@@ -533,7 +557,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "AR.Anything-Reader-temp";
+				PRODUCT_BUNDLE_IDENTIFIER = "AR.Anything-Reader";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -553,11 +577,12 @@
 				CODE_SIGN_ENTITLEMENTS = "Anything Reader/Anything Reader.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YGRC778N52;
-				ENABLE_APP_SANDBOX = NO;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 5TD3Z8LZ2H;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
@@ -572,7 +597,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "AR.Anything-Reader-temp";
+				PRODUCT_BUNDLE_IDENTIFIER = "AR.Anything-Reader";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -590,7 +615,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 7HNL5V6673;
+				DEVELOPMENT_TEAM = 5TD3Z8LZ2H;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.4;
 				MARKETING_VERSION = 1.0;
@@ -611,7 +636,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 7HNL5V6673;
+				DEVELOPMENT_TEAM = 5TD3Z8LZ2H;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.4;
 				MARKETING_VERSION = 1.0;
@@ -631,7 +656,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 7HNL5V6673;
+				DEVELOPMENT_TEAM = 5TD3Z8LZ2H;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "AR.Anything-ReaderUITests";
@@ -650,7 +675,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 7HNL5V6673;
+				DEVELOPMENT_TEAM = 5TD3Z8LZ2H;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "AR.Anything-ReaderUITests";
@@ -717,20 +742,22 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/nmdias/FeedKit.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 10.1.1;
-			};
-		};
 		A15E00012FB5C0DE00000003 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/getsentry/sentry-cocoa.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 9.5.1;
+			};
+			traits = (
+			);
+		};
+		A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nmdias/FeedKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.1.1;
 			};
 		};
 		D18510522F9F1000008E9FF8 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
@@ -776,6 +803,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A15E00012FB5C0DE00000002 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A15E00012FB5C0DE00000003 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
 		A1F6B1A11AA1000000000006 /* FeedKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A1F6B1A11AA1000000000005 /* XCRemoteSwiftPackageReference "FeedKit" */;
@@ -785,11 +817,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1PH0G002FA0000000000003 /* XCLocalSwiftPackageReference "Packages/posthog-ios" */;
 			productName = PostHog;
-		};
-		A15E00012FB5C0DE00000002 /* Sentry */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A15E00012FB5C0DE00000003 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
-			productName = Sentry;
 		};
 		D18511652F9F2B01008E9FF8 /* KokoroSwift */ = {
 			isa = XCSwiftPackageProductDependency;

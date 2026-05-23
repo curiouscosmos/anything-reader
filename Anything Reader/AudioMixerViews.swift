@@ -207,7 +207,7 @@ struct AudioMixerView: View {
                             isPlaying: playbackService.isPlayingTrack(track),
                             canDelete: !track.isBundled,
                             onSelect: {
-                                playbackService.select(track: track)
+                                playbackService.play(track: track)
                             },
                             onPlayPause: {
                                 playbackService.togglePlayback(for: track)
