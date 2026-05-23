@@ -100,6 +100,6 @@ We may update this privacy policy from time to time. When we do, we will revise 
 
 If you have questions about this privacy policy or our data practices, contact:
 
-- Email: support@example.com
+- Email: support@marfells.com
 
 Replace the contact email above with your real support address before publishing.
