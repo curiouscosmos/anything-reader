@@ -124,15 +124,29 @@ final class AudioMixerLibraryService: ObservableObject {
         guard let modelContext else {
             throw AudioMixerLibraryError.databaseUnavailable
         }
+        guard sourceURL.isFileURL else {
+            throw AudioMixerLibraryError.trackMissing
+        }
+
+        let didAccessSecurityScope = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccessSecurityScope {
+                sourceURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
         guard FileManager.default.fileExists(atPath: sourceURL.path) else {
             throw AudioMixerLibraryError.trackMissing
         }
 
-        try validatePlayableAudioFile(at: sourceURL)
-
         let destinationDirectory = try tracksDirectoryURL()
         let destinationURL = try uniqueDestinationURL(for: sourceURL, in: destinationDirectory)
         try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+
+        guard isPlayableAudioFile(at: destinationURL) else {
+            try? FileManager.default.removeItem(at: destinationURL)
+            throw AudioMixerLibraryError.invalidAudioFile
+        }
 
         let nextOrder = (tracks.map(\.sortOrder).max() ?? -1) + 1
         let newTrack = AudioMixerTrack(
@@ -361,12 +375,6 @@ final class AudioMixerLibraryService: ObservableObject {
                 return lhs.isBundled && !rhs.isBundled
             }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-        }
-    }
-
-    private func validatePlayableAudioFile(at url: URL) throws {
-        guard isPlayableAudioFile(at: url) else {
-            throw AudioMixerLibraryError.invalidAudioFile
         }
     }
 

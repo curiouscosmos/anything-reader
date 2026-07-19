@@ -37,14 +37,8 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 
     var colorScheme: ColorScheme? {
-        switch self {
-        case .system:
-            return nil
-        case .light:
-            return .light
-        case .dark:
-            return .dark
-        }
+        // The app is locked to dark mode, so every appearance mode resolves to dark.
+        return .dark
     }
 }
 

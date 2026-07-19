@@ -26,6 +26,12 @@ actor BrowserNativeMessagingService {
 
     // Installs the host binary and manifests if the browser bridge is not yet set up.
     func installHostIfNeeded() throws {
+        guard !isAppSandboxed else {
+            // Sandboxed builds cannot invoke xcrun to compile the helper at runtime.
+            // Treat browser host installation as unavailable instead of surfacing a startup error.
+            return
+        }
+
         let hostExecutableURL = try ensureHostExecutable()
 
         let firefoxManifest = FirefoxNativeHostManifest(
@@ -238,6 +244,10 @@ actor BrowserNativeMessagingService {
         }
 
         try data.write(to: url, options: [.atomic])
+    }
+
+    private var isAppSandboxed: Bool {
+        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
     }
 }
 

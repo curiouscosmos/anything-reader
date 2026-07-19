@@ -23,7 +23,7 @@ struct ContentView: View {
     @Query(sort: [SortDescriptor(\ReaderCategory.createdAt, order: .forward)])
     private var categories: [ReaderCategory]
 
-    @AppStorage("appearanceMode") private var appearanceModeRawValue: String = AppearanceMode.system.rawValue
+    @AppStorage("appearanceMode") private var appearanceModeRawValue: String = AppearanceMode.dark.rawValue
     @AppStorage("activeTTSProviderID") private var activeTTSProviderIDRawValue: String = ReaderTTSProviderID.kokoro.rawValue
     @AppStorage("kokoroVoiceName") private var kokoroVoiceName: String = KokoroVoiceCatalog.defaultVoiceName
     @AppStorage("moonshineVoiceName") private var moonshineVoiceName: String = MoonshineVoiceCatalog.defaultVoiceName
@@ -167,7 +167,7 @@ struct ContentView: View {
         do {
             try await BrowserNativeMessagingService.shared.installHostIfNeeded()
         } catch {
-            browserHostInstallAlertMessage = "Chrome manifest install failed: \(error.localizedDescription)"
+            NSLog("Browser native messaging setup skipped: %@", error.localizedDescription)
         }
         await monitorBrowserInbox()
     }
@@ -498,6 +498,7 @@ struct ContentView: View {
             }
         }
         .overlay(documentTranslationOverlay)
+        .preferredColorScheme(.dark)
         .categoryDeletionConfirmationDialog(
             isPresented: categoryDeletionDialogBinding,
             onDelete: confirmCategoryDeletion,
@@ -611,7 +612,7 @@ struct ContentView: View {
     // MARK: - Theme
 
     private var preferredMode: AppearanceMode {
-        AppearanceMode(rawValue: appearanceModeRawValue) ?? .system
+        .dark
     }
 
     private func validateSelectedTTSConfiguration() {
@@ -2480,25 +2481,58 @@ struct ContentView: View {
 
     private func downloadFileIgnoringInsecureRedirects(from url: URL) async throws -> (URL, URLResponse) {
         let delegate = FreeBookDownloadSessionDelegate()
-        let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.timeoutIntervalForRequest = 30
+        sessionConfiguration.timeoutIntervalForResource = 120
+        let session = URLSession(configuration: sessionConfiguration, delegate: delegate, delegateQueue: nil)
 
         return try await withCheckedThrowingContinuation { continuation in
+            final class ResultBox: @unchecked Sendable {
+                private let lock = NSLock()
+                private var didResume = false
+
+                func resume(_ body: () -> Void) {
+                    lock.lock()
+                    defer { lock.unlock() }
+
+                    guard !didResume else { return }
+                    didResume = true
+                    body()
+                }
+            }
+
+            let resultBox = ResultBox()
             let task = session.downloadTask(with: url) { temporaryURL, response, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
+                resultBox.resume {
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
 
-                guard let temporaryURL, let response else {
-                    continuation.resume(throwing: UploadError.invalidFile)
-                    return
-                }
+                    guard let temporaryURL, let response else {
+                        continuation.resume(throwing: UploadError.invalidFile)
+                        return
+                    }
 
-                continuation.resume(returning: (temporaryURL, response))
+                    continuation.resume(returning: (temporaryURL, response))
+                }
             }
 
             delegate.task = task
             task.resume()
+
+            Task { [session] in
+                do {
+                    try await Task.sleep(for: .seconds(120))
+                } catch {
+                    return
+                }
+
+                resultBox.resume {
+                    session.invalidateAndCancel()
+                    continuation.resume(throwing: URLError(.timedOut))
+                }
+            }
         }
     }
 

@@ -213,7 +213,7 @@ final class MoonshineModelStore: ObservableObject {
             )
 
             let remoteURL = try remoteURL(for: dependencyPath)
-            let (temporaryURL, response) = try await URLSession.shared.download(from: remoteURL)
+            let (temporaryURL, response) = try await modelDownloadSession().download(from: remoteURL)
 
             guard let httpResponse = response as? HTTPURLResponse,
                   (200..<300).contains(httpResponse.statusCode) else {
@@ -310,7 +310,7 @@ final class MoonshineModelStore: ObservableObject {
             return
         }
 
-        let (temporaryURL, response) = try await URLSession.shared.download(from: fallback.downloadURL)
+        let (temporaryURL, response) = try await modelDownloadSession().download(from: fallback.downloadURL)
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode) else {
             throw CocoaError(.fileReadUnknown)
@@ -358,5 +358,12 @@ final class MoonshineModelStore: ObservableObject {
 
     private func fileManager() -> FileManager {
         .default
+    }
+
+    private func modelDownloadSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 120
+        return URLSession(configuration: configuration)
     }
 }

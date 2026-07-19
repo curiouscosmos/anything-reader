@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 import SwiftData
 import PostHog
 import Sentry
@@ -142,6 +145,12 @@ struct Anything_ReaderApp: App {
 
     // Performs one-time startup wiring before the first window appears.
     init() {
+#if os(macOS)
+        // Force dark Aqua so AppKit-backed windows, sheets, and dialogs stay dark
+        // even if the user switches the system appearance to light.
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+#endif
+
         if let sentryDSN = SentryEnv.dsn.value {
             SentrySDK.start { options in
                 options.dsn = sentryDSN
@@ -179,6 +188,7 @@ struct Anything_ReaderApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .preferredColorScheme(.dark)
         }
         .modelContainer(sharedModelContainer)
     }

@@ -213,7 +213,7 @@ final class KokoroModelStore: ObservableObject {
     }
 
     private func downloadAndInstallModel(option: KokoroDownloadOption) async throws {
-        let (temporaryURL, response) = try await URLSession.shared.download(from: option.downloadURL)
+        let (temporaryURL, response) = try await modelDownloadSession().download(from: option.downloadURL)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode) else {
@@ -231,6 +231,13 @@ final class KokoroModelStore: ObservableObject {
         }
 
         try fileManager().moveItem(at: temporaryURL, to: destination)
+    }
+
+    private func modelDownloadSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 120
+        return URLSession(configuration: configuration)
     }
 
     private func localModelURL(for option: KokoroDownloadOption) -> URL {

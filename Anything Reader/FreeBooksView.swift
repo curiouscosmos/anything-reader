@@ -314,7 +314,7 @@ struct FreeBooksView: View {
                 Label("Catalog not downloaded", systemImage: "square.and.arrow.down")
                     .font(.headline)
 
-                Text("Download the books database to start browsing free books.")
+                Text("Download the books database(30MB) to start browsing free books.")
                     .foregroundStyle(.secondary)
 
                 Button {

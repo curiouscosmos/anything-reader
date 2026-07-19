@@ -803,33 +803,36 @@ struct ReaderTTSDownloadSheet: View {
                                 providerID: .supertonic,
                                 subtitle: SupertonicDownloadCatalog.defaultOption.subtitle,
                                 isInstalled: supertonicModelStore.isInstalled,
-                                isActive: ttsCoordinator.activeProviderID == .supertonic,
+                                isActive: supertonicModelStore.isInstalled && ttsCoordinator.activeProviderID == .supertonic,
                                 isDownloading: isSupertonicDownloading,
                                 onDownload: { supertonicModelStore.downloadModel(option: SupertonicDownloadCatalog.defaultOption) },
                                 onActivate: { ttsCoordinator.setActiveProvider(.supertonic) },
-                                onDelete: { pendingDeleteProviderID = .supertonic }
+                                onDelete: { pendingDeleteProviderID = .supertonic },
+                                size: "354MB"
                             )
                             
                             providerRow(
                                 providerID: .kokoro,
                                 subtitle: KokoroDownloadCatalog.defaultOption.subtitle,
                                 isInstalled: kokoroModelStore.isInstalled,
-                                isActive: ttsCoordinator.activeProviderID == .kokoro,
+                                isActive: kokoroModelStore.isInstalled && ttsCoordinator.activeProviderID == .kokoro,
                                 isDownloading: isKokoroDownloading,
                                 onDownload: { kokoroModelStore.downloadModel(option: KokoroDownloadCatalog.defaultOption) },
                                 onActivate: { ttsCoordinator.setActiveProvider(.kokoro) },
-                                onDelete: { pendingDeleteProviderID = .kokoro }
+                                onDelete: { pendingDeleteProviderID = .kokoro },
+                                size: "312MB"
                             )
 
                             providerRow(
                                 providerID: .moonshine,
                                 subtitle: MoonshineDownloadCatalog.defaultOption.subtitle,
                                 isInstalled: moonshineModelStore.isInstalled,
-                                isActive: ttsCoordinator.activeProviderID == .moonshine,
+                                isActive: moonshineModelStore.isInstalled && ttsCoordinator.activeProviderID == .moonshine,
                                 isDownloading: isMoonshineDownloading,
                                 onDownload: { moonshineModelStore.downloadModel(option: MoonshineDownloadCatalog.defaultOption) },
                                 onActivate: { ttsCoordinator.setActiveProvider(.moonshine) },
-                                onDelete: { pendingDeleteProviderID = .moonshine }
+                                onDelete: { pendingDeleteProviderID = .moonshine },
+                                size: "161MB"
                             )
                         }
                     }
@@ -918,7 +921,8 @@ struct ReaderTTSDownloadSheet: View {
         isDownloading: Bool,
         onDownload: @escaping () -> Void,
         onActivate: @escaping () -> Void,
-        onDelete: @escaping () -> Void
+        onDelete: @escaping () -> Void,
+        size: String = "",
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -941,6 +945,14 @@ struct ReaderTTSDownloadSheet: View {
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(Color.blue.opacity(0.18), in: Capsule())
+                        }
+                        
+                        if size != "" {
+                            Text(size)
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.yellow.opacity(0.50), in: Capsule())
                         }
                     }
 
